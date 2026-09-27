@@ -1,4 +1,4 @@
-import { mkdir } from "fs/promises";
+import { mkdir, readFile } from "fs/promises";
 import { join } from "path";
 import {
   Action,
@@ -27,39 +27,51 @@ const SPEED_TEST_HISTORY_KEY = "speed-test-history";
 
 interface TileConfig {
   command: string;
+  icon: string; // assets/src/<icon>.svg — the same art as the command icon
   glyph: string;
   name: string;
   color: RaycastColor;
 }
 
 const TILES: TileConfig[] = [
-  { command: "my-tasks", glyph: "T", name: "Tasks", color: RAYCAST_COLOR.blue },
+  {
+    command: "my-tasks",
+    icon: "tasks",
+    glyph: "T",
+    name: "Tasks",
+    color: RAYCAST_COLOR.blue,
+  },
   {
     command: "quick-add",
+    icon: "add-task",
     glyph: "+",
     name: "Add Task",
     color: RAYCAST_COLOR.purple,
   },
   {
     command: "claude-usage",
+    icon: "usage",
     glyph: "U",
     name: "Claude Usage",
     color: RAYCAST_COLOR.orange,
   },
   {
     command: "netgear",
+    icon: "netgear",
     glyph: "N",
     name: "Netgear",
     color: RAYCAST_COLOR.green,
   },
   {
     command: "speed-test",
+    icon: "speed-test",
     glyph: "S",
     name: "Speed Test",
     color: RAYCAST_COLOR.magenta,
   },
   {
     command: "battery",
+    icon: "battery",
     glyph: "B",
     name: "Battery",
     color: RAYCAST_COLOR.yellow,
@@ -129,25 +141,33 @@ const STATUS_LOADERS: Record<string, () => Promise<string>> = {
 // on a dead LTE link, a cold Claude usage fetch) never blocks the rest of
 // the grid. The static tile (glyph + name, "…" status) renders immediately;
 // `usePromise` fills in the live status once it resolves.
+// The icon SVGs ship in the build's assets/src; drop the outer <svg> so the
+// markup can be placed inside the tile.
+async function loadIconMarkup(icon: string): Promise<string> {
+  const svg = await readFile(
+    join(environment.assetsPath, "src", `${icon}.svg`),
+    "utf8",
+  );
+  return svg.replace(/^[\s\S]*?<svg[^>]*>/, "").replace(/<\/svg>\s*$/, "");
+}
+
 function HubTile({ config }: { config: TileConfig }) {
   const loader = STATUS_LOADERS[config.command];
   const { data: status } = usePromise(loader ?? (async () => ""));
+  const { data: iconMarkup } = usePromise(loadIconMarkup, [config.icon]);
 
-  const svg = tile(
-    {
-      glyph: config.glyph,
-      name: config.name,
-      status: status ?? "…",
-      color: config.color,
-    },
-    { width: 400, height: 400 },
-  );
+  const svg = tile({
+    glyph: config.glyph,
+    name: config.name,
+    status: status ?? "…",
+    color: config.color,
+    iconMarkup,
+  });
 
   return (
     <Grid.Item
       key={config.command}
       content={toDataUri(svg)}
-      title={config.name}
       actions={
         <ActionPanel>
           <Action
@@ -168,7 +188,7 @@ function HubTile({ config }: { config: TileConfig }) {
 
 export default function Hub() {
   return (
-    <Grid columns={3} aspectRatio="1" fit={Grid.Fit.Fill}>
+    <Grid columns={3} aspectRatio="16/9" fit={Grid.Fit.Fill}>
       {TILES.map((config) => (
         <HubTile key={config.command} config={config} />
       ))}

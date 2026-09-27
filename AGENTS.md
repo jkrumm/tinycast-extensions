@@ -225,6 +225,31 @@ top of this file. `claude-usage-menu-bar` uses `lib/svg.ts`'s
 that size) and keeps its status-item `title` to just the 5h percent, since
 a native title now costs real menu-bar space next to every other app's.
 
+## Adding a command
+
+1. `extension/src/<name>.tsx` (entry file name = command `name`) + feature code
+   in `extension/src/<feature>/`; keep parsing/formatting pure and unit-tested
+   (anything importing `@raycast/api` can't run under vitest).
+2. `package.json` → `commands[]` with its own `icon`: add
+   `assets/src/<icon>.svg` in the family style (512², rounded square, one colour,
+   white glyph), then `make icons`.
+3. Dashboard: add a `TILES` entry + status loader in `src/hub.tsx` (tiles are
+   16:9, icon left, one short status line — keep it under ~18 characters).
+4. Heroes: build SVGs with `src/lib/svg.ts`, add them to the legibility test,
+   render previews to `/tmp/tinycast-previews/` and look at them.
+5. Secrets only via `src/lib/secrets.ts` (new key → a `*Ref` preference with an
+   `op://` default, `make secrets` entry). Nothing secret or identifying in
+   code, fixtures or docs — the repo is public.
+6. `make check && make build`, re-add `extension/build` in Tinycast, try it.
+7. Launcher access lives in **dotfiles**, not here: add an alias + favorite for
+   `extension:jkrumm/<name>` to `config/tinycast/defaults.json`, then
+   `make tinycast-apply` (restarts Tinycast) and commit there.
+
+When a Tinycast fact is unclear, read the source rather than guessing:
+`gh api repos/abue-ammar/tinycast/contents/<path>?ref=main` (renderer lives
+under `Tinycast/Features/Extensions/`), and record what you learn in the
+tinycast skill.
+
 ## Context
 
 - `.claude/skills/tinycast/SKILL.md` — Tinycast runtime reference (build for

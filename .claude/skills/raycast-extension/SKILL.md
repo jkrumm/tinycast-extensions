@@ -6,6 +6,10 @@ agent: general-purpose
 
 # Raycast Extension Reference
 
+> This repo runs in **Tinycast**, not Raycast. This file is the generic
+> `@raycast/api` reference; where they disagree, `.claude/skills/tinycast/SKILL.md`
+> wins (rendering limits, no dev mode/`ray develop`, no Store, lint, menu bar).
+
 Raycast extensions are TypeScript + React apps. The `@raycast/api` package provides all UI primitives; `@raycast/utils` provides hooks and utilities.
 
 Docs: https://developers.raycast.com

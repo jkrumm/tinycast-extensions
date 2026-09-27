@@ -443,29 +443,39 @@ export function batteryGlyph(
 // ─── Hub tile (monogram + name + one-line status) ──────────────────────────
 
 export interface TileSpec {
-  glyph: string; // one or two characters
+  glyph: string; // one or two characters — fallback when no icon markup
   name: string;
   status: string; // one line, e.g. "3 overdue" or "…" while loading
   color?: RaycastColor;
+  // Inner markup of a 512×512 command icon (assets/src/*.svg minus the outer
+  // <svg>), drawn instead of the glyph circle so tiles match the launcher.
+  iconMarkup?: string;
 }
 
+// Wide 16:9 tile — icon left, name + live status right. Three columns of
+// these fit the hub's six commands in two short rows.
 export function tile(
   spec: TileSpec,
   opts?: { width?: number; height?: number },
 ): string {
-  const width = opts?.width ?? 400;
-  const height = opts?.height ?? 400;
+  const width = opts?.width ?? 480;
+  const height = opts?.height ?? 270;
   const color = spec.color ?? RAYCAST_COLOR.blue;
-  const circleR = Math.min(width, height) * 0.22;
-  const cx = width / 2;
-  const cy = height * 0.36;
+  const iconSize = height * 0.5;
+  const iconX = height * 0.14;
+  const iconY = (height - iconSize) / 2;
+  const textX = iconX + iconSize + height * 0.12;
+
+  const icon = spec.iconMarkup
+    ? `<g transform="translate(${iconX} ${iconY}) scale(${iconSize / 512})">${spec.iconMarkup}</g>`
+    : `<rect x="${iconX}" y="${iconY}" width="${iconSize}" height="${iconSize}" rx="${iconSize * 0.22}" fill="${color}" />
+    ${text(iconX + iconSize / 2, iconY + iconSize * 0.66, spec.glyph, { size: iconSize * 0.5, color: RAYCAST_COLOR.primaryText, weight: 700 })}`;
 
   const body = `
-    <rect x="0" y="0" width="${width}" height="${height}" rx="${width * 0.07}" fill="${color}" fill-opacity="0.12" />
-    <circle cx="${cx}" cy="${cy}" r="${circleR}" fill="${color}" />
-    ${text(cx, cy + circleR * 0.32, spec.glyph, { size: circleR * 0.85, color: RAYCAST_COLOR.primaryText, weight: 700 })}
-    ${text(width / 2, height * 0.72, spec.name, { size: width * 0.075, color: RAYCAST_COLOR.primaryText, weight: 600 })}
-    ${text(width / 2, height * 0.84, spec.status, { size: width * 0.05, color: RAYCAST_COLOR.secondaryText })}`;
+    <rect x="0" y="0" width="${width}" height="${height}" rx="${height * 0.12}" fill="${color}" fill-opacity="0.12" />
+    ${icon}
+    ${text(textX, height * 0.46, spec.name, { size: height * 0.14, color: RAYCAST_COLOR.primaryText, weight: 600, anchor: "start" })}
+    ${text(textX, height * 0.66, spec.status, { size: height * 0.105, color: RAYCAST_COLOR.secondaryText, anchor: "start" })}`;
 
   return svgDocument(width, height, body);
 }
