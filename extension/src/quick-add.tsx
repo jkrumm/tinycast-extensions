@@ -9,7 +9,7 @@ import {
 } from "@raycast/api";
 import { useFetch } from "@raycast/utils";
 import { useState, useMemo } from "react";
-import { authHeader, prefs } from "./lib/argo";
+import { prefs, useAuthHeaders } from "./lib/argo";
 import { client } from "./ticktick/client";
 import { TickTickProject } from "./ticktick/types";
 import { parse } from "./ticktick/parse";
@@ -21,13 +21,16 @@ export default function QuickAdd() {
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const base = prefs().baseUrl.replace(/\/$/, "");
+  const { headers, isLoading: authLoading, ready } = useAuthHeaders();
 
-  const { data: projectsRaw, isLoading } = useFetch<{
+  const { data: projectsRaw, isLoading: fetchLoading } = useFetch<{
     data: TickTickProject[];
   }>(`${base}/ticktick/projects`, {
-    headers: authHeader(),
+    headers,
+    execute: ready,
     keepPreviousData: true,
   });
+  const isLoading = authLoading || fetchLoading;
 
   const projects = projectsRaw?.data ?? [];
   const defaultProjectId = prefs().defaultProjectId ?? projects[0]?.id ?? "";

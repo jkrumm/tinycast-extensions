@@ -8,7 +8,7 @@ import {
 } from "@raycast/api";
 import { useFetch } from "@raycast/utils";
 import { useMemo, useState } from "react";
-import { authHeader, prefs } from "./lib/argo";
+import { prefs, useAuthHeaders } from "./lib/argo";
 import { client } from "./ticktick/client";
 import { TickTickProject, TickTickTask } from "./ticktick/types";
 import {
@@ -34,11 +34,13 @@ export default function MenuBar() {
   const [isFetchingTasks, setIsFetchingTasks] = useState(false);
 
   const base = prefs().baseUrl.replace(/\/$/, "");
+  const { headers, isLoading: authLoading, ready } = useAuthHeaders();
 
   const { isLoading: projectsLoading, revalidate } = useFetch<{
     data: TickTickProject[];
   }>(`${base}/ticktick/projects`, {
-    headers: authHeader(),
+    headers,
+    execute: ready,
     keepPreviousData: true,
     onData: (raw) => {
       const projects = raw?.data ?? [];
@@ -58,7 +60,7 @@ export default function MenuBar() {
     },
   });
 
-  const isLoading = projectsLoading || isFetchingTasks;
+  const isLoading = authLoading || projectsLoading || isFetchingTasks;
 
   const overdue = useMemo(
     () => allTasks.filter((t) => isOverdue(t.dueDate)),

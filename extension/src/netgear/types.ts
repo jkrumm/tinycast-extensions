@@ -26,6 +26,7 @@ export interface RouterModel {
     battChargeLevel: number;
     charging: boolean;
     batteryState: string;
+    batteryTemperature?: number; // °C
   };
   sim: {
     status: string;
@@ -40,8 +41,23 @@ export interface RouterModel {
   router?: {
     clientList?: {
       count: number;
+      list?: RouterModelClient[];
     };
   };
+  general?: {
+    upTime?: number; // seconds
+  };
+  sms?: {
+    ready?: boolean;
+    unreadMsgs?: number;
+  };
+}
+
+export interface RouterModelClient {
+  IP: string;
+  MAC: string;
+  name: string;
+  media: string;
 }
 
 // Friendly, UI-ready shape derived from RouterModel.
@@ -64,6 +80,20 @@ export interface RouterStatus {
   simPinRetry: number;
   simPukRetry: number;
   connectedClients: number | null;
+  connectedDevices: RouterConnectedDevice[];
+  uptimeSeconds: number | null;
+  batteryTemperature: number | null; // °C
+  smsReady: boolean;
+  smsUnread: number;
+}
+
+// UI-ready shape derived from RouterModelClient — trimmed to what the
+// "Connected Devices" list shows.
+export interface RouterConnectedDevice {
+  ip: string;
+  mac: string;
+  name: string;
+  media: string;
 }
 
 // Port — the HTTP transport client.ts depends on. The production adapter

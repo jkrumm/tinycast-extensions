@@ -23,7 +23,8 @@
   "power": {
     "battChargeLevel": 76,
     "charging": true,
-    "batteryState": "Normal"
+    "batteryState": "Normal",
+    "batteryTemperature": 43
   },
   "sim": {
     "status": "Ready",
@@ -37,7 +38,29 @@
   },
   "router": {
     "clientList": {
-      "count": 2
+      "count": 2,
+      "list": [
+        {
+          "IP": "192.168.1.10",
+          "MAC": "AA:BB:CC:00:00:01",
+          "name": "fake-laptop",
+          "media": "WiFi"
+        },
+        {
+          "IP": "192.168.1.11",
+          "MAC": "AA:BB:CC:00:00:02",
+          "name": "fake-phone",
+          "media": "WiFi"
+        },
+        {}
+      ]
     }
+  },
+  "general": {
+    "upTime": 90811
+  },
+  "sms": {
+    "ready": true,
+    "unreadMsgs": 2
   }
 }

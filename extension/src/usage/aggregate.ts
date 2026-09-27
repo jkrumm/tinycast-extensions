@@ -20,13 +20,38 @@ export function aggregateSpend(ts: TimeseriesResponse): SpendAggregate {
   );
 
   const todayTotal = Object.values(today).reduce((sum, v) => sum + v, 0);
-  const sevenDayTotal = buckets.reduce((sum, bucket) => {
-    const bucketTotal = Object.values(bucket.groups).reduce(
+
+  const dailyTotals = buckets.map((bucket) => ({
+    bucket: bucket.bucket,
+    total: Object.values(bucket.groups).reduce(
       (a: number, b) => a + (b ?? 0),
       0,
-    );
-    return sum + bucketTotal;
-  }, 0);
+    ),
+  }));
+  const sevenDayTotal = dailyTotals.reduce((sum, d) => sum + d.total, 0);
 
-  return { today, todayTotal, sevenDayTotal };
+  return { today, todayTotal, sevenDayTotal, dailyTotals };
+}
+
+export interface LaneSpend {
+  label: string;
+  value: number;
+}
+
+// Top N lanes by spend, remainder collapsed into a single "other" — the
+// hero bar chart shows at most 7 rows regardless of how many lanes argo
+// tracks (~60, almost all zero on a given day).
+export function topLanesWithOther(
+  today: Record<string, number>,
+  limit = 6,
+): LaneSpend[] {
+  const sorted = Object.entries(today).sort(([, a], [, b]) => b - a);
+  const top: LaneSpend[] = sorted
+    .slice(0, limit)
+    .map(([label, value]) => ({ label, value }));
+  const restTotal = sorted
+    .slice(limit)
+    .reduce((sum, [, value]) => sum + value, 0);
+  if (restTotal > 0) top.push({ label: "other", value: restTotal });
+  return top;
 }

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { aggregateSpend } from "./aggregate";
+import { aggregateSpend, topLanesWithOther } from "./aggregate";
 import { TimeseriesResponse } from "./types";
 
 const FIXTURE: TimeseriesResponse = {
@@ -68,5 +68,53 @@ describe("aggregateSpend", () => {
     expect(result.today).toEqual({});
     expect(result.todayTotal).toBe(0);
     expect(result.sevenDayTotal).toBe(0);
+    expect(result.dailyTotals).toEqual([]);
+  });
+
+  it("returns one dailyTotal per bucket, in order, nulls as 0", () => {
+    const result = aggregateSpend(FIXTURE);
+    expect(result.dailyTotals).toEqual([
+      { bucket: "2026-09-20", total: 1.5 },
+      { bucket: "2026-09-21", total: 2.5 },
+      { bucket: "2026-09-22", total: 0.1 },
+      { bucket: "2026-09-23", total: 3.5 },
+      { bucket: "2026-09-24", total: 2.1 },
+      { bucket: "2026-09-25", total: 2.35 },
+      { bucket: "2026-09-26", total: 5.0 },
+    ]);
+  });
+});
+
+describe("topLanesWithOther", () => {
+  it("passes lanes through unchanged when at or under the limit", () => {
+    const result = topLanesWithOther({ a: 3, b: 1 }, 6);
+    expect(result).toEqual([
+      { label: "a", value: 3 },
+      { label: "b", value: 1 },
+    ]);
+  });
+
+  it("collapses everything past the limit into a single 'other' lane", () => {
+    const today = { a: 5, b: 4, c: 3, d: 2, e: 1, f: 0.5, g: 0.3, h: 0.2 };
+    const result = topLanesWithOther(today, 6);
+    expect(result).toEqual([
+      { label: "a", value: 5 },
+      { label: "b", value: 4 },
+      { label: "c", value: 3 },
+      { label: "d", value: 2 },
+      { label: "e", value: 1 },
+      { label: "f", value: 0.5 },
+      { label: "other", value: 0.5 },
+    ]);
+  });
+
+  it("omits 'other' when nothing is left over", () => {
+    const result = topLanesWithOther({ a: 1 }, 6);
+    expect(result).toEqual([{ label: "a", value: 1 }]);
+  });
+
+  it("sorts by value descending regardless of input order", () => {
+    const result = topLanesWithOther({ low: 1, high: 9, mid: 5 }, 6);
+    expect(result.map((r) => r.label)).toEqual(["high", "mid", "low"]);
   });
 });

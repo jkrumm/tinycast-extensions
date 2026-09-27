@@ -4,7 +4,6 @@ import {
   ActionPanel,
   Action,
   Icon,
-  Color,
   Form,
   confirmAlert,
   Alert,
@@ -13,14 +12,18 @@ import {
   openExtensionPreferences,
   environment,
   useNavigation,
+  launchCommand,
+  LaunchType,
 } from "@raycast/api";
 import { usePromise } from "@raycast/utils";
 import { mkdir } from "fs/promises";
 import { join } from "path";
 import { prefs } from "./lib/argo";
+import { getSecret, SecretUnavailableError } from "./lib/secrets";
 import { CurlNetgearHttp } from "./netgear/transport";
 import { NetgearClient } from "./netgear/client";
 import { RouterStatus } from "./netgear/types";
+import { batteryGlyph, ringGaugeRow, signalBars, toDataUri } from "./lib/svg";
 
 const DEFAULT_HOST = "http://192.168.1.1";
 
@@ -31,27 +34,72 @@ async function getClient(): Promise<NetgearClient> {
   return new NetgearClient({ host, transport: new CurlNetgearHttp(jarPath) });
 }
 
-// Elevates to Admin automatically when a password preference is set — Guest
-// role otherwise, which still exposes read-only status.
+// Elevates to Admin automatically once a password is resolvable (override,
+// Keychain, or 1Password) — Guest role otherwise, which still exposes
+// read-only status. Silent on SecretUnavailableError: an unconfigured router
+// password is a normal, quiet state on every background load, not a toast.
 async function loadStatus(): Promise<RouterStatus> {
   const client = await getClient();
   const status = await client.getStatus();
-  const password = prefs().netgearPassword;
-  if (status.userRole !== "Admin" && password) {
-    return client.login(password);
+  if (status.userRole === "Admin") return status;
+  try {
+    const password = await getSecret("netgearPassword", prefs());
+    return await client.login(password);
+  } catch (e) {
+    if (e instanceof SecretUnavailableError) return status;
+    throw e;
   }
-  return status;
+}
+
+function formatUptime(seconds: number | null): string {
+  if (seconds === null) return "—";
+  const days = Math.floor(seconds / 86400);
+  const hours = Math.floor((seconds % 86400) / 3600);
+  return days > 0 ? `${days}d ${hours}h` : `${hours}h`;
+}
+
+// Radio quality reads differently from a quota percentage — LTE signal
+// rarely climbs past 60-70% even on a strong connection, so the usual 50/80
+// split reads a merely-good signal as red. 60/35 instead.
+const RADIO_QUALITY_LOW = 35;
+const RADIO_QUALITY_HIGH = 60;
+
+function heroImages(status: RouterStatus): string[] {
+  const signal = signalBars({
+    percent: status.radioQuality,
+    bars: 5,
+    label: status.connectionText || status.connection,
+  });
+
+  const radioGauge = ringGaugeRow([
+    {
+      percent: status.radioQuality,
+      label: "Radio Quality",
+      sublabel: `${status.band || "—"} · ${status.operator || "no operator"}${status.roaming ? " (roaming)" : ""}`,
+      invert: true,
+      lowBoundary: RADIO_QUALITY_LOW,
+      highBoundary: RADIO_QUALITY_HIGH,
+    },
+  ]);
+
+  const battery = batteryGlyph({
+    percent: status.battChargeLevel,
+    charging: status.charging,
+  });
+
+  return [toDataUri(signal), toDataUri(radioGauge), toDataUri(battery)];
 }
 
 function statusMarkdown(status: RouterStatus): string {
+  const [signal, radioGauge, battery] = heroImages(status);
   const lines = [
     `# ${status.connectionText || status.connection}`,
     "",
-    `**${status.operator || "No operator"}**${status.roaming ? " (roaming)" : ""}`,
+    `![Signal](${signal})`,
     "",
-    `Band: ${status.band || "—"} · Signal: ${status.radioQuality}% (rx ${status.rxLevel} dBm / tx ${status.txLevel} dBm)`,
+    `![Radio Quality](${radioGauge})`,
     "",
-    `Data transferred (cycle): ${status.dataTransferredGB} GB`,
+    `![Battery](${battery})`,
   ];
   if (status.simStatus !== "Ready") {
     lines.push(
@@ -65,23 +113,41 @@ function statusMarkdown(status: RouterStatus): string {
       "_Guest session — set the Netgear Admin Password preference to unlock actions._",
     );
   }
+
+  // No Detail.Metadata sidebar — the heroes above already carry signal,
+  // band/operator, and battery %; a table covers what's left, now that
+  // Tinycast beta renders markdown tables as a real grid.
+  lines.push(
+    "",
+    "| | |",
+    "|-|-|",
+    `| Role | ${status.userRole} |`,
+    `| Connection | ${status.connection} |`,
+    `| Data transferred (cycle) | ${status.dataTransferredGB} GB |`,
+    `| Uptime | ${formatUptime(status.uptimeSeconds)} |`,
+    `| SIM | ${status.simStatus} |`,
+  );
+  if (status.connectedClients !== null) {
+    lines.push(`| Connected clients | ${status.connectedClients} |`);
+  }
+  if (status.batteryTemperature !== null) {
+    lines.push(`| Battery temp | ${status.batteryTemperature}°C |`);
+  }
+  lines.push(
+    `| SMS | ${status.smsUnread > 0 ? `${status.smsUnread} unread` : status.smsReady ? "No unread" : "—"} |`,
+  );
+
   return lines.join("\n");
 }
 
-function batteryColor(status: RouterStatus): Color {
-  if (status.charging) return Color.Green;
-  if (status.battChargeLevel < 20) return Color.Red;
-  if (status.battChargeLevel < 50) return Color.Orange;
-  return Color.SecondaryText;
-}
-
 async function requirePasswordOrToast(): Promise<string | null> {
-  const password = prefs().netgearPassword;
-  if (!password) {
+  try {
+    return await getSecret("netgearPassword", prefs());
+  } catch (e) {
     await showToast({
       style: Toast.Style.Failure,
-      title: "No admin password set",
-      message: "Set the Netgear Admin Password in extension preferences",
+      title: "No admin password available",
+      message: e instanceof Error ? e.message : String(e),
       primaryAction: {
         title: "Open Preferences",
         onAction: () => openExtensionPreferences(),
@@ -89,7 +155,6 @@ async function requirePasswordOrToast(): Promise<string | null> {
     });
     return null;
   }
-  return password;
 }
 
 export default function Netgear() {
@@ -142,44 +207,6 @@ export default function Netgear() {
     <Detail
       isLoading={isLoading}
       markdown={status ? statusMarkdown(status) : "Loading…"}
-      metadata={
-        status && (
-          <Detail.Metadata>
-            <Detail.Metadata.Label
-              title="Role"
-              text={status.userRole}
-              icon={
-                status.userRole === "Admin"
-                  ? { source: Icon.Checkmark, tintColor: Color.Green }
-                  : { source: Icon.Person, tintColor: Color.SecondaryText }
-              }
-            />
-            <Detail.Metadata.Label
-              title="Connection"
-              text={status.connection}
-            />
-            <Detail.Metadata.Label
-              title="Battery"
-              text={`${status.battChargeLevel}% (${status.batteryState}${status.charging ? ", charging" : ""})`}
-              icon={{ source: Icon.Battery, tintColor: batteryColor(status) }}
-            />
-            <Detail.Metadata.Label title="SIM" text={status.simStatus} />
-            {status.connectedClients !== null && (
-              <Detail.Metadata.Label
-                title="Connected Clients"
-                text={String(status.connectedClients)}
-                icon={Icon.Devices}
-              />
-            )}
-            <Detail.Metadata.Separator />
-            <Detail.Metadata.Link
-              title="Web UI"
-              target={prefs().netgearHost || DEFAULT_HOST}
-              text={prefs().netgearHost || DEFAULT_HOST}
-            />
-          </Detail.Metadata>
-        )
-      }
       actions={
         <ActionPanel>
           <ActionPanel.Section>
@@ -193,6 +220,20 @@ export default function Netgear() {
                 title="Enter Sim Pin"
                 icon={Icon.Lock}
                 onAction={() => push(<EnterPinForm onDone={revalidate} />)}
+              />
+            )}
+            {status && (
+              <Action
+                title="Connected Devices"
+                icon={Icon.Devices}
+                onAction={() => push(<ConnectedDevices status={status} />)}
+              />
+            )}
+            {status && (
+              <Action
+                title="Sms"
+                icon={Icon.SpeechBubble}
+                onAction={() => push(<SmsInbox status={status} />)}
               />
             )}
           </ActionPanel.Section>
@@ -213,6 +254,16 @@ export default function Netgear() {
             <Action.OpenInBrowser
               title="Open Web Ui"
               url={prefs().netgearHost || DEFAULT_HOST}
+            />
+            <Action
+              title="Run Speed Test"
+              icon={Icon.Gauge}
+              onAction={() =>
+                launchCommand({
+                  name: "speed-test",
+                  type: LaunchType.UserInitiated,
+                })
+              }
             />
             <Action
               title="Open Extension Preferences"
@@ -276,5 +327,64 @@ function EnterPinForm({ onDone }: { onDone: () => void }) {
       />
       <Form.Description text="Never persisted — sent once to unlock the SIM." />
     </Form>
+  );
+}
+
+function connectedDevicesMarkdown(status: RouterStatus): string {
+  const lines = ["# Connected Devices", ""];
+  if (status.connectedDevices.length === 0) {
+    lines.push(
+      "_No devices reported — the router's model.json had no client list._",
+    );
+    return lines.join("\n");
+  }
+  lines.push(
+    "| Name | IP | Media | MAC |",
+    "|-|-|-|-|",
+    ...status.connectedDevices.map(
+      (d) => `| ${d.name || "—"} | ${d.ip} | ${d.media} | ${d.mac} |`,
+    ),
+  );
+  return lines.join("\n");
+}
+
+function ConnectedDevices({ status }: { status: RouterStatus }) {
+  return (
+    <Detail
+      navigationTitle="Connected Devices"
+      markdown={connectedDevicesMarkdown(status)}
+    />
+  );
+}
+
+// Read-only: model.json only ever exposes an unread count, never message
+// bodies — no endpoint for the message list was found while exploring the
+// live device (see docs/netgear-m2.md § Unconfirmed). Full SMS reading
+// stays in the router's own web UI.
+function SmsInbox({ status }: { status: RouterStatus }) {
+  const host = prefs().netgearHost || DEFAULT_HOST;
+  const summary = status.smsReady
+    ? status.smsUnread > 0
+      ? `**${status.smsUnread} unread message${status.smsUnread === 1 ? "" : "s"}**`
+      : "No unread messages"
+    : "SMS not ready";
+  const markdown = [
+    "# SMS",
+    "",
+    summary,
+    "",
+    "Message bodies aren't exposed by `model.json` — open the router's own web UI to read them.",
+  ].join("\n");
+
+  return (
+    <Detail
+      navigationTitle="SMS"
+      markdown={markdown}
+      actions={
+        <ActionPanel>
+          <Action.OpenInBrowser title="Open Web Ui" url={host} />
+        </ActionPanel>
+      }
+    />
   );
 }

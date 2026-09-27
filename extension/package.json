@@ -14,38 +14,65 @@
       "name": "my-tasks",
       "title": "Tasks",
       "description": "Aufgaben anzeigen und verwalten, gruppiert nach Fälligkeitsdatum",
-      "mode": "view"
+      "mode": "view",
+      "icon": "tasks.png"
     },
     {
       "name": "quick-add",
       "title": "Add Task",
       "description": "Aufgabe per natürlicher Sprache hinzufügen",
-      "mode": "view"
+      "mode": "view",
+      "icon": "add-task.png"
     },
     {
       "name": "ticktick-menu-bar",
       "title": "TickTick",
       "description": "Überfällige und heutige Aufgaben in der Menüleiste anzeigen",
-      "mode": "menu-bar"
+      "mode": "menu-bar",
+      "icon": "tasks.png"
     },
     {
       "name": "claude-usage",
       "title": "Claude Usage",
       "description": "Claude quota utilization and argo spend, detailed view",
-      "mode": "view"
+      "mode": "view",
+      "icon": "usage.png"
     },
     {
       "name": "claude-usage-menu-bar",
       "title": "Claude Usage",
       "description": "Claude quota and spend summary in the menu bar",
       "mode": "menu-bar",
-      "interval": "5m"
+      "interval": "5m",
+      "icon": "usage.png"
     },
     {
       "name": "netgear",
       "title": "Netgear Nighthawk",
       "description": "MR2100 mobile router status and actions",
-      "mode": "view"
+      "mode": "view",
+      "icon": "netgear.png"
+    },
+    {
+      "name": "battery",
+      "title": "Battery",
+      "description": "MacBook charge, health, and charge-limit control",
+      "mode": "view",
+      "icon": "battery.png"
+    },
+    {
+      "name": "speed-test",
+      "title": "Speed Test",
+      "description": "networkQuality download/upload speed, latency, and data used",
+      "mode": "view",
+      "icon": "speed-test.png"
+    },
+    {
+      "name": "hub",
+      "title": "Dashboard",
+      "description": "One-glance grid over every command",
+      "mode": "view",
+      "icon": "hub.png"
     }
   ],
   "dependencies": {
@@ -78,10 +105,18 @@
   "preferences": [
     {
       "name": "apiToken",
-      "title": "API Token",
-      "description": "Bearer token for the argo proxy at argo.jkrumm.com/api (TickTick + Claude usage)",
+      "title": "API Token (override)",
+      "description": "Bearer token for the argo proxy — leave blank to resolve it from Keychain / 1Password instead (see API Token Ref)",
       "type": "password",
-      "required": true
+      "required": false
+    },
+    {
+      "name": "apiTokenRef",
+      "title": "API Token 1Password Ref",
+      "description": "op:// reference used to resolve the API Token when no override and no cached Keychain entry exist",
+      "type": "textfield",
+      "required": true,
+      "default": "op://common/api/SECRET"
     },
     {
       "name": "baseUrl",
@@ -108,10 +143,18 @@
     },
     {
       "name": "netgearPassword",
-      "title": "Netgear Admin Password",
-      "description": "Router admin password — used only to elevate the session, never persisted",
+      "title": "Netgear Admin Password (override)",
+      "description": "Router admin password — leave blank to resolve it from Keychain / 1Password instead (see Netgear Admin Password Ref)",
       "type": "password",
       "required": false
+    },
+    {
+      "name": "netgearPasswordRef",
+      "title": "Netgear Admin Password 1Password Ref",
+      "description": "op:// reference used to resolve the router admin password when no override and no cached Keychain entry exist",
+      "type": "textfield",
+      "required": true,
+      "default": "op://Private/Netgear M2 Jo/Admin Passwort"
     }
   ]
 }

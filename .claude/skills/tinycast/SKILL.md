@@ -12,9 +12,14 @@ Tinycast (`https://tinycast.dev`, bundle `com.tinycast.app` stable /
 JavaScriptCore, UI drawn in SwiftUI. **There is no separate Tinycast SDK** —
 you write a normal Raycast extension and install the built output.
 
+**This repo targets the beta channel** (`com.tinycast.app.beta`,
+`0.11.10-beta.x` = upstream `main`) — see § Designing for Tinycast beta.
 Sourced from `tinycast.dev` docs + the project's engineering spec
-(`docs/features/extensions.md`), compiled 2026-09-27. **UNCONFIRMED** items
-are flagged; check them again before relying on them for anything load-bearing.
+(`docs/features/extensions.md`) for general Raycast-format behaviour, and
+directly from Tinycast's `main`-branch Swift source (via `gh api
+repos/abue-ammar/tinycast/contents/<path>?ref=main`) for anything
+render-size/layout-specific, compiled 2026-09-27. **UNCONFIRMED** items are
+flagged; check them again before relying on them for anything load-bearing.
 
 ## Install route used by this repo: "Add from folder"
 
@@ -93,6 +98,134 @@ name>.json`; `environment.supportPath` → `extension-support/<safe name>/`.
   handles a 302. Don't assume either way — this is the other reason the
   Netgear client uses `curl -L` rather than `fetch`.
 - `.local`/mDNS names resolve.
+
+## Designing for Tinycast beta (target renderer)
+
+**This repo targets the beta channel** (`0.11.10-beta.x`, tracks upstream
+`main`) — install `abue-ammar/tinycast/tinycast@beta`
+(`com.tinycast.app.beta`), not stable. Verified by reading Tinycast source
+straight off `main` (`gh api repos/abue-ammar/tinycast/contents/<path>?ref=main`):
+`Tinycast/DesignSystem/Theme.swift`, `InterfaceMetrics.swift`,
+`Features/Extensions/UI/{ExtensionDetailView,ExtensionListView,
+ExtensionMenuBarImage}.swift`, `Features/Extensions/Model/ExtensionImageSize.swift`,
+`Features/Settings/InterfaceSize.swift`, 2026-09-27.
+
+- **Window is 750×475 at `interfaceSize: standard`** (`Theme.Size.panelWidth/
+  panelHeight`) — every extension in this repo is designed for that, not
+  `larger`. `interfaceSize` is a uniform `scale` factor (`standard`=1,
+  `large`=1.1, `larger`=1.2) applied to nearly every UI constant via
+  `metrics.scaled()`, so the window and every sidebar/list-column width grow
+  together — but a markdown image's `?raycast-width=`/`raycast-height=`
+  hint is **not** scaled (`ExtensionImageSize` parses it as a raw point
+  value), so a hero sized for `standard` renders too small at `larger`.
+  Design for `standard`.
+- **List column is 290pt** wide when a `List` has `isShowingDetail`
+  (`ExtensionListView.detailListWidth`). Its detail pane **stacks
+  `Detail.Metadata` below the markdown**, not beside it
+  (`ExtensionDetailBody(stacksMetadata: true)`) — the opposite of a plain
+  `Detail`.
+- **A plain `Detail`'s `Detail.Metadata` sidebar is still 240pt** fixed
+  (`ExtensionDetailView.metadataWidth` — unchanged from stable). With no
+  metadata, the markdown pane is the full content width minus
+  `2×Spacing.lg` (10pt each side) ≈ 730pt at 750-wide `standard`; with
+  metadata it's ≈ 489pt. **This repo drops the sidebar on every Detail
+  command** once its hero images carry the numbers a sidebar used to (see
+  `docs/architecture.md` § Metadata) — full width is the point.
+  `extension/src/lib/svg.ts`'s `HERO_COL_WIDTH` (680) is the conservative
+  design width every hero targets.
+- **No 220pt image height cap** (unlike stable 0.11.3). A markdown image
+  draws at its own intrinsic size (the SVG's `width`/`height` attributes) —
+  or, if the URL carries a `?raycast-width=&raycast-height=` hint, is fit
+  (shrunk or grown, `.aspectRatio(.fit)`) into that box
+  (`ExtensionMarkdownImage` in `ExtensionDetailView.swift`,
+  `ExtensionImageSize.swift`). `lib/svg.ts`'s `toDataUri()` always appends a
+  hint matching the SVG's own declared size — a defensive pin, not strictly
+  required, but it means the render size is never ambiguous. **Design every
+  hero's SVG canvas width ≤ `HERO_COL_WIDTH` so it never needs to shrink**
+  (`computeImageScale`/`assertLegible` in `lib/svg.ts`, enforced by
+  svg.test.ts's "Hero image legibility" block).
+- **Markdown tables render as a real `Grid`**, header row shaded, borders
+  drawn (`ExtensionMarkdownView.Block.table` in `ExtensionDetailView.swift`)
+  — the opposite of stable 0.11.3 (plain text). Use a table wherever it
+  beats a bullet list: this repo's battery/netgear/speed-test "extra
+  fields" tables and speed-test's history table.
+  - **Zero-width columns are how this repo fakes a "no header" table**:
+    `| | |` / `|-|-|` then `| Label | Value |` rows — the parser (
+    `ExtensionMarkdownView.parse`) treats row 0 as the header (bold,
+    shaded) regardless of content, so an empty header row keeps every
+    row plain.
+- **Images render only when alone on their own line**, with an `http(s)` or
+  `data:` URI — a local path or `file://` is silently dropped. `![alt](url)`
+  on its own markdown line, nothing else sharing it.
+- **`data:image/svg+xml;base64,…` is the only adaptive image path.**
+  Tinycast decodes it via `NSImage` after a whole-word text substitution of
+  `raycast-*` colour names to the live theme's CSS colour — literally
+  `fill="raycast-primary-text"` in the SVG source becomes
+  `fill="rgba(255,255,255,1)"` (or the dark/light equivalent) before
+  decoding. The nine names it rewrites: `raycast-primary-text`,
+  `raycast-secondary-text`, `raycast-red`, `raycast-orange`,
+  `raycast-yellow`, `raycast-green`, `raycast-blue`, `raycast-purple`,
+  `raycast-magenta`. Use only these as fill/stroke values in any inline SVG
+  you build (`extension/src/lib/svg.ts` does this everywhere) — a raw hex
+  value never adapts to light/dark. A per-command **icon PNG asset**
+  (`package.json`'s `icon`, `assets/*.png`) is a different code path (loaded
+  as a file, not inline `data:`) and does **not** get this substitution — use
+  plain hex there, since the icon is a static badge, not theme-adaptive
+  chrome.
+- **`Detail.Metadata`**: `Label` (+icon), `TagList` (coloured tags),
+  `Link`, `Separator` all render as documented. **List accessories**: icon,
+  coloured tag/text, date, tooltip. **`Grid`**: `columns` 1–8, `aspectRatio`,
+  and tile content scales — including a `data:` SVG, which is how
+  `hub.tsx`'s dashboard tiles work (a Grid tile's sizing is unrelated to the
+  Detail column-width rule above — `Grid.Item.content` scales to the grid
+  cell, not a markdown column).
+- **`Icon.*` maps to SF Symbols** — a bare SF Symbol string (`"gauge"`) does
+  not work as an icon value, only the `Icon` enum. A per-command `icon` in
+  `package.json` must be an asset file under `assets/`.
+- **`MenuBarExtra` renders natively** on beta (`NSStatusItem`, confirmed via
+  `ExtensionMenuBarImage.swift`) — an `icon` fits into an 18×18pt glyph
+  (`.aspectRatio(.fit)`, rendered at 2x for Retina internally, so any SVG
+  canvas works — nothing reads as text at that size, keep menu-bar icons to
+  a simple shape). `claude-usage-menu-bar.tsx` uses `lib/svg.ts`'s
+  `menuBarRing()` — a small filled-arc gauge, no text — for a live
+  quota-reflecting icon, and keeps `title` to just the 5h number now that a
+  status-item title costs real menu-bar space.
+
+### Stable 0.11.3 differences (if this repo is ever reinstalled there)
+
+- **220pt image height cap**, and images always fill the column width —
+  neither `HERO_COL_WIDTH` sizing nor `?raycast-width=` hints apply the same
+  way; every hero would need re-tuning.
+- **Markdown tables render as plain text**, not a grid — every `| |` table
+  in this repo would need to fall back to a bullet list.
+- **`MenuBarExtra` doesn't render at all** — `ticktick-menu-bar` and
+  `claude-usage-menu-bar` need `0.11.4-beta.100`+ (see § Menu-bar below);
+  their ring/dot icons and compact titles are simply invisible on stable.
+- **List detail pane width is 220pt**, not 290pt; `Detail.Metadata` sidebar
+  is 240pt on both channels (unchanged).
+
+## Fast access: deeplinks, hotkeys, aliases, favorites
+
+- **Deeplinks**: `tinycast://extensions/<owner>/<ext>/<cmd>` — `<owner>` is
+  optional for a locally-installed extension. Query params:
+  `?arguments=<json>` (pre-fills a command's declared arguments),
+  `?launchType=background` (runs a `no-view`/menu-bar command without
+  opening the launcher).
+- **Per-command hotkeys** are stored in Tinycast's own preferences as
+  `hotkey.extensionCommand.extension:<ext>/<cmd>`, and the command must also
+  be listed in `boundExtensionCommandEntryIDs` for the binding to take
+  effect — setting only the hotkey key is not enough.
+- **Aliases**: `launcherAliases`, a map of `{"extension:<ext>/<cmd>":
+  "<alias>"}` — typing the alias in the launcher jumps straight to that
+  command.
+- **Favorites**: `favoriteApps` — up to 10 entries, bound to `⌘1`…`⌘0` when
+  the launcher's query is empty (no typing yet).
+- **`interfaceSize`**: `standard` | `large` | `larger` — a Tinycast-level
+  setting (not per-extension) that changes the window size described above.
+
+For this repo, `<ext>` is `jkrumm` and `<owner>` is the local install (can be
+omitted); e.g. `tinycast://extensions/jkrumm/hub` or
+`extension:jkrumm/claude-usage` as the key for hotkeys/aliases/favorites.
 
 ## Menu-bar: stable vs. beta
 

@@ -45,9 +45,16 @@ export interface UsageSummaryResponse {
   maxTs: number;
 }
 
+// One bucket's total spend, for the 7-day sparkline.
+export interface DailyTotal {
+  bucket: string; // "YYYY-MM-DD" (UTC day)
+  total: number;
+}
+
 // Today + 7d spend, aggregated from TimeseriesResponse.
 export interface SpendAggregate {
   today: Record<string, number>;
   todayTotal: number;
   sevenDayTotal: number;
+  dailyTotals: DailyTotal[];
 }

@@ -1,7 +1,7 @@
 import { argoFetch } from "../lib/argo";
 import { TimeseriesResponse, UsageSummaryResponse } from "./types";
 
-export { aggregateSpend } from "./aggregate";
+export { aggregateSpend, topLanesWithOther } from "./aggregate";
 
 export function getTimeseries(): Promise<TimeseriesResponse> {
   return argoFetch<TimeseriesResponse>(

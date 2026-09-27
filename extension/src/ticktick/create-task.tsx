@@ -9,7 +9,7 @@ import {
 } from "@raycast/api";
 import { useFetch } from "@raycast/utils";
 import { useState } from "react";
-import { authHeader, prefs } from "../lib/argo";
+import { prefs, useAuthHeaders } from "../lib/argo";
 import { client } from "./client";
 import { TickTickProject, TickTickTask } from "./types";
 import { priorityLabel } from "./format";
@@ -25,11 +25,13 @@ export default function CreateTask({ task, onDone }: Props) {
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const base = prefs().baseUrl.replace(/\/$/, "");
+  const { headers, isLoading: authLoading, ready } = useAuthHeaders();
 
   const { data: projectsRaw } = useFetch<{ data: TickTickProject[] }>(
     `${base}/ticktick/projects`,
     {
-      headers: authHeader(),
+      headers,
+      execute: ready,
       keepPreviousData: true,
     },
   );
@@ -117,7 +119,7 @@ export default function CreateTask({ task, onDone }: Props) {
   return (
     <Form
       navigationTitle={isEditing ? "Aufgabe bearbeiten" : "Aufgabe erstellen"}
-      isLoading={isSubmitting || projectList.length === 0}
+      isLoading={isSubmitting || authLoading || projectList.length === 0}
       actions={
         <ActionPanel>
           <Action.SubmitForm

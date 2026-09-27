@@ -7,12 +7,13 @@ import {
   Detail,
   Icon,
   List,
+  LocalStorage,
   showToast,
   Toast,
   useNavigation,
 } from "@raycast/api";
 import { useCachedPromise } from "@raycast/utils";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { client } from "./ticktick/client";
 import { TickTickProject, TickTickTask } from "./ticktick/types";
 import {
@@ -122,6 +123,7 @@ const SHORTCUTS_MARKDOWN = `
 - \`⌘P\` Filter-Dropdown öffnen
 - \`⌘N\` Neue Aufgabe (Quick Add)
 - \`⌘R\` Aktualisieren
+- \`⌘⇧D\` Detail-Ansicht umschalten
 - \`⌘H\` Diese Hilfe
 
 ## Suchsyntax
@@ -147,12 +149,14 @@ function TaskActions({
   onPatch,
   onRemove,
   onRefresh,
+  onToggleDetail,
 }: {
   task: TickTickTask;
   projects: TickTickProject[];
   onPatch: (changes: Partial<TickTickTask>) => void;
   onRemove: () => void;
   onRefresh: () => void;
+  onToggleDetail: () => void;
 }) {
   const { push } = useNavigation();
 
@@ -373,6 +377,12 @@ function TaskActions({
           onAction={onRefresh}
         />
         <Action
+          title="Detail-Ansicht Umschalten"
+          icon={Icon.Sidebar}
+          shortcut={{ modifiers: ["cmd", "shift"], key: "d" }}
+          onAction={onToggleDetail}
+        />
+        <Action
           title="Shortcuts Anzeigen"
           icon={Icon.QuestionMark}
           shortcut={{ modifiers: ["cmd"], key: "h" }}
@@ -407,6 +417,7 @@ function TaskItem({
   onPatch,
   onRemove,
   onRefresh,
+  onToggleDetail,
 }: {
   task: TickTickTask;
   project: TickTickProject | undefined;
@@ -414,6 +425,7 @@ function TaskItem({
   onPatch: (changes: Partial<TickTickTask>) => void;
   onRemove: () => void;
   onRefresh: () => void;
+  onToggleDetail: () => void;
 }) {
   const due = formatDue(task.dueDate);
   const projectInitial = project ? ([...project.name][0] ?? "?") : null;
@@ -474,6 +486,7 @@ function TaskItem({
           onPatch={onPatch}
           onRemove={onRemove}
           onRefresh={onRefresh}
+          onToggleDetail={onToggleDetail}
         />
       }
     />
@@ -484,10 +497,30 @@ function TaskItem({
 
 type CachedData = { projects: TickTickProject[]; tasks: TickTickTask[] };
 
+const SHOW_DETAIL_KEY = "my-tasks-show-detail";
+
 export default function MyTasks() {
   const { push } = useNavigation();
   const [filter, setFilter] = useState<string>("all");
   const [searchText, setSearchText] = useState("");
+  // Off by default, persisted: at the 900×570 window with a 220pt list
+  // column, the detail pane leaves too little room for the list itself
+  // unless the user opts in.
+  const [showDetail, setShowDetail] = useState(false);
+
+  useEffect(() => {
+    LocalStorage.getItem<boolean>(SHOW_DETAIL_KEY).then((value) => {
+      if (value !== undefined) setShowDetail(value);
+    });
+  }, []);
+
+  function toggleDetail() {
+    setShowDetail((prev) => {
+      const next = !prev;
+      LocalStorage.setItem(SHOW_DETAIL_KEY, next);
+      return next;
+    });
+  }
 
   const { data, isLoading, revalidate, mutate } = useCachedPromise(
     async (): Promise<CachedData> => {
@@ -572,6 +605,7 @@ export default function MyTasks() {
         onPatch={(changes) => patchTask(task.id, changes)}
         onRemove={() => removeTask(task.id)}
         onRefresh={revalidate}
+        onToggleDetail={toggleDetail}
       />
     );
   }
@@ -579,7 +613,7 @@ export default function MyTasks() {
   return (
     <List
       isLoading={isLoading}
-      isShowingDetail
+      isShowingDetail={showDetail}
       filtering={false}
       onSearchTextChange={setSearchText}
       searchBarPlaceholder="Suchen… #Projekt !h/m/l heute morgen"

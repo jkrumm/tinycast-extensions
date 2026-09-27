@@ -1,7 +1,18 @@
-import { NetgearHttp, RouterModel, RouterStatus } from "./types";
+import {
+  NetgearHttp,
+  RouterConnectedDevice,
+  RouterModel,
+  RouterStatus,
+} from "./types";
 
 export function parseStatus(model: RouterModel): RouterStatus {
   const bytes = model.wwan.dataUsage?.generic?.dataTransferred ?? 0;
+  const connectedDevices: RouterConnectedDevice[] = (
+    model.router?.clientList?.list ?? []
+  )
+    .filter((c) => c.MAC) // the router pads the list with a trailing {}
+    .map((c) => ({ ip: c.IP, mac: c.MAC, name: c.name, media: c.media }));
+
   return {
     userRole: model.session.userRole,
     connection: model.wwan.connection,
@@ -21,6 +32,11 @@ export function parseStatus(model: RouterModel): RouterStatus {
     simPinRetry: model.sim.pin.retry,
     simPukRetry: model.sim.puk.retry,
     connectedClients: model.router?.clientList?.count ?? null,
+    connectedDevices,
+    uptimeSeconds: model.general?.upTime ?? null,
+    batteryTemperature: model.power.batteryTemperature ?? null,
+    smsReady: model.sms?.ready ?? false,
+    smsUnread: model.sms?.unreadMsgs ?? 0,
   };
 }
 

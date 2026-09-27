@@ -1,0 +1,49 @@
+{
+  "base_rtt": 134.49696350097656,
+  "dl_bytes_transferred": 14483103,
+  "dl_flows": 3,
+  "dl_phase_duration": 2.4396489858627319,
+  "dl_phase_end": "2026-09-27 10:16:57.749",
+  "dl_phase_start": "2026-09-27 10:16:55.309",
+  "dl_responsiveness": 211.49641418457031,
+  "dl_throughput": 63950340,
+  "end_date": "2026-09-27 10:16:57.758",
+  "il_h2_req_resp": [
+    166.03898620605469, 143.43296813964844, 150.02798461914062,
+    147.41694641113281, 157.17399597167969, 151.80099487304688,
+    159.86692810058594, 122.16794586181641
+  ],
+  "il_tcp_handshake_443": [72, 72, 72, 72, 73, 75, 73, 75],
+  "il_tls_handshake": [100, 122, 127, 146, 224, 233, 227, 267],
+  "interface_name": "en0",
+  "lud_foreign_dl_h2_req_resp": [90, 360, 228, 311, 277],
+  "lud_foreign_dl_tcp_handshake_443": [77, 110, 120, 151, 95],
+  "lud_foreign_dl_tls_handshake": [155, 141, 339, 424, 460],
+  "lud_self_dl_h2_req_resp": [
+    110, 128, 128, 83, 327, 531, 435, 331, 290, 249, 558, 434, 571, 355, 378,
+    511
+  ],
+  "os_version": "Version 26.6.2 (Build 25G83)",
+  "other": {
+    "ecn_values": {
+      "ecn_disabled": 13
+    },
+    "interface-type": {
+      "wifi": 13
+    },
+    "l4s_enablement": {
+      "disabled": 13
+    },
+    "protocols_seen": {
+      "h2": 13
+    },
+    "proxy_state": {
+      "not_proxied": 13
+    },
+    "rat": {
+      "unknown": 13
+    }
+  },
+  "start_date": "2026-09-27 10:16:52.029",
+  "test_endpoint": "esmad6-edge-fx-003.aaplimg.com"
+}

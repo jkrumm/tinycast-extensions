@@ -71,6 +71,24 @@ describe("parseStatus", () => {
       simPinRetry: 3,
       simPukRetry: 10,
       connectedClients: 2,
+      connectedDevices: [
+        {
+          ip: "192.168.1.10",
+          mac: "AA:BB:CC:00:00:01",
+          name: "fake-laptop",
+          media: "WiFi",
+        },
+        {
+          ip: "192.168.1.11",
+          mac: "AA:BB:CC:00:00:02",
+          name: "fake-phone",
+          media: "WiFi",
+        },
+      ],
+      uptimeSeconds: 90811,
+      batteryTemperature: 43,
+      smsReady: true,
+      smsUnread: 2,
     });
   });
 
@@ -80,6 +98,15 @@ describe("parseStatus", () => {
     expect(status.simStatus).toBe("SIM PIN required");
     expect(status.dataTransferredGB).toBe(0);
     expect(status.connectedClients).toBe(0);
+  });
+
+  it("defaults the new optional fields when absent from the model", () => {
+    const status = parseStatus(guestModel);
+    expect(status.connectedDevices).toEqual([]);
+    expect(status.uptimeSeconds).toBeNull();
+    expect(status.batteryTemperature).toBeNull();
+    expect(status.smsReady).toBe(false);
+    expect(status.smsUnread).toBe(0);
   });
 
   it("defaults connectedClients to null when router.clientList is absent", () => {

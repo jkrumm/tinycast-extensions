@@ -1,8 +1,8 @@
 # Architecture
 
-One Tinycast/Raycast extension (`extension/`, manifest name `jkrumm`), six
-commands across three unrelated features that happen to share the same argo
-proxy for two of them.
+One Tinycast/Raycast extension (`extension/`, manifest name `jkrumm`), nine
+commands across five features that share the argo proxy (TickTick, Claude
+usage) and the secrets chain (TickTick, Netgear) where useful.
 
 ## Commands → modules → data sources
 
@@ -11,12 +11,17 @@ proxy for two of them.
 | `my-tasks` | view | `src/my-tasks.tsx` | `ticktick/{client,types,format,search,create-task}.ts(x)` | argo `/ticktick/*` |
 | `quick-add` | view | `src/quick-add.tsx` | `ticktick/{client,types,format,parse}.ts` | argo `/ticktick/*` |
 | `ticktick-menu-bar` | menu-bar | `src/ticktick-menu-bar.tsx` | `ticktick/{client,types,format}.ts` | argo `/ticktick/*` |
-| `claude-usage` | view | `src/claude-usage.tsx` | `usage/{quota,spend,aggregate,format,types}.ts` | `/tmp/claude_sl/usage_api.json` + argo `/usage/*` |
+| `claude-usage` | view | `src/claude-usage.tsx` | `usage/{quota,spend,aggregate,format,types}.ts`, `lib/svg.ts` | `/tmp/claude_sl/usage_api.json` + argo `/usage/*` |
 | `claude-usage-menu-bar` | menu-bar, `interval: 5m` | `src/claude-usage-menu-bar.tsx` | `usage/{quota,spend,aggregate,format,types}.ts` | same as above |
-| `netgear` | view | `src/netgear.tsx` | `netgear/{client,transport,types}.ts` | Netgear MR2100 HTTP API (`netgearHost` pref) |
+| `netgear` | view | `src/netgear.tsx` | `netgear/{client,transport,types}.ts`, `lib/svg.ts` | Netgear MR2100 HTTP API (`netgearHost` pref) |
+| `battery` | view | `src/battery.tsx` | `battery/{collect,parse,types}.ts`, `lib/svg.ts` | `batt status --json` + `ioreg -rn AppleSmartBattery` |
+| `speed-test` | view | `src/speed-test.tsx` | `speed-test/{run,parse,types}.ts`, `lib/svg.ts` | `/usr/bin/networkQuality` + `LocalStorage` history |
+| `hub` | view | `src/hub.tsx` | reads every feature module above, one tile each | all of the above, loaded independently per tile |
 
-Shared: `lib/argo.ts` (bearer-authed fetch client, `prefs()`), `lib/preferences.ts`
-(the `Preferences` interface, matches `package.json`'s `preferences` array).
+Shared: `lib/argo.ts` (bearer-authed fetch client, `prefs()`, `useAuthHeaders()`),
+`lib/secrets.ts` (override → Keychain → 1Password resolution chain, pure),
+`lib/svg.ts` (hero/tile SVG toolkit, pure), `lib/preferences.ts` (the
+`Preferences` interface, matches `package.json`'s `preferences` array).
 
 ## Data flow
 
@@ -40,6 +45,24 @@ Netgear command
        └─ netgear/transport.ts (CurlNetgearHttp — NetgearHttp port)
             └─ /usr/bin/curl (cookie jar under environment.supportPath)
                  └─ {netgearHost}/api/model.json, {netgearHost}/Forms/config
+
+Battery command
+  └─ battery/collect.ts
+       ├─ execFile batt status --json
+       ├─ execFile ioreg -rn AppleSmartBattery → battery/parse.ts (regex, not plutil)
+       └─ fs.readFile ~/.config/batt/pause-until
+       (limit changes: execFile /bin/bash ~/SourceRoot/dotfiles/launcher/battery-limit.sh)
+
+Speed Test command
+  └─ speed-test/run.ts
+       └─ execFile /usr/bin/networkQuality -c [-M 4 -u]
+            └─ speed-test/parse.ts (pure) → LocalStorage history (last 20)
+
+Every command's secret (TickTick/usage bearer token, Netgear admin password)
+  └─ lib/secrets.ts: resolveSecret()/getSecret()
+       ├─ preference override, if set
+       ├─ security find-generic-password -s tinycast-extensions -a <key>
+       └─ op read <ref> --account tkrumm  (caches the result into Keychain)
 ```
 
 ## Why curl for Netgear, argoFetch for everything else
@@ -61,11 +84,42 @@ it (even transitively through `lib/argo.ts`) fails to resolve under vitest.
 `@raycast/api` dependency so it can be unit-tested directly; `usage/spend.ts`
 re-exports it alongside the two argo-backed fetchers used at runtime.
 
+## Why `lib/secrets.ts` never imports `@raycast/api`
+
+Same constraint as above, applied to `getPreferenceValues`: `lib/secrets.ts`
+takes preferences and a `SecretRunner` as plain arguments instead of reading
+`getPreferenceValues()` itself, so it stays fully unit-testable (a fake
+runner stands in for `security`/`op`) and callers (`lib/argo.ts`,
+`netgear.tsx`) are the only places that touch `@raycast/api`.
+
+## Metadata: dropped in favour of full-width hero images
+
+Every Detail command (`claude-usage`, `netgear`, `battery`, `speed-test`)
+renders **no `Detail.Metadata` sidebar**. Two things made that the better
+trade once the target channel became Tinycast beta:
+
+- On beta, a plain `Detail`'s markdown pane is the full column width minus
+  the sidebar (≈489pt with the 240pt sidebar vs. ≈730pt without, at the
+  750-wide `standard` window) — dropping it is a real width gain, not
+  cosmetic.
+- Beta also renders markdown tables as a real `Grid` (stable 0.11.3 doesn't
+  — see `.claude/skills/tinycast/SKILL.md` § Stable 0.11.3 differences), so
+  the fields that used to justify a sidebar (state, voltage, SIM, connected
+  clients, latency, …) now read fine as a plain markdown table below the
+  hero images instead.
+
+The numbers a sidebar used to carry that *are* visually prominent (quota %,
+radio quality, battery %, download/upload Mbps) live in the hero SVGs
+themselves (`lib/svg.ts`, sized to `HERO_COL_WIDTH` — see AGENTS.md § SVG
+hero images). `netgear`'s "Connected Devices" and "SMS" sub-views are plain
+`Detail`s with a table too, not `List`s, for the same reason.
+
 ## Testing boundary
 
-Everything under `ticktick/`, `usage/`, `netgear/` that doesn't import
-`@raycast/api` is unit-tested with vitest (`make test`) — parsing, formatting,
-aggregation, and the netgear client against a fake transport. The six command
-entry files (`src/*.tsx`) are the untested seam — they wire feature modules
-into Raycast components and can only really be exercised inside a built
-Tinycast install.
+Everything under `ticktick/`, `usage/`, `netgear/`, `battery/`, `speed-test/`,
+and `lib/` that doesn't import `@raycast/api` is unit-tested with vitest
+(`make test`) — parsing, formatting, aggregation, the netgear client against
+a fake transport, the secrets chain against a fake runner, and the SVG
+toolkit's string output. The nine command entry files (`src/*.tsx`) are the
+untested seam — they wire feature modules into Raycast components and can
+only really be exercised inside a built Tinycast install.
