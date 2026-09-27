@@ -27,11 +27,9 @@ make build     # ray build -e dist -o extension/build
 make secrets   # pre-seed Keychain from 1Password (one biometric pass)
 ```
 
-Then in Tinycast: **Settings → Extensions → Install → Add from folder** →
-`extension/build`. No hot reload — re-run `make build` and re-add after every
-change. The two menu-bar commands need the **beta** Tinycast channel until
-native menu-bar rendering ships to stable (`AGENTS.md` has the version and
-cask).
+First install only: Tinycast → **Settings → Extensions → Install → Add from folder** →
+`extension/build`. After that, every change is `make deploy` (re-adding the
+folder does not update the installed copy).
 
 Preferences (Settings → Extensions → jkrumm): `baseUrl` (argo proxy),
 optionally `defaultProjectId`, `netgearHost`. `apiToken`/`netgearPassword`

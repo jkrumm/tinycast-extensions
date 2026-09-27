@@ -61,13 +61,20 @@ make install    # bun install --frozen-lockfile
 make build      # ray build -e dist -o extension/build
 ```
 
-Then in Tinycast: **Settings → Extensions → Install → Add from folder** →
-`extension/build`. Only `package.json`, the compiled command `.js` files, and
-`assets/` are copied — never `node_modules`, never source maps. **There is no
-hot reload or dev mode for a folder-imported extension** — re-run `make
-build` after every change and re-add the folder. Whether re-adding the same
-path updates in place vs. needs a manual uninstall first is unconfirmed;
-uninstall-then-add-from-folder always works.
+```
+make deploy     # build + copy into Tinycast Beta's installed extension
+```
+
+**Every change ends with `make deploy`** — agents run it themselves, the user
+never re-adds anything. "Add from folder" (Settings → Extensions → Install) is
+only for the very first install: it copies `package.json`, the built command
+`.js` and `assets/` (never `node_modules`, never source maps) into
+`~/Library/Application Support/com.tinycast.app.beta/extensions/jkrumm/`, and
+**re-adding the folder does not replace that copy** (verified 2026-09-27: the
+installed `hub.js` stayed stale). `make deploy` rsyncs `extension/build/` there
+itself; Tinycast reads a command's JS on every run, so the next open shows the
+change. Verify with `shasum` of the installed vs built `.js` if in doubt. There
+is no hot reload or dev mode.
 
 `make check` runs `tsc --noEmit` + eslint + prettier + the vitest suite — green is
 the bar. It deliberately skips `ray lint`: that command's owner check calls the
@@ -240,7 +247,7 @@ a native title now costs real menu-bar space next to every other app's.
 5. Secrets only via `src/lib/secrets.ts` (new key → a `*Ref` preference with an
    `op://` default, `make secrets` entry). Nothing secret or identifying in
    code, fixtures or docs — the repo is public.
-6. `make check && make build`, re-add `extension/build` in Tinycast, try it.
+6. `make check && make deploy`, then open the command in Tinycast.
 7. Launcher access lives in **dotfiles**, not here: add an alias + favorite for
    `extension:jkrumm/<name>` to `config/tinycast/defaults.json`, then
    `make tinycast-apply` (restarts Tinycast) and commit there.

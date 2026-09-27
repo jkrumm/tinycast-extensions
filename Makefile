@@ -1,4 +1,4 @@
-.PHONY: help install build check test lint typecheck clean secrets secrets-clear icons
+.PHONY: help install build deploy check test lint typecheck clean secrets secrets-clear icons
 
 EXT_DIR := extension
 RAY := node_modules/.bin/ray
@@ -17,8 +17,17 @@ install: ## Install dependencies (frozen lockfile)
 build: ## Build the extension for Tinycast/Raycast "Add from folder"
 	cd $(EXT_DIR) && $(RAY) build -e dist -o build
 	@echo ""
-	@echo "Built to $(EXT_DIR)/build/ — in Tinycast: Settings → Extensions → Install → Add from folder → $(CURDIR)/$(EXT_DIR)/build"
-	@echo "Re-run this after every change and re-add the folder (in-place update on re-add is unconfirmed)."
+	@echo "Built to $(EXT_DIR)/build/ — run 'make deploy' to update Tinycast (first install: Add from folder → $(CURDIR)/$(EXT_DIR)/build)"
+
+TINYCAST_EXT_DIR := $(HOME)/Library/Application Support/com.tinycast.app.beta/extensions/jkrumm
+
+# "Add from folder" is a one-time copy and re-adding does not reliably
+# replace it, so deploy does that copy itself: package.json, built commands
+# and assets/, never source maps. Tinycast reads a command's JS on each run.
+deploy: build ## Build and copy straight into Tinycast Beta's installed extension
+	@test -d "$(TINYCAST_EXT_DIR)" || { echo "Not installed yet — add $(CURDIR)/$(EXT_DIR)/build once via Settings → Extensions → Add from folder"; exit 1; }
+	rsync -a --delete --exclude '*.map' "$(EXT_DIR)/build/" "$(TINYCAST_EXT_DIR)/"
+	@echo "Deployed to $(TINYCAST_EXT_DIR)"
 
 typecheck: ## tsc --noEmit
 	cd $(EXT_DIR) && bunx tsc --noEmit

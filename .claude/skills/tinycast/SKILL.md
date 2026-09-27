@@ -32,13 +32,14 @@ are copied; **`node_modules` and source maps are never copied.**
 make build   # ray build -e dist -o extension/build
 ```
 
-then point "Add from folder" at `extension/build`.
+then point "Add from folder" at `extension/build` — **once**.
 
 **No dev mode, no hot reload, no watch.** Starting a command stops the
-previous one and throws its JS engine away. Re-run `make build` after every
-change. Whether re-running "Add from folder" on the same path updates the
-extension in place, or needs an uninstall first, is **UNCONFIRMED** — if a
-change doesn't seem to take, uninstall and re-add.
+previous one and throws its JS engine away, and the command's JS is read from
+the installed copy on every run. **Re-adding the folder does NOT update that
+copy** (verified 2026-09-27), so updates go through `make deploy`: build, then
+rsync `extension/build/` (minus source maps) straight into the installed
+extension dir below. That is exactly what "Add from folder" copies.
 
 Storage: extension code → `~/Library/Application Support/<bundle
 id>/extensions/<name>/`; preferences/cache → `extension-data/<safe
