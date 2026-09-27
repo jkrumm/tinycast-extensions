@@ -1,0 +1,43 @@
+{
+  "session": {
+    "userRole": "Guest",
+    "secToken": "fake-sec-token-0002"
+  },
+  "wwan": {
+    "connection": "Disconnected",
+    "connectionText": "",
+    "registerNetworkDisplay": "",
+    "roaming": false,
+    "dataUsage": {
+      "generic": {
+        "dataTransferred": 0
+      }
+    }
+  },
+  "wwanadv": {
+    "curBand": "",
+    "radioQuality": 0,
+    "rxLevel": 0,
+    "txLevel": 0
+  },
+  "power": {
+    "battChargeLevel": 42,
+    "charging": false,
+    "batteryState": "Normal"
+  },
+  "sim": {
+    "status": "SIM PIN required",
+    "pin": {
+      "mode": "Enabled",
+      "retry": 2
+    },
+    "puk": {
+      "retry": 10
+    }
+  },
+  "router": {
+    "clientList": {
+      "count": 0
+    }
+  }
+}

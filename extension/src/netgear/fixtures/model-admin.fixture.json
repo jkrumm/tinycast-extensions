@@ -1,0 +1,43 @@
+{
+  "session": {
+    "userRole": "Admin",
+    "secToken": "fake-sec-token-0001"
+  },
+  "wwan": {
+    "connection": "Connected",
+    "connectionText": "4G+",
+    "registerNetworkDisplay": "Fakecom",
+    "roaming": false,
+    "dataUsage": {
+      "generic": {
+        "dataTransferred": 61436760918
+      }
+    }
+  },
+  "wwanadv": {
+    "curBand": "LTE B7",
+    "radioQuality": 38,
+    "rxLevel": -95,
+    "txLevel": 12
+  },
+  "power": {
+    "battChargeLevel": 76,
+    "charging": true,
+    "batteryState": "Normal"
+  },
+  "sim": {
+    "status": "Ready",
+    "pin": {
+      "mode": "Enabled",
+      "retry": 3
+    },
+    "puk": {
+      "retry": 10
+    }
+  },
+  "router": {
+    "clientList": {
+      "count": 2
+    }
+  }
+}
