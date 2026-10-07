@@ -7,18 +7,81 @@
     "connection": "Connected",
     "connectionText": "4G+",
     "registerNetworkDisplay": "Fakecom",
+    "currentNWserviceType": "LteService",
     "roaming": false,
     "dataUsage": {
       "generic": {
         "dataTransferred": 61436760918
       }
+    },
+    "profile": {
+      "default": "1"
+    },
+    "profileList": [
+      {
+        "index": 0,
+        "id": "1",
+        "name": "Internet",
+        "apn": "internet.fake",
+        "username": "",
+        "password": "",
+        "authtype": "None",
+        "ipaddr": "0.0.0.0",
+        "type": "IPV4V6",
+        "pdproamingtype": "IPV4V6",
+        "access_control": ""
+      },
+      {
+        "index": 1,
+        "id": "Locked Carrier 1",
+        "name": "Locked Carrier",
+        "apn": "carrier.locked.fake",
+        "username": "carrier",
+        "password": "****",
+        "authtype": "PAPCHAP",
+        "ipaddr": "0.0.0.0",
+        "type": "IPV4V6",
+        "pdproamingtype": "IPV4V6",
+        "access_control": 2
+      },
+      {
+        "index": 2,
+        "id": "No Roaming 2",
+        "name": "No Roaming",
+        "apn": "noroam.fake",
+        "username": "",
+        "password": "",
+        "authtype": "None",
+        "ipaddr": "0.0.0.0",
+        "type": "IPV4",
+        "pdproamingtype": "None",
+        "access_control": ""
+      },
+      {}
+    ],
+    "autoconnect": "Always",
+    "signalStrength": {
+      "rssi": -68,
+      "rscp": 0,
+      "ecio": 0,
+      "rsrp": -98,
+      "rsrq": -12,
+      "bars": 2,
+      "sinr": 4
+    },
+    "ca": {
+      "SCCcount": 1
     }
   },
   "wwanadv": {
     "curBand": "LTE B7",
     "radioQuality": 38,
     "rxLevel": -95,
-    "txLevel": 12
+    "txLevel": 12,
+    "cellId": 25480193,
+    "MCC": "001",
+    "MNC": "01",
+    "country": "Fakeland"
   },
   "power": {
     "battChargeLevel": 76,
@@ -34,7 +97,9 @@
     },
     "puk": {
       "retry": 10
-    }
+    },
+    "iccid": "8900000000000000001",
+    "SPN": "Fakecom"
   },
   "router": {
     "clientList": {
@@ -61,6 +126,24 @@
   },
   "sms": {
     "ready": true,
-    "unreadMsgs": 2
+    "unreadMsgs": 2,
+    "msgCount": 2,
+    "msgs": [
+      {
+        "id": "1",
+        "rxTime": "2026-09-20T10:00:00Z",
+        "text": "Your balance is low.",
+        "sender": "+10000000000",
+        "read": false
+      },
+      {
+        "id": "2",
+        "rxTime": "2026-09-19T08:00:00Z",
+        "text": "Welcome to Fakecom.",
+        "sender": "1000",
+        "read": true
+      },
+      {}
+    ]
   }
 }

@@ -1,388 +1,700 @@
-import { useCallback } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import {
   Detail,
   ActionPanel,
   Action,
   Icon,
-  Form,
   confirmAlert,
   Alert,
   showToast,
   Toast,
-  openExtensionPreferences,
-  environment,
   useNavigation,
-  launchCommand,
-  LaunchType,
 } from "@raycast/api";
-import { usePromise } from "@raycast/utils";
-import { mkdir } from "fs/promises";
-import { join } from "path";
+import { usePromise, useCachedPromise } from "@raycast/utils";
 import { prefs } from "./lib/argo";
-import { getSecret, SecretUnavailableError } from "./lib/secrets";
-import { CurlNetgearHttp } from "./netgear/transport";
-import { NetgearClient } from "./netgear/client";
+import {
+  Stamped,
+  stamped,
+  freshnessBanner,
+  updatingLine,
+} from "./lib/freshness";
 import { RouterStatus } from "./netgear/types";
-import { batteryGlyph, ringGaugeRow, signalBars, toDataUri } from "./lib/svg";
+import {
+  actionLockPath,
+  DEFAULT_HOST,
+  getClient,
+  getPassword,
+  logNetgear,
+  pinStore,
+  waitMessage,
+  wifiCredsStore,
+  wifiRejoiner,
+  withAdmin,
+  withUiActionLock,
+} from "./netgear/session";
+import { readActionLock } from "./netgear/action-lock";
+import {
+  shouldRunViewTick,
+  startViewTicker,
+} from "./netgear/watchdog-schedule";
+import { runWatchdogOnce } from "./netgear/watchdog-runner";
+import { probeInternet } from "./netgear/internet-probe";
+import {
+  reconnect as reconnectFlow,
+  autoUnlockIfPossible,
+  ensureConnected,
+  ensureRouterReachable,
+  resolveAutoUnlockPin,
+} from "./netgear/flows";
+import { describeErrorDetail, describeNetgearError } from "./netgear/errors";
+import {
+  WatchdogStorage,
+  loadWatchdogStorage,
+  recordReboot,
+  saveWatchdogStorage,
+} from "./netgear/watchdog-storage";
+import {
+  noService,
+  offlineLabel,
+  rebootBanner,
+  statusMarkdown,
+} from "./netgear/status-view";
+import {
+  EnterPinForm,
+  UnblockPukForm,
+  ChangePinForm,
+  SimPinLockForm,
+} from "./netgear/sim-forms";
+import { ApnProfiles } from "./netgear/apn";
+import { SmsInbox } from "./netgear/sms";
+import { ConnectedDevices } from "./netgear/devices";
+import { WatchdogLog } from "./netgear/watchdog-view";
+import { NetgearLog } from "./netgear/log-view";
+import { SignalMeter } from "./netgear/signal-meter";
+import { captureWifiCredentials } from "./netgear/wifi-creds-store";
 
-const DEFAULT_HOST = "http://192.168.1.1";
+// How often the open view re-reads the router, the internet probe, the
+// watchdog's log and the action lock — the view is a live monitor, not a
+// snapshot taken at open.
+const POLL_INTERVAL_MS = 10_000;
+// A background poll over fresh data shouldn't flash "Updating…" every cycle.
+const UPDATING_LINE_AFTER_MS = 20_000;
 
-async function getClient(): Promise<NetgearClient> {
-  await mkdir(environment.supportPath, { recursive: true });
-  const jarPath = join(environment.supportPath, "netgear-cookies.jar");
-  const host = prefs().netgearHost?.replace(/\/$/, "") || DEFAULT_HOST;
-  return new NetgearClient({ host, transport: new CurlNetgearHttp(jarPath) });
+interface LoadedStatus {
+  status: RouterStatus;
+  // null: the probe itself failed to run — unknown, not "down".
+  internet: boolean | null;
 }
 
-// Elevates to Admin automatically once a password is resolvable (override,
-// Keychain, or 1Password) — Guest role otherwise, which still exposes
-// read-only status. Silent on SecretUnavailableError: an unconfigured router
-// password is a normal, quiet state on every background load, not a toast.
-async function loadStatus(): Promise<RouterStatus> {
+async function readStatus(): Promise<RouterStatus> {
   const client = await getClient();
-  const status = await client.getStatus();
-  if (status.userRole === "Admin") return status;
-  try {
-    const password = await getSecret("netgearPassword", prefs());
-    return await client.login(password);
-  } catch (e) {
-    if (e instanceof SecretUnavailableError) return status;
-    throw e;
-  }
-}
-
-function formatUptime(seconds: number | null): string {
-  if (seconds === null) return "—";
-  const days = Math.floor(seconds / 86400);
-  const hours = Math.floor((seconds % 86400) / 3600);
-  return days > 0 ? `${days}d ${hours}h` : `${hours}h`;
-}
-
-// Radio quality reads differently from a quota percentage — LTE signal
-// rarely climbs past 60-70% even on a strong connection, so the usual 50/80
-// split reads a merely-good signal as red. 60/35 instead.
-const RADIO_QUALITY_LOW = 35;
-const RADIO_QUALITY_HIGH = 60;
-
-function heroImages(status: RouterStatus): string[] {
-  const signal = signalBars({
-    percent: status.radioQuality,
-    bars: 5,
-    label: status.connectionText || status.connection,
-  });
-
-  const radioGauge = ringGaugeRow([
-    {
-      percent: status.radioQuality,
-      label: "Radio Quality",
-      sublabel: `${status.band || "—"} · ${status.operator || "no operator"}${status.roaming ? " (roaming)" : ""}`,
-      invert: true,
-      lowBoundary: RADIO_QUALITY_LOW,
-      highBoundary: RADIO_QUALITY_HIGH,
-    },
-  ]);
-
-  const battery = batteryGlyph({
-    percent: status.battChargeLevel,
-    charging: status.charging,
-  });
-
-  return [toDataUri(signal), toDataUri(radioGauge), toDataUri(battery)];
-}
-
-function statusMarkdown(status: RouterStatus): string {
-  const [signal, radioGauge, battery] = heroImages(status);
-  const lines = [
-    `# ${status.connectionText || status.connection}`,
-    "",
-    `![Signal](${signal})`,
-    "",
-    `![Radio Quality](${radioGauge})`,
-    "",
-    `![Battery](${battery})`,
-  ];
-  if (status.simStatus !== "Ready") {
-    lines.push(
-      "",
-      `⚠️ **SIM: ${status.simStatus}** — PIN retries left: ${status.simPinRetry}`,
-    );
-  }
+  let status = await client.getStatus();
   if (status.userRole !== "Admin") {
-    lines.push(
-      "",
-      "_Guest session — set the Netgear Admin Password preference to unlock actions._",
-    );
+    const password = await getPassword({ toast: false });
+    if (password) {
+      status = await client.login(password);
+      // Best-effort, every time this command elevates to Admin — so the Mac
+      // learns the router's own Wi-Fi well before it's ever needed to
+      // self-heal (see netgear/wifi-creds-store.ts).
+      await captureWifiCredentials({ client, store: wifiCredsStore });
+    }
   }
-
-  // No Detail.Metadata sidebar — the heroes above already carry signal,
-  // band/operator, and battery %; a table covers what's left, now that
-  // Tinycast beta renders markdown tables as a real grid.
-  lines.push(
-    "",
-    "| | |",
-    "|-|-|",
-    `| Role | ${status.userRole} |`,
-    `| Connection | ${status.connection} |`,
-    `| Data transferred (cycle) | ${status.dataTransferredGB} GB |`,
-    `| Uptime | ${formatUptime(status.uptimeSeconds)} |`,
-    `| SIM | ${status.simStatus} |`,
-  );
-  if (status.connectedClients !== null) {
-    lines.push(`| Connected clients | ${status.connectedClients} |`);
-  }
-  if (status.batteryTemperature !== null) {
-    lines.push(`| Battery temp | ${status.batteryTemperature}°C |`);
-  }
-  lines.push(
-    `| SMS | ${status.smsUnread > 0 ? `${status.smsUnread} unread` : status.smsReady ? "No unread" : "—"} |`,
-  );
-
-  return lines.join("\n");
+  // A Locked SIM hides its ICCID — remember the last one seen so a cold
+  // boot can still find that SIM's saved PIN.
+  if (status.iccid) await pinStore.setLastIccid(status.iccid);
+  return status;
 }
 
-async function requirePasswordOrToast(): Promise<string | null> {
-  try {
-    return await getSecret("netgearPassword", prefs());
-  } catch (e) {
-    await showToast({
-      style: Toast.Style.Failure,
-      title: "No admin password available",
-      message: e instanceof Error ? e.message : String(e),
-      primaryAction: {
-        title: "Open Preferences",
-        onAction: () => openExtensionPreferences(),
-      },
-    });
-    return null;
-  }
+// `connection === "Connected"` only proves the radio link, so the real
+// internet probe runs in parallel with the router read.
+async function loadStatus(): Promise<LoadedStatus> {
+  const internet = probeInternet().catch(() => null);
+  const status = await readStatus();
+  return { status, internet: await internet };
+}
+
+function loadStatusStamped(): Promise<Stamped<LoadedStatus>> {
+  return stamped(loadStatus);
+}
+
+async function handleToggleWatchdog(
+  storage: WatchdogStorage,
+  revalidate: () => void,
+) {
+  // Re-read rather than saving the view's snapshot: the watchdog (or a
+  // Restart's reboot marker) may have written state since it was loaded.
+  const current = await loadWatchdogStorage();
+  await saveWatchdogStorage({ ...current, enabled: !storage.enabled });
+  await showToast({
+    style: Toast.Style.Success,
+    title: storage.enabled ? "Watchdog paused" : "Watchdog resumed",
+  });
+  revalidate();
 }
 
 export default function Netgear() {
-  const { data: status, isLoading, revalidate } = usePromise(loadStatus);
+  const {
+    data: statusStamped,
+    isLoading,
+    error,
+    revalidate,
+  } = useCachedPromise(loadStatusStamped, [], {
+    keepPreviousData: true,
+    // The freshness banner below already covers a failed refresh — a second,
+    // generic failure toast on top of it would be redundant noise.
+    onError: () => {},
+  });
+  const status = statusStamped?.data.status;
+  const internet = statusStamped?.data.internet ?? null;
+  const fetchedAt = statusStamped?.fetchedAt;
+  const unreachable = !!error;
+  const { data: hasSavedPin, revalidate: revalidateSavedPin } = usePromise(
+    async (iccid: string) =>
+      iccid ? (await pinStore.get(iccid)) !== null : false,
+    [status?.iccid ?? ""],
+  );
+  const { data: watchdog, revalidate: revalidateWatchdog } = useCachedPromise(
+    loadWatchdogStorage,
+    [],
+    { keepPreviousData: true },
+  );
+  const { data: lockHolder, revalidate: revalidateLock } = usePromise(() =>
+    readActionLock(actionLockPath()),
+  );
   const { push } = useNavigation();
+  const autoUnlockRan = useRef(false);
 
-  const runAction = useCallback(
-    async (label: string, fn: (client: NetgearClient) => Promise<void>) => {
-      const password = await requirePasswordOrToast();
-      if (!password) return;
-      const toast = await showToast({
-        style: Toast.Style.Animated,
-        title: `${label}…`,
-      });
-      try {
-        const client = await getClient();
-        await client.login(password);
-        await fn(client);
-        toast.style = Toast.Style.Success;
-        toast.title = `${label} done`;
-        revalidate();
-      } catch (e) {
-        toast.style = Toast.Style.Failure;
-        toast.title = `${label} failed`;
-        toast.message = String(e);
-      }
-    },
-    [revalidate],
+  // Tinycast has ONE JS runtime: while this view is open no background tick
+  // runs, so the view drives the watchdog itself — first tick shortly after
+  // mount, then every minute (see watchdog-schedule.ts). Skipped while a tick
+  // is in flight, the watchdog is paused or a manual action holds the lock;
+  // refs keep the effect to once per mount.
+  const watchdogRef = useRef(watchdog);
+  watchdogRef.current = watchdog;
+  const afterTickRef = useRef(() => {});
+  afterTickRef.current = () => {
+    revalidate();
+    revalidateWatchdog();
+    revalidateLock();
+  };
+  useEffect(
+    () =>
+      startViewTicker({
+        shouldRun: async () =>
+          shouldRunViewTick({
+            enabled: watchdogRef.current?.enabled,
+            lockHolder: await readActionLock(actionLockPath()),
+          }),
+        run: async () => {
+          try {
+            await runWatchdogOnce({ source: "view" });
+          } finally {
+            afterTickRef.current();
+          }
+        },
+      }),
+    [],
   );
 
-  async function confirmReboot() {
-    const confirmed = await confirmAlert({
-      title: "Reboot the router?",
-      message: "The mobile connection drops for about a minute.",
-      primaryAction: { title: "Reboot", style: Alert.ActionStyle.Destructive },
-    });
-    if (!confirmed) return;
-    await runAction("Reboot", (c) => c.reboot());
+  // Live view: re-read everything every POLL_INTERVAL_MS while mounted,
+  // skipping a tick while the previous load is still in flight. A ref holds
+  // the latest closure so the interval is created exactly once per mount.
+  const pollRef = useRef(() => {});
+  pollRef.current = () => {
+    if (isLoading) return;
+    revalidate();
+    revalidateWatchdog();
+    revalidateLock();
+  };
+  useEffect(() => {
+    const id = setInterval(() => pollRef.current(), POLL_INTERVAL_MS);
+    return () => clearInterval(id);
+  }, []);
+
+  // Runs once per mount, and only against a FRESH, successful status: a
+  // cached "Locked" status from an earlier open must never trigger a PIN
+  // attempt before the real fetch has come back (`isLoading` gates that),
+  // and a failed refresh (`error` set) must never act on stale cached data
+  // either — the SIM/connection state it describes may no longer hold. If
+  // the SIM is locked and a PIN is saved for it, unlock and reconnect
+  // automatically instead of leaving the router dead until someone opens
+  // this command and notices. Resolves the password and the saved PIN first
+  // — only once both check out does the toast appear, so the common
+  // "nothing to auto-unlock" case never flashes one.
+  useEffect(() => {
+    if (!status || isLoading || error || autoUnlockRan.current) return;
+    autoUnlockRan.current = true;
+    if (status.simStatus !== "Locked") return;
+
+    (async () => {
+      if (!(await resolveAutoUnlockPin({ status, pinStore }))) return;
+      const password = await getPassword({ toast: false });
+      if (!password) return;
+
+      const toast = await showToast({
+        style: Toast.Style.Animated,
+        title: "Unlocking SIM with saved PIN…",
+      });
+      const logAuto = (outcome: string, message: string, detail?: string) =>
+        logNetgear({
+          source: "ui",
+          action: "Auto-unlock",
+          outcome,
+          message,
+          detail,
+        });
+      logAuto("start", "");
+      try {
+        await withUiActionLock(
+          {
+            label: "Auto-unlock",
+            onWait: (holder) => {
+              toast.message = waitMessage(holder);
+            },
+          },
+          async () => {
+            const client = await getClient();
+            await client.login(password);
+            const onProgress = (m: string) => {
+              toast.message = m;
+              logAuto("step", m);
+            };
+            const unlocked = await autoUnlockIfPossible({
+              client,
+              pinStore,
+              status: await client.getStatus(),
+              onProgress,
+            });
+            if (!unlocked) {
+              toast.hide();
+              logAuto("ok", "Nothing to unlock");
+              return;
+            }
+            await ensureConnected({ client, onProgress });
+            toast.style = Toast.Style.Success;
+            toast.title = "SIM unlocked";
+            logAuto("ok", "SIM unlocked");
+            revalidate();
+          },
+        );
+      } catch (e) {
+        toast.style = Toast.Style.Failure;
+        toast.title = "Auto-unlock failed";
+        toast.message = describeNetgearError(e);
+        logAuto("failed", toast.message, describeErrorDetail(e));
+      }
+    })();
+  }, [status, isLoading, error, revalidate]);
+
+  async function handleReconnect() {
+    await withAdmin(
+      "Reconnect",
+      async (client, onProgress) => {
+        await reconnectFlow({ client, onProgress });
+        revalidate();
+      },
+      { successTitle: "Reconnected", selfHeal: true },
+    );
   }
 
-  async function reconnect() {
-    await runAction("Reconnect", async (c) => {
-      await c.disconnect();
-      await new Promise((resolve) => setTimeout(resolve, 3000));
-      await c.connect();
+  async function handleRestartAndReconnect() {
+    const confirmed = await confirmAlert({
+      title: "Restart and reconnect the router?",
+      message:
+        "The mobile connection drops for a few minutes while it restarts.",
+      primaryAction: { title: "Restart", style: Alert.ActionStyle.Destructive },
     });
+    if (!confirmed) return;
+    // Send-and-detach: Tinycast kills the view's JS when it closes, so a
+    // multi-minute in-view flow would die with it. The reboot marker hands
+    // the recovery (rejoin Wi-Fi, unlock, connect) to the watchdog, and the
+    // live view shows a banner from it. withAdmin has already captured the
+    // router's Wi-Fi credentials on login, and the lock is released before
+    // the success toast.
+    await withAdmin(
+      "Restart & Reconnect",
+      async (client, onProgress) => {
+        // A Locked SIM hides its ICCID once the router is down.
+        const status = await client.getStatus();
+        const iccid = status.iccid || (await pinStore.getLastIccid()) || "";
+        onProgress("Rebooting router…");
+        await client.reboot();
+        await recordReboot({ at: Date.now(), source: "ui", iccid });
+        revalidateWatchdog();
+        revalidate();
+      },
+      {
+        successTitle: "Router restarting — reconnects automatically (~2 min)",
+        selfHeal: true,
+      },
+    );
   }
+
+  async function handleRejoinWifi() {
+    const toast = await showToast({
+      style: Toast.Style.Animated,
+      title: "Rejoining Wi-Fi…",
+    });
+    const logRejoin = (outcome: string, message: string, detail?: string) =>
+      logNetgear({
+        source: "ui",
+        action: "Rejoin Wi-Fi",
+        outcome,
+        message,
+        detail,
+      });
+    logRejoin("start", "");
+    try {
+      await withUiActionLock(
+        {
+          label: "Rejoin Wi-Fi",
+          onWait: (holder) => {
+            toast.message = waitMessage(holder);
+          },
+        },
+        async () => {
+          const client = await getClient();
+          await ensureRouterReachable({
+            client,
+            wifi: wifiRejoiner,
+            credsStore: wifiCredsStore,
+            onProgress: (m) => {
+              toast.message = m;
+              logRejoin("step", m);
+            },
+          });
+        },
+      );
+      toast.style = Toast.Style.Success;
+      toast.title = "Router reachable";
+      logRejoin("ok", toast.title);
+      revalidate();
+    } catch (e) {
+      toast.style = Toast.Style.Failure;
+      toast.title = "Rejoin failed";
+      toast.message = describeNetgearError(e);
+      logRejoin("failed", toast.message, describeErrorDetail(e));
+    }
+  }
+
+  // Roaming is meant to stay on; the watchdog re-enables it within a minute,
+  // this is the same write without waiting for the next tick.
+  async function handleEnableRoaming() {
+    await withAdmin(
+      "Enable Data Roaming",
+      async (client) => {
+        await client.setRoaming(true);
+        revalidate();
+      },
+      { successTitle: "Data roaming enabled" },
+    );
+  }
+
+  async function handleDisableSimPinLock() {
+    const confirmed = await confirmAlert({
+      title: "Disable SIM PIN lock?",
+      message: "The SIM will no longer require a PIN after a power cycle.",
+      primaryAction: { title: "Disable", style: Alert.ActionStyle.Destructive },
+    });
+    if (!confirmed) return;
+    push(<SimPinLockForm enable={false} onDone={revalidate} />);
+  }
+
+  // Enter PIN and Unblock PUK self-heal (withAdmin's `selfHeal: true`, see
+  // sim-forms.tsx), so they stay primary regardless of reachability. With
+  // neither SIM state, "Rejoin Router Wi-Fi" takes over as primary while
+  // unreachable — Reconnect (also self-healing) stays one tap away in the
+  // Connection section below either way.
+  const restartIsPrimary = !!status && !unreachable && noService(status);
+
+  function primaryAction(current: RouterStatus) {
+    if (current.simStatus === "Locked") {
+      return (
+        <Action
+          // eslint-disable-next-line @raycast/prefer-title-case
+          title="Enter SIM PIN"
+          icon={Icon.Lock}
+          onAction={() => push(<EnterPinForm onDone={revalidate} />)}
+        />
+      );
+    }
+    if (current.simStatus === "Blocked") {
+      return (
+        <Action
+          // eslint-disable-next-line @raycast/prefer-title-case
+          title="Unblock SIM with PUK"
+          icon={Icon.LockUnlocked}
+          onAction={() => push(<UnblockPukForm onDone={revalidate} />)}
+        />
+      );
+    }
+    if (unreachable) {
+      return (
+        <Action
+          // eslint-disable-next-line @raycast/prefer-title-case
+          title="Rejoin Router Wi-Fi"
+          icon={Icon.Wifi}
+          onAction={handleRejoinWifi}
+        />
+      );
+    }
+    // Without mobile network Reconnect fails at once — a restart is what
+    // usually clears a router camped on a bad cell (2026-10-07).
+    if (restartIsPrimary) {
+      return (
+        <Action
+          // eslint-disable-next-line @raycast/prefer-title-case
+          title="Restart & Reconnect"
+          icon={Icon.Power}
+          style={Action.Style.Destructive}
+          onAction={handleRestartAndReconnect}
+        />
+      );
+    }
+    return (
+      <Action title="Reconnect" icon={Icon.Repeat} onAction={handleReconnect} />
+    );
+  }
+
+  const markdown = useMemo(() => {
+    if (!status) {
+      const restart = rebootBanner({
+        marker: watchdog?.state.reboot,
+        status,
+        internet,
+        fetchedAt,
+        error,
+      });
+      if (restart?.restarting) {
+        return `# Router restarting…\n\n${restart.markdown}`;
+      }
+      return error
+        ? `# ${offlineLabel(watchdog)}\n\n_No status yet — make sure this Mac is on the router's Wi-Fi, then Rejoin or Refresh._`
+        : "Loading…";
+    }
+    const restart = rebootBanner({
+      marker: watchdog?.state.reboot,
+      status,
+      internet,
+      fetchedAt,
+      error,
+    });
+    // While restarting, being unreachable is expected — not the scary banner.
+    const banner = restart?.restarting
+      ? null
+      : freshnessBanner({
+          fetchedAt,
+          error,
+          offlineLabel: offlineLabel(watchdog),
+        });
+    const base = statusMarkdown(status, hasSavedPin ?? false, watchdog, {
+      internet,
+      lockHolder,
+      stale: !!error,
+      watchdogInView: true,
+    });
+    const updating = updatingLine({
+      fetchedAt,
+      isLoading:
+        isLoading &&
+        fetchedAt !== undefined &&
+        Date.now() - fetchedAt > UPDATING_LINE_AFTER_MS,
+    });
+    return [restart?.markdown, banner, base, updating]
+      .filter(Boolean)
+      .join("\n\n");
+  }, [
+    status,
+    internet,
+    hasSavedPin,
+    watchdog,
+    lockHolder,
+    isLoading,
+    error,
+    fetchedAt,
+  ]);
 
   return (
     <Detail
       isLoading={isLoading}
-      markdown={status ? statusMarkdown(status) : "Loading…"}
-      actions={
-        <ActionPanel>
-          <ActionPanel.Section>
-            <Action
-              title="Refresh"
-              icon={Icon.ArrowClockwise}
-              onAction={revalidate}
-            />
-            {status && status.simStatus !== "Ready" && (
-              <Action
-                title="Enter Sim Pin"
-                icon={Icon.Lock}
-                onAction={() => push(<EnterPinForm onDone={revalidate} />)}
-              />
-            )}
-            {status && (
-              <Action
-                title="Connected Devices"
-                icon={Icon.Devices}
-                onAction={() => push(<ConnectedDevices status={status} />)}
-              />
-            )}
-            {status && (
-              <Action
-                title="Sms"
-                icon={Icon.SpeechBubble}
-                onAction={() => push(<SmsInbox status={status} />)}
-              />
-            )}
-          </ActionPanel.Section>
-          <ActionPanel.Section title="Connection">
-            <Action title="Reconnect" icon={Icon.Repeat} onAction={reconnect} />
-            <Action
-              title="Connect"
-              icon={Icon.Play}
-              onAction={() => runAction("Connect", (c) => c.connect())}
-            />
-            <Action
-              title="Disconnect"
-              icon={Icon.Stop}
-              onAction={() => runAction("Disconnect", (c) => c.disconnect())}
-            />
-          </ActionPanel.Section>
-          <ActionPanel.Section>
-            <Action.OpenInBrowser
-              title="Open Web Ui"
-              url={prefs().netgearHost || DEFAULT_HOST}
-            />
-            <Action
-              title="Run Speed Test"
-              icon={Icon.Gauge}
-              onAction={() =>
-                launchCommand({
-                  name: "speed-test",
-                  type: LaunchType.UserInitiated,
-                })
-              }
-            />
-            <Action
-              title="Open Extension Preferences"
-              icon={Icon.Gear}
-              onAction={() => openExtensionPreferences()}
-            />
-          </ActionPanel.Section>
-          <ActionPanel.Section>
-            <Action
-              title="Reboot"
-              icon={Icon.Power}
-              style={Action.Style.Destructive}
-              onAction={confirmReboot}
-            />
-          </ActionPanel.Section>
-        </ActionPanel>
-      }
-    />
-  );
-}
-
-function EnterPinForm({ onDone }: { onDone: () => void }) {
-  const { pop } = useNavigation();
-
-  async function handleSubmit(values: { pin: string }) {
-    const password = await requirePasswordOrToast();
-    if (!password) return;
-    const toast = await showToast({
-      style: Toast.Style.Animated,
-      title: "Entering PIN…",
-    });
-    try {
-      const client = await getClient();
-      await client.login(password);
-      await client.enterSimPin(values.pin);
-      toast.style = Toast.Style.Success;
-      toast.title = "PIN accepted";
-      onDone();
-      pop();
-    } catch (e) {
-      toast.style = Toast.Style.Failure;
-      toast.title = "PIN rejected";
-      toast.message = String(e);
-    }
-  }
-
-  return (
-    <Form
-      navigationTitle="Enter SIM PIN"
-      actions={
-        <ActionPanel>
-          <Action.SubmitForm title="Submit" onSubmit={handleSubmit} />
-        </ActionPanel>
-      }
-    >
-      <Form.PasswordField
-        id="pin"
-        title="SIM PIN"
-        placeholder="4-8 digits"
-        autoFocus
-      />
-      <Form.Description text="Never persisted — sent once to unlock the SIM." />
-    </Form>
-  );
-}
-
-function connectedDevicesMarkdown(status: RouterStatus): string {
-  const lines = ["# Connected Devices", ""];
-  if (status.connectedDevices.length === 0) {
-    lines.push(
-      "_No devices reported — the router's model.json had no client list._",
-    );
-    return lines.join("\n");
-  }
-  lines.push(
-    "| Name | IP | Media | MAC |",
-    "|-|-|-|-|",
-    ...status.connectedDevices.map(
-      (d) => `| ${d.name || "—"} | ${d.ip} | ${d.media} | ${d.mac} |`,
-    ),
-  );
-  return lines.join("\n");
-}
-
-function ConnectedDevices({ status }: { status: RouterStatus }) {
-  return (
-    <Detail
-      navigationTitle="Connected Devices"
-      markdown={connectedDevicesMarkdown(status)}
-    />
-  );
-}
-
-// Read-only: model.json only ever exposes an unread count, never message
-// bodies — no endpoint for the message list was found while exploring the
-// live device (see docs/netgear-m2.md § Unconfirmed). Full SMS reading
-// stays in the router's own web UI.
-function SmsInbox({ status }: { status: RouterStatus }) {
-  const host = prefs().netgearHost || DEFAULT_HOST;
-  const summary = status.smsReady
-    ? status.smsUnread > 0
-      ? `**${status.smsUnread} unread message${status.smsUnread === 1 ? "" : "s"}**`
-      : "No unread messages"
-    : "SMS not ready";
-  const markdown = [
-    "# SMS",
-    "",
-    summary,
-    "",
-    "Message bodies aren't exposed by `model.json` — open the router's own web UI to read them.",
-  ].join("\n");
-
-  return (
-    <Detail
-      navigationTitle="SMS"
       markdown={markdown}
       actions={
         <ActionPanel>
-          <Action.OpenInBrowser title="Open Web Ui" url={host} />
+          <ActionPanel.Section>
+            {status ? (
+              primaryAction(status)
+            ) : (
+              <Action
+                // eslint-disable-next-line @raycast/prefer-title-case
+                title="Rejoin Router Wi-Fi"
+                icon={Icon.Wifi}
+                onAction={handleRejoinWifi}
+              />
+            )}
+            <Action
+              title="Refresh"
+              icon={Icon.ArrowClockwise}
+              shortcut={{ modifiers: ["cmd"], key: "r" }}
+              onAction={revalidate}
+            />
+          </ActionPanel.Section>
+          {status && (
+            <ActionPanel.Section title="Connection">
+              {(status.simStatus === "Locked" ||
+                status.simStatus === "Blocked") && (
+                <Action
+                  title="Reconnect"
+                  icon={Icon.Repeat}
+                  onAction={handleReconnect}
+                />
+              )}
+              {unreachable && (
+                <Action
+                  // eslint-disable-next-line @raycast/prefer-title-case
+                  title="Rejoin Router Wi-Fi"
+                  icon={Icon.Wifi}
+                  onAction={handleRejoinWifi}
+                />
+              )}
+              {!restartIsPrimary && (
+                <Action
+                  title="Restart & Reconnect"
+                  icon={Icon.Power}
+                  style={Action.Style.Destructive}
+                  onAction={handleRestartAndReconnect}
+                />
+              )}
+            </ActionPanel.Section>
+          )}
+          {status && !unreachable && status.userRole === "Admin" && (
+            <ActionPanel.Section title="SIM & APN">
+              {hasSavedPin && (
+                <Action
+                  // eslint-disable-next-line @raycast/prefer-title-case
+                  title="Forget Saved PIN"
+                  icon={Icon.Trash}
+                  onAction={async () => {
+                    await pinStore.delete(status.iccid);
+                    await showToast({
+                      style: Toast.Style.Success,
+                      title: "Saved PIN forgotten",
+                    });
+                    revalidateSavedPin();
+                  }}
+                />
+              )}
+              <Action
+                // eslint-disable-next-line @raycast/prefer-title-case
+                title="Change SIM PIN"
+                icon={Icon.Key}
+                onAction={() =>
+                  push(
+                    <ChangePinForm
+                      iccid={status.iccid}
+                      onDone={revalidateSavedPin}
+                    />,
+                  )
+                }
+              />
+              {status.simPinMode === "Enabled" ? (
+                <Action
+                  // eslint-disable-next-line @raycast/prefer-title-case
+                  title="Disable SIM PIN Lock"
+                  icon={Icon.LockUnlocked}
+                  style={Action.Style.Destructive}
+                  onAction={handleDisableSimPinLock}
+                />
+              ) : (
+                <Action
+                  // eslint-disable-next-line @raycast/prefer-title-case
+                  title="Enable SIM PIN Lock"
+                  icon={Icon.Lock}
+                  onAction={() =>
+                    push(<SimPinLockForm enable={true} onDone={revalidate} />)
+                  }
+                />
+              )}
+              <Action
+                // eslint-disable-next-line @raycast/prefer-title-case
+                title="APN Profiles"
+                icon={Icon.CreditCard}
+                onAction={() =>
+                  push(<ApnProfiles status={status} onDone={revalidate} />)
+                }
+              />
+              {!status.roamingAllowed && (
+                <Action
+                  // eslint-disable-next-line @raycast/prefer-title-case
+                  title="Enable Data Roaming"
+                  icon={Icon.Globe}
+                  onAction={handleEnableRoaming}
+                />
+              )}
+            </ActionPanel.Section>
+          )}
+          {status && (
+            <ActionPanel.Section title="View">
+              {!unreachable &&
+                status.userRole === "Admin" &&
+                status.smsReady && (
+                  <Action
+                    // eslint-disable-next-line @raycast/prefer-title-case
+                    title="SMS"
+                    icon={Icon.SpeechBubble}
+                    onAction={() =>
+                      push(<SmsInbox status={status} onDone={revalidate} />)
+                    }
+                  />
+                )}
+              {!unreachable && status.userRole === "Admin" && (
+                <Action
+                  title="Connected Devices"
+                  icon={Icon.Devices}
+                  shortcut={{ modifiers: ["cmd"], key: "d" }}
+                  onAction={() => push(<ConnectedDevices status={status} />)}
+                />
+              )}
+              <Action
+                title="Signal Meter"
+                icon={Icon.LevelMeter}
+                shortcut={{ modifiers: ["cmd", "shift"], key: "s" }}
+                onAction={() => push(<SignalMeter />)}
+              />
+              {watchdog && (
+                <Action
+                  title="Watchdog Log"
+                  icon={Icon.List}
+                  shortcut={{ modifiers: ["cmd"], key: "l" }}
+                  onAction={() => push(<WatchdogLog storage={watchdog} />)}
+                />
+              )}
+              <Action
+                title="Show Netgear Log"
+                icon={Icon.Document}
+                shortcut={{ modifiers: ["cmd", "shift"], key: "l" }}
+                onAction={() => push(<NetgearLog />)}
+              />
+              {watchdog && (
+                <Action
+                  title={
+                    watchdog.enabled ? "Pause Watchdog" : "Resume Watchdog"
+                  }
+                  icon={watchdog.enabled ? Icon.Pause : Icon.Play}
+                  onAction={() =>
+                    handleToggleWatchdog(watchdog, revalidateWatchdog)
+                  }
+                />
+              )}
+            </ActionPanel.Section>
+          )}
+          <ActionPanel.Section>
+            <Action.OpenInBrowser
+              // eslint-disable-next-line @raycast/prefer-title-case
+              title="Open Web UI"
+              shortcut={{ modifiers: ["cmd"], key: "o" }}
+              url={prefs().netgearHost || DEFAULT_HOST}
+            />
+          </ActionPanel.Section>
         </ActionPanel>
       }
     />

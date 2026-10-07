@@ -30,7 +30,7 @@ export class CurlNetgearHttp implements NetgearHttp {
   postForm(
     url: string,
     fields: Record<string, string>,
-    opts?: { stdinField?: { name: string; value: string } },
+    opts?: { secretFields?: Record<string, string> },
   ): Promise<NetgearHttpResponse> {
     const args = [
       "-s",
@@ -47,14 +47,36 @@ export class CurlNetgearHttp implements NetgearHttp {
     for (const [key, value] of Object.entries(fields)) {
       args.push("--data-urlencode", `${key}=${value}`);
     }
-    // Secrets (the admin password) never go on argv, where `ps` could see
-    // them — curl reads that one field's value from stdin instead.
-    if (opts?.stdinField) {
-      args.push("--data-urlencode", `${opts.stdinField.name}@-`);
+    // Secrets (the admin password, PINs, PUKs, APN passwords) never go on
+    // argv, where `ps` could see them — they're passed as a curl config
+    // read from stdin (`-K -`) instead, one `data-urlencode` line per field.
+    const secretEntries = Object.entries(opts?.secretFields ?? {});
+    let configStdin: string | undefined;
+    if (secretEntries.length > 0) {
+      configStdin =
+        secretEntries
+          .map(
+            ([name, value]) =>
+              `data-urlencode = "${escapeCurlConfigValue(name, value)}"`,
+          )
+          .join("\n") + "\n";
+      args.push("-K", "-");
     }
     args.push(url);
-    return runCurl(args, opts?.stdinField?.value);
+    return runCurl(args, configStdin);
   }
+}
+
+// curl config-file syntax: a value is a double-quoted string where `\` and
+// `"` must be backslash-escaped. Newlines would break the one-line-per-field
+// format, so they're rejected outright rather than silently mangled.
+function escapeCurlConfigValue(name: string, value: string): string {
+  if (/[\r\n]/.test(value)) {
+    throw new Error(
+      `secretFields value for "${name}" must not contain newlines`,
+    );
+  }
+  return `${name}=${value}`.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
 }
 
 function runCurl(args: string[], stdin?: string): Promise<NetgearHttpResponse> {
