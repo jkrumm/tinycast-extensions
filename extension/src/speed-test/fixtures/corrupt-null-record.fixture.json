@@ -1,0 +1,10 @@
+{
+  "timestamp": 1758963600000,
+  "full": true,
+  "dlMbps": null,
+  "ulMbps": null,
+  "latencyMs": null,
+  "responsiveness": null,
+  "dataUsedMB": null,
+  "interfaceName": "en0"
+}

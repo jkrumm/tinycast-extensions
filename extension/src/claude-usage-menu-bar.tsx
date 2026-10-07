@@ -5,20 +5,56 @@ import {
   launchCommand,
   LaunchType,
 } from "@raycast/api";
-import { usePromise } from "@raycast/utils";
+import { useCachedPromise } from "@raycast/utils";
+import { useMemo, useRef } from "react";
 import { getQuota } from "./usage/quota";
-import { getTimeseries, aggregateSpend } from "./usage/spend";
+import {
+  getTimeseries,
+  aggregateSpend,
+  topLanesWithOther,
+} from "./usage/spend";
 import {
   formatUtilization,
   formatRelativeReset,
   formatSpend,
 } from "./usage/format";
-import { isQuotaError, UsageQuota } from "./usage/types";
+import { isQuotaError, UsageQuota, SpendAggregate } from "./usage/types";
 import { menuBarRing, toDataUri } from "./lib/svg";
 
-async function loadUsage() {
-  const [quota, timeseries] = await Promise.all([getQuota(), getTimeseries()]);
-  return { quota, spend: aggregateSpend(timeseries) };
+// Matches the detail view's cap (5 lanes + "other") — argo tracks ~60 lanes,
+// almost all zero on a given day.
+const SPEND_LANE_LIMIT = 5;
+
+// Same split as claude-usage.tsx: getQuota() never rejects, getTimeseries()
+// can — spend keeps its last-good value + a spendError flag so a failing
+// spend fetch doesn't blank out a working quota reading.
+function useUsage() {
+  const lastSpendRef = useRef<SpendAggregate | undefined>(undefined);
+
+  return useCachedPromise(
+    async () => {
+      const [quotaResult, spendResult] = await Promise.allSettled([
+        getQuota(),
+        getTimeseries(),
+      ]);
+      const quota: UsageQuota =
+        quotaResult.status === "fulfilled"
+          ? quotaResult.value
+          : { error: "Failed to load quota", fetched_at: 0 };
+
+      if (spendResult.status === "fulfilled") {
+        lastSpendRef.current = aggregateSpend(spendResult.value);
+        return { quota, spend: lastSpendRef.current, spendError: null };
+      }
+      return {
+        quota,
+        spend: lastSpendRef.current ?? null,
+        spendError: spendResult.reason,
+      };
+    },
+    [],
+    { keepPreviousData: true },
+  );
 }
 
 // A live ring reflecting the 5h quota — native menu-bar rendering (beta)
@@ -39,21 +75,28 @@ function dotColor(percent: number | null): Color {
 }
 
 export default function ClaudeUsageMenuBar() {
-  const { data, isLoading, revalidate } = usePromise(loadUsage);
+  const { data, isLoading, revalidate } = useUsage();
+
+  const icon = useMemo(
+    () => (data ? menuBarIcon(data.quota) : Icon.LineChart),
+    [data],
+  );
+
+  const offline = !!(data && (isQuotaError(data.quota) || data.spendError));
 
   return (
     <MenuBarExtra
-      icon={data ? menuBarIcon(data.quota) : Icon.LineChart}
+      icon={icon}
       // Compact: just the 5h number — native rendering costs real menu-bar
       // space now, and the ring icon already signals "roughly how full".
       // The dropdown below still spells out every quota in full.
       title={
         data && !isQuotaError(data.quota)
-          ? formatUtilization(data.quota.five_hour)
+          ? `${formatUtilization(data.quota.five_hour)}${offline ? " (offline)" : ""}`
           : undefined
       }
       isLoading={isLoading}
-      tooltip="Claude Usage"
+      tooltip={`Claude Usage${offline ? " (offline)" : ""}`}
     >
       {data && !isQuotaError(data.quota) && (
         <MenuBarExtra.Section title="Quota">
@@ -87,17 +130,25 @@ export default function ClaudeUsageMenuBar() {
         </MenuBarExtra.Section>
       )}
 
-      {data && (
+      {data && data.spend && (
         <MenuBarExtra.Section title="Spend (today)">
-          {Object.entries(data.spend.today).map(([lane, amount]) => (
-            <MenuBarExtra.Item
-              key={lane}
-              title={`${lane}: ${formatSpend(amount)}`}
-            />
-          ))}
+          {topLanesWithOther(data.spend.today, SPEND_LANE_LIMIT).map(
+            ({ label, value }) => (
+              <MenuBarExtra.Item
+                key={label}
+                title={`${label}: ${formatSpend(value)}`}
+              />
+            ),
+          )}
           <MenuBarExtra.Item
             title={`7d total: ${formatSpend(data.spend.sevenDayTotal)}`}
           />
+        </MenuBarExtra.Section>
+      )}
+
+      {data && !data.spend && (
+        <MenuBarExtra.Section>
+          <MenuBarExtra.Item title="Spend unavailable — argo request failed" />
         </MenuBarExtra.Section>
       )}
 

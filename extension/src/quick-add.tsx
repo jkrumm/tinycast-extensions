@@ -7,32 +7,28 @@ import {
   Toast,
   popToRoot,
 } from "@raycast/api";
-import { useFetch } from "@raycast/utils";
+import { useCachedPromise } from "@raycast/utils";
 import { useState, useMemo } from "react";
-import { prefs, useAuthHeaders } from "./lib/argo";
+import { prefs } from "./lib/argo";
 import { client } from "./ticktick/client";
-import { TickTickProject } from "./ticktick/types";
 import { parse } from "./ticktick/parse";
 import { formatDue, priorityLabel } from "./ticktick/format";
+import { stamped } from "./lib/freshness";
 
 export default function QuickAdd() {
   const [input, setInput] = useState("");
   const [note, setNote] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const base = prefs().baseUrl.replace(/\/$/, "");
-  const { headers, isLoading: authLoading, ready } = useAuthHeaders();
-
-  const { data: projectsRaw, isLoading: fetchLoading } = useFetch<{
-    data: TickTickProject[];
-  }>(`${base}/ticktick/projects`, {
-    headers,
-    execute: ready,
+  const {
+    data: projectsData,
+    isLoading,
+    error: projectsError,
+  } = useCachedPromise(() => stamped(client.getProjects), [], {
     keepPreviousData: true,
+    onError: () => {},
   });
-  const isLoading = authLoading || fetchLoading;
-
-  const projects = projectsRaw?.data ?? [];
+  const projects = projectsData?.data ?? [];
   const defaultProjectId = prefs().defaultProjectId ?? projects[0]?.id ?? "";
 
   const parsed = useMemo(() => parse(input, projects), [input, projects]);
@@ -81,7 +77,7 @@ export default function QuickAdd() {
           parsed.priority > 0 ? (parsed.priority as 1 | 3 | 5) : undefined,
         content: note.trim() || undefined,
       });
-      await showHUD(`Hinzugefuegt: ${title}`);
+      await showHUD(`Hinzugefügt: ${title}`);
       await popToRoot();
     } catch (e) {
       await showToast({
@@ -115,15 +111,14 @@ export default function QuickAdd() {
 
       <Form.Separator />
 
-      <Form.Description title="Projekt" text={resolvedProject?.name ?? "—"} />
+      <Form.Description
+        title="Projekt"
+        text={`${resolvedProject?.name ?? "—"}${projectsError ? " (offline)" : ""}`}
+      />
       <Form.Description title="Datum" text={dateLabel ?? "—"} />
       <Form.Description
         title="Priorität"
         text={parsed.priority > 0 ? priorityLabel(parsed.priority) : "—"}
-      />
-      <Form.Description
-        title="Titel"
-        text={parsed.title || (input ? input : "—")}
       />
 
       <Form.Separator />

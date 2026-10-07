@@ -42,7 +42,8 @@ export async function getQuota(): Promise<UsageQuota> {
   }
   if (!quota) {
     return {
-      error: "No usage data on disk — check claude.ai login",
+      error:
+        "No Claude quota data — run `claude` once on this Mac to log in, then refresh.",
       fetched_at: 0,
     };
   }

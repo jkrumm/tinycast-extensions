@@ -6,18 +6,20 @@ import {
   showToast,
   Toast,
 } from "@raycast/api";
-import { useFetch } from "@raycast/utils";
-import { useMemo, useState } from "react";
-import { prefs, useAuthHeaders } from "./lib/argo";
+import { useCachedPromise } from "@raycast/utils";
+import { useMemo } from "react";
 import { client } from "./ticktick/client";
-import { TickTickProject, TickTickTask } from "./ticktick/types";
+import { loadOpenTasks } from "./ticktick/load";
+import { TickTickTask } from "./ticktick/types";
 import {
   formatDue,
   isOverdue,
   isDueToday,
   priorityIcon,
   daysFromNow,
+  taskDate,
 } from "./ticktick/format";
+import { stamped } from "./lib/freshness";
 
 const TICKTICK_URL = "https://ticktick.com/webapp";
 
@@ -29,38 +31,38 @@ function taskMenuIcon(task: TickTickTask): { source: Icon; tintColor: Color } {
   return priorityIcon(task.priority);
 }
 
+function TaskItem({
+  task,
+  onComplete,
+}: {
+  task: TickTickTask;
+  onComplete: (task: TickTickTask) => void;
+}) {
+  const due = formatDue(task.dueDate);
+  return (
+    <MenuBarExtra.Item
+      icon={taskMenuIcon(task)}
+      title={due ? `${task.title}  ${due}` : task.title}
+      onAction={() => open(`${TICKTICK_URL}/#q/today/tasks/${task.id}`)}
+      alternate={
+        <MenuBarExtra.Item
+          icon={{ source: Icon.Checkmark, tintColor: Color.Green }}
+          title={`Done: ${task.title}`}
+          onAction={() => onComplete(task)}
+        />
+      }
+    />
+  );
+}
+
 export default function MenuBar() {
-  const [allTasks, setAllTasks] = useState<TickTickTask[]>([]);
-  const [isFetchingTasks, setIsFetchingTasks] = useState(false);
-
-  const base = prefs().baseUrl.replace(/\/$/, "");
-  const { headers, isLoading: authLoading, ready } = useAuthHeaders();
-
-  const { isLoading: projectsLoading, revalidate } = useFetch<{
-    data: TickTickProject[];
-  }>(`${base}/ticktick/projects`, {
-    headers,
-    execute: ready,
-    keepPreviousData: true,
-    onData: (raw) => {
-      const projects = raw?.data ?? [];
-      if (projects.length === 0) return;
-      setIsFetchingTasks(true);
-      Promise.all(projects.map((p) => client.getProjectData(p.id)))
-        .then((results) => {
-          const tasks = results
-            .flatMap((r) => r.tasks)
-            .filter((t) => t.status === 0);
-          setAllTasks(tasks);
-        })
-        .catch(() => {
-          /* silent — menu bar shouldn't crash */
-        })
-        .finally(() => setIsFetchingTasks(false));
-    },
-  });
-
-  const isLoading = authLoading || projectsLoading || isFetchingTasks;
+  const { data, isLoading, error, revalidate } = useCachedPromise(
+    () => stamped(loadOpenTasks),
+    [],
+    { keepPreviousData: true, onError: () => {} },
+  );
+  const allTasks = data?.data.tasks ?? [];
+  const offline = !!error;
 
   const overdue = useMemo(
     () => allTasks.filter((t) => isOverdue(t.dueDate)),
@@ -70,16 +72,14 @@ export default function MenuBar() {
     () => allTasks.filter((t) => isDueToday(t.dueDate)),
     [allTasks],
   );
-  const end = daysFromNow(3);
-  const upcoming = useMemo(
-    () =>
-      allTasks.filter((t) => {
-        if (!t.dueDate || isOverdue(t.dueDate) || isDueToday(t.dueDate))
-          return false;
-        return t.dueDate.slice(0, 10) <= end;
-      }),
-    [allTasks], // end intentionally omitted — recalculated on allTasks change
-  );
+  const upcoming = useMemo(() => {
+    const end = daysFromNow(3);
+    return allTasks.filter((t) => {
+      if (!t.dueDate || isOverdue(t.dueDate) || isDueToday(t.dueDate))
+        return false;
+      return taskDate(t.dueDate) <= end;
+    });
+  }, [allTasks]);
 
   const urgentCount = overdue.length + dueToday.length;
   const menuIcon =
@@ -94,57 +94,43 @@ export default function MenuBar() {
     } catch (e) {
       await showToast({
         style: Toast.Style.Failure,
-        title: "Failed",
+        title: "Fehler",
         message: String(e),
       });
     }
   }
 
-  function TaskItem({ task }: { task: TickTickTask }) {
-    const due = formatDue(task.dueDate);
-    return (
-      <MenuBarExtra.Item
-        icon={taskMenuIcon(task)}
-        title={due ? `${task.title}  ${due}` : task.title}
-        onAction={() => open(`${TICKTICK_URL}/#q/today/tasks/${task.id}`)}
-        alternate={
-          <MenuBarExtra.Item
-            icon={{ source: Icon.Checkmark, tintColor: Color.Green }}
-            title={`Done: ${task.title}`}
-            onAction={() => markComplete(task)}
-          />
-        }
-      />
-    );
-  }
-
   return (
     <MenuBarExtra
       icon={menuIcon}
-      title={urgentCount > 0 ? String(urgentCount) : undefined}
-      tooltip="TickTick Tasks"
+      title={
+        urgentCount > 0
+          ? `${urgentCount}${offline ? " (offline)" : ""}`
+          : undefined
+      }
+      tooltip={`TickTick Tasks${offline ? " (offline)" : ""}`}
       isLoading={isLoading}
     >
       {overdue.length > 0 && (
-        <MenuBarExtra.Section title={`Overdue (${overdue.length})`}>
+        <MenuBarExtra.Section title={`Überfällig (${overdue.length})`}>
           {overdue.map((t) => (
-            <TaskItem key={t.id} task={t} />
+            <TaskItem key={t.id} task={t} onComplete={markComplete} />
           ))}
         </MenuBarExtra.Section>
       )}
 
       {dueToday.length > 0 && (
-        <MenuBarExtra.Section title="Today">
+        <MenuBarExtra.Section title="Heute">
           {dueToday.map((t) => (
-            <TaskItem key={t.id} task={t} />
+            <TaskItem key={t.id} task={t} onComplete={markComplete} />
           ))}
         </MenuBarExtra.Section>
       )}
 
       {upcoming.length > 0 && (
-        <MenuBarExtra.Section title="Coming Up">
+        <MenuBarExtra.Section title="Bald">
           {upcoming.map((t) => (
-            <TaskItem key={t.id} task={t} />
+            <TaskItem key={t.id} task={t} onComplete={markComplete} />
           ))}
         </MenuBarExtra.Section>
       )}

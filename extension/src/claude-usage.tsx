@@ -1,93 +1,84 @@
-import {
-  Detail,
-  ActionPanel,
-  Action,
-  Icon,
-  openExtensionPreferences,
-} from "@raycast/api";
-import { usePromise } from "@raycast/utils";
+import { Detail, ActionPanel, Action, Icon } from "@raycast/api";
+import { useCachedPromise } from "@raycast/utils";
+import { useMemo, useRef } from "react";
 import { getQuota, isStaleHint } from "./usage/quota";
-import {
-  getTimeseries,
-  getSummary,
-  aggregateSpend,
-  topLanesWithOther,
-} from "./usage/spend";
-import { formatRelativeReset, formatSpend } from "./usage/format";
-import { isQuotaError, UsageQuotaOk } from "./usage/types";
-import { ringGaugeRow, barChart, sparkline, toDataUri } from "./lib/svg";
+import { getTimeseries, aggregateSpend } from "./usage/spend";
+import { isQuotaError, UsageQuota, SpendAggregate } from "./usage/types";
+import { quotaHero, spendHeroes, totalsCards } from "./usage/heroes";
+import { freshnessBanner, updatingLine } from "./lib/freshness";
 
 const ARGO_DASHBOARD_URL = "https://argo.jkrumm.com";
-// Keeps the bar chart to 6 rows max (5 lanes + "other") — argo tracks ~60
-// lanes, almost all zero on a given day; a handful of big rows reads better
-// than a dense list of small ones.
-const SPEND_LANE_LIMIT = 5;
-
-async function loadUsage() {
-  const [quota, timeseries, summary] = await Promise.all([
-    getQuota(),
-    getTimeseries(),
-    getSummary(),
-  ]);
-  return { quota, spend: aggregateSpend(timeseries), summary };
+interface UsageData {
+  quota: UsageQuota;
+  spend: SpendAggregate | null;
+  spendFetchedAt: number | undefined;
+  spendError: unknown;
 }
 
-function heroImages(
-  quota: UsageQuotaOk,
-  spend: Awaited<ReturnType<typeof loadUsage>>["spend"],
-): string[] {
-  const rings = ringGaugeRow([
-    {
-      percent: quota.five_hour.utilization ?? 0,
-      label: "5h",
-      sublabel: `resets in ${formatRelativeReset(quota.five_hour.resets_at_epoch)}`,
-    },
-    {
-      percent: quota.seven_day.utilization ?? 0,
-      label: "7d",
-      sublabel: `resets in ${formatRelativeReset(quota.seven_day.resets_at_epoch)}`,
-    },
-    {
-      percent: quota.seven_day_sonnet.utilization ?? 0,
-      label: "7d Sonnet",
-      sublabel: `resets in ${formatRelativeReset(quota.seven_day_sonnet.resets_at_epoch)}`,
-    },
-  ]);
+// getQuota() never rejects (it has its own error shape) and getTimeseries()
+// can, so the two need separate freshness tracking: quota's own
+// `fetched_at`/isStaleHint already covers it ("local"), spend needs its last
+// successful fetch remembered across a failing revalidate — a ref rather
+// than useCachedPromise's own `error`, since this loader deliberately never
+// rejects (a spend failure shouldn't blank out a working quota view).
+function useUsage() {
+  const lastSpendRef = useRef<
+    { spend: SpendAggregate; fetchedAt: number } | undefined
+  >(undefined);
 
-  const lanes = topLanesWithOther(spend.today, SPEND_LANE_LIMIT);
-  const bars = barChart(lanes, { formatValue: (v) => formatSpend(v) });
+  return useCachedPromise(
+    async (): Promise<UsageData> => {
+      const [quotaResult, spendResult] = await Promise.allSettled([
+        getQuota(),
+        getTimeseries(),
+      ]);
+      const quota: UsageQuota =
+        quotaResult.status === "fulfilled"
+          ? quotaResult.value
+          : { error: "Failed to load quota", fetched_at: 0 };
 
-  const spark = sparkline({
-    values: spend.dailyTotals.map((d) => d.total),
-    formatValue: (v) => formatSpend(v),
-  });
-
-  return [toDataUri(rings), toDataUri(bars), toDataUri(spark)];
+      if (spendResult.status === "fulfilled") {
+        const spend = aggregateSpend(spendResult.value);
+        const spendFetchedAt = Date.now();
+        lastSpendRef.current = { spend, fetchedAt: spendFetchedAt };
+        return { quota, spend, spendFetchedAt, spendError: null };
+      }
+      return {
+        quota,
+        spend: lastSpendRef.current?.spend ?? null,
+        spendFetchedAt: lastSpendRef.current?.fetchedAt,
+        spendError: spendResult.reason,
+      };
+    },
+    [],
+    { keepPreviousData: true },
+  );
 }
 
 export default function ClaudeUsage() {
-  const { data, isLoading, revalidate } = usePromise(loadUsage);
+  const { data, isLoading, revalidate } = useUsage();
+
+  const markdown = useMemo(
+    () => renderMarkdown(data, isLoading),
+    [data, isLoading],
+  );
 
   return (
     <Detail
       isLoading={isLoading}
-      markdown={renderMarkdown(data)}
+      markdown={markdown}
       actions={
         <ActionPanel>
           <Action
             title="Refresh"
             icon={Icon.ArrowClockwise}
+            shortcut={{ modifiers: ["cmd"], key: "r" }}
             onAction={revalidate}
           />
           <Action.OpenInBrowser
             title="Open Argo Usage Dashboard"
             url={ARGO_DASHBOARD_URL}
             icon={Icon.LineChart}
-          />
-          <Action
-            title="Open Extension Preferences"
-            icon={Icon.Gear}
-            onAction={openExtensionPreferences}
           />
         </ActionPanel>
       }
@@ -96,45 +87,52 @@ export default function ClaudeUsage() {
 }
 
 function renderMarkdown(
-  data: Awaited<ReturnType<typeof loadUsage>> | undefined,
+  data: UsageData | undefined,
+  isLoading: boolean,
 ): string {
   if (!data) return "Loading…";
-  const { quota, spend, summary } = data;
+  const { quota, spend, spendFetchedAt, spendError } = data;
+  // Stale-while-revalidate: cached data paints instantly, this line is the
+  // only sign a refresh is still in flight — kept last so it never shifts
+  // the hero images above (Tinycast never re-decodes an unchanged data URI).
+  const updating = updatingLine({ fetchedAt: spendFetchedAt, isLoading });
+  const updatingLines = updating ? ["", updating] : [];
 
   if (isQuotaError(quota)) {
-    return [
-      "# Claude Usage",
-      "",
-      `**${quota.error}**`,
-      "",
-      "Run `/login` in a Claude Code session on the mini, then retry.",
-    ].join("\n");
+    return ["# Claude Usage", "", `**${quota.error}**`, ...updatingLines].join(
+      "\n",
+    );
   }
-
-  const [rings, bars, spark] = heroImages(quota, spend);
 
   const lines = ["# Claude Usage", ""];
   if (isStaleHint(quota.fetched_at)) {
     const ageMin = Math.round((Date.now() / 1000 - quota.fetched_at) / 60);
     lines.push(`_Stale — last fetched ${ageMin}m ago._`, "");
   }
-  lines.push(`![Quota](${rings})`, "");
+
+  lines.push(`![Quota](${quotaHero(quota)})`, "");
+
+  const spendBanner = freshnessBanner({
+    fetchedAt: spendFetchedAt,
+    error: spendError,
+    offlineLabel: "Spend server not reachable",
+  });
+
+  if (!spend) {
+    lines.push(spendBanner ?? "_Spend unavailable — argo request failed._", "");
+    return [...lines, ...updatingLines].join("\n");
+  }
+
+  if (spendBanner) lines.push(spendBanner, "");
+
+  // No Detail.Metadata sidebar — the rings carry the quota, the stat cards
+  // today's and the 7-day spend, the charts the breakdown. No table left.
+  const { lanes, days } = spendHeroes(spend);
+  lines.push(`![Spend totals](${totalsCards(spend)})`, "");
   lines.push("## Spend today", "");
-  lines.push(`![Spend by lane](${bars})`, "");
+  lines.push(`![Spend by lane](${lanes})`, "");
   lines.push("## Last 7 days", "");
-  lines.push(`![7-day spend](${spark})`, "");
+  lines.push(`![7-day spend](${days})`);
 
-  // No Detail.Metadata sidebar (the hero images above already carry every
-  // quota/spend number) — a table beats a bullet list for the couple of
-  // fields that don't fit a chart, now that Tinycast beta renders markdown
-  // tables as a real grid.
-  lines.push(
-    "| | |",
-    "|-|-|",
-    `| Today total | ${formatSpend(spend.todayTotal)} |`,
-    `| 7-day total | ${formatSpend(spend.sevenDayTotal)} |`,
-    `| Data freshness | ${isStaleHint(quota.fetched_at) ? "Stale" : `${summary.total} events tracked`} |`,
-  );
-
-  return lines.join("\n");
+  return [...lines, ...updatingLines].join("\n");
 }

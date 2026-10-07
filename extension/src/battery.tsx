@@ -11,11 +11,17 @@ import {
   Toast,
   useNavigation,
 } from "@raycast/api";
-import { usePromise } from "@raycast/utils";
+import { useCachedPromise } from "@raycast/utils";
+import { useMemo } from "react";
 import { collectBatterySnapshot } from "./battery/collect";
-import { batteryHealthPercent } from "./battery/parse";
+import { metricsImage, panelImage } from "./battery/heroes";
 import { BatterySnapshot } from "./battery/types";
-import { batteryGlyph, thresholdBar, toDataUri } from "./lib/svg";
+import {
+  Stamped,
+  freshnessBanner,
+  stamped,
+  updatingLine,
+} from "./lib/freshness";
 
 const execFileAsync = promisify(execFile);
 const LIMIT_SCRIPT = `${homedir()}/SourceRoot/dotfiles/launcher/battery-limit.sh`;
@@ -29,58 +35,61 @@ async function runLimitScript(cap: number, days?: number): Promise<string> {
   return (stdout || stderr).trim();
 }
 
-function heroImages(snapshot: BatterySnapshot): string[] {
-  const { status, hardware } = snapshot;
-  const glyph = batteryGlyph({
-    percent: status.battery.currentChargePercent,
-    limitPercent: status.configuration.enabled
-      ? status.configuration.upperLimitPercent
-      : undefined,
-    charging: status.battery.state === "charging",
-    wattsLabel: `${status.battery.chargeRateWatts.toFixed(1)} W`,
+// Shared by the quick-limit actions and the "Set Limit…" form — runs the
+// script behind one fixed-title toast, with the script's own output (which
+// already says what happened) as the toast message rather than the title.
+async function applyLimit({
+  cap,
+  days,
+}: {
+  cap: number;
+  days?: number;
+}): Promise<void> {
+  const toast = await showToast({
+    style: Toast.Style.Animated,
+    title: `Setting limit to ${cap}%…`,
   });
-
-  const images = [toDataUri(glyph)];
-  if (hardware) {
-    const health = batteryHealthPercent(hardware);
-    images.push(
-      toDataUri(
-        thresholdBar({
-          label: "Health",
-          percent: health,
-          valueText: `${health}% · ${hardware.cycleCount} cycles`,
-          invert: true,
-        }),
-      ),
-    );
-  }
-  return images;
-}
-
-function stateLabel(state: string): string {
-  switch (state) {
-    case "charging":
-      return "Charging";
-    case "discharging":
-      return "Discharging";
-    default:
-      return state;
+  try {
+    const output = await runLimitScript(cap, days);
+    toast.style = Toast.Style.Success;
+    toast.title = "Limit set";
+    toast.message = output || `${cap}%`;
+  } catch (e) {
+    toast.style = Toast.Style.Failure;
+    toast.title = "Failed to set limit";
+    toast.message = String(e);
+    throw e;
   }
 }
 
-function adapterLabel(status: BatterySnapshot["status"]): string {
-  if (!status.charging.pluggedIn) return "Not connected";
-  return status.charging.useAdapter
-    ? "Connected, charging allowed"
-    : "Connected, charging blocked";
+// The effective charge cap right now — `batt` treats a disabled limit as
+// unrestricted (100%).
+function currentCapPercent(status: BatterySnapshot["status"]): number {
+  return status.configuration.enabled
+    ? status.configuration.upperLimitPercent
+    : 100;
 }
 
-function renderMarkdown(snapshot: BatterySnapshot | undefined): string {
-  if (!snapshot) return "Loading…";
-  const { status, hardware } = snapshot;
-  const [glyph, health] = heroImages(snapshot);
-  const lines = ["# Battery", "", `![Battery](${glyph})`];
-  if (health) lines.push("", `![Health](${health})`);
+function renderMarkdown(
+  data: Stamped<BatterySnapshot> | undefined,
+  error: unknown,
+  isLoading: boolean,
+): string {
+  if (!data) return "Loading…";
+  const snapshot = data.data;
+  const lines = ["# Battery"];
+  const banner = freshnessBanner({
+    fetchedAt: data.fetchedAt,
+    error,
+    offlineLabel: "Battery data unavailable",
+  });
+  if (banner) lines.push("", banner);
+  lines.push("", `![Battery](${panelImage(snapshot)})`);
+
+  // No Detail.Metadata sidebar: the panel carries charge, state, watts, limit,
+  // health and cycles, the metrics row voltage, temperature and adapter —
+  // every number once, so no table.
+  lines.push("", `![Metrics](${metricsImage(snapshot)})`);
   if (snapshot.pauseUntilEpoch) {
     const until = new Date(snapshot.pauseUntilEpoch * 1000);
     lines.push(
@@ -89,52 +98,40 @@ function renderMarkdown(snapshot: BatterySnapshot | undefined): string {
     );
   }
 
-  // No Detail.Metadata sidebar — the glyph + health bar above already carry
-  // charge/limit/health/cycles; a table covers what's left (state, rate,
-  // voltage, adapter, plus the hardware fields when ioreg parsed cleanly).
-  lines.push(
-    "",
-    "| | |",
-    "|-|-|",
-    `| State | ${stateLabel(status.battery.state)} |`,
-    `| Charge rate | ${status.battery.chargeRateWatts.toFixed(1)} W |`,
-    `| Voltage | ${status.battery.voltageVolts.toFixed(2)} V |`,
-    `| Adapter | ${adapterLabel(status)} |`,
-  );
-  if (hardware) {
-    lines.push(
-      `| Temperature | ${hardware.temperatureCelsius.toFixed(1)} °C |`,
-    );
-  }
+  // Kept last so it never shifts the hero images above.
+  const updating = updatingLine({ fetchedAt: data.fetchedAt, isLoading });
+  if (updating) lines.push("", updating);
 
   return lines.join("\n");
 }
 
 export default function Battery() {
-  const { data, isLoading, revalidate } = usePromise(collectBatterySnapshot);
+  const { data, isLoading, error, revalidate } = useCachedPromise(
+    () => stamped(collectBatterySnapshot),
+    [],
+    { keepPreviousData: true, onError: () => {} },
+  );
   const { push } = useNavigation();
 
   async function quickLimit(cap: number) {
-    const toast = await showToast({
-      style: Toast.Style.Animated,
-      title: `Setting limit to ${cap}%…`,
-    });
     try {
-      const output = await runLimitScript(cap);
-      toast.style = Toast.Style.Success;
-      toast.title = output || `Limit set to ${cap}%`;
+      await applyLimit({ cap });
       revalidate();
-    } catch (e) {
-      toast.style = Toast.Style.Failure;
-      toast.title = "Failed to set limit";
-      toast.message = String(e);
+    } catch {
+      // toast already reported the failure
     }
   }
+
+  const currentCap = data ? currentCapPercent(data.data.status) : null;
+  const markdown = useMemo(
+    () => renderMarkdown(data, error, isLoading),
+    [data, error, isLoading],
+  );
 
   return (
     <Detail
       isLoading={isLoading}
-      markdown={renderMarkdown(data)}
+      markdown={markdown}
       actions={
         <ActionPanel>
           <Action
@@ -142,19 +139,24 @@ export default function Battery() {
             icon={Icon.Gauge}
             onAction={() => push(<SetLimitForm onDone={revalidate} />)}
           />
-          <Action
-            title="Limit 80%"
-            icon={Icon.Minus}
-            onAction={() => quickLimit(80)}
-          />
-          <Action
-            title="Charge to 100%"
-            icon={Icon.Plus}
-            onAction={() => quickLimit(100)}
-          />
+          {currentCap !== 80 && (
+            <Action
+              title="Limit 80%"
+              icon={Icon.Minus}
+              onAction={() => quickLimit(80)}
+            />
+          )}
+          {currentCap !== 100 && (
+            <Action
+              title="Charge to 100%"
+              icon={Icon.Plus}
+              onAction={() => quickLimit(100)}
+            />
+          )}
           <Action
             title="Refresh"
             icon={Icon.ArrowClockwise}
+            shortcut={{ modifiers: ["cmd"], key: "r" }}
             onAction={revalidate}
           />
         </ActionPanel>
@@ -176,20 +178,12 @@ function SetLimitForm({ onDone }: { onDone: () => void }) {
       return;
     }
     const days = values.days.trim() ? Number(values.days.trim()) : undefined;
-    const toast = await showToast({
-      style: Toast.Style.Animated,
-      title: `Setting limit to ${cap}%…`,
-    });
     try {
-      const output = await runLimitScript(cap, days);
-      toast.style = Toast.Style.Success;
-      toast.title = output || `Limit set to ${cap}%`;
+      await applyLimit({ cap, days });
       onDone();
       pop();
-    } catch (e) {
-      toast.style = Toast.Style.Failure;
-      toast.title = "Failed to set limit";
-      toast.message = String(e);
+    } catch {
+      // toast already reported the failure
     }
   }
 

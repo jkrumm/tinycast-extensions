@@ -16,6 +16,13 @@ export function toSpeedTestRecord(
   full: boolean,
   timestamp: number = Date.now(),
 ): SpeedTestRecord {
+  // `networkQuality` still exits 0 and prints a JSON blob with a zero/absent
+  // download throughput when the machine is offline — without this guard
+  // that null-shaped result got persisted to history and crashed every
+  // future render (formatValue() calling `.toFixed()` on null forever).
+  if (!Number.isFinite(result.dl_throughput) || result.dl_throughput <= 0) {
+    throw new Error("Speed test failed — no connection?");
+  }
   const dataUsedBytes =
     result.dl_bytes_transferred + (result.ul_bytes_transferred ?? 0);
   return {

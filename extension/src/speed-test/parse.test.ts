@@ -67,6 +67,23 @@ describe("toSpeedTestRecord", () => {
     const record = toSpeedTestRecord(parseNetworkQuality(quickRaw), false);
     expect(record.timestamp).toBeGreaterThanOrEqual(before);
   });
+
+  it("throws instead of producing a null record when offline (dl_throughput missing)", () => {
+    const result = parseNetworkQuality(fullRaw);
+    expect(() =>
+      toSpeedTestRecord(
+        { ...result, dl_throughput: undefined as unknown as number },
+        true,
+      ),
+    ).toThrow("Speed test failed — no connection?");
+  });
+
+  it("throws when dl_throughput is 0", () => {
+    const result = parseNetworkQuality(quickRaw);
+    expect(() =>
+      toSpeedTestRecord({ ...result, dl_throughput: 0 }, false),
+    ).toThrow("Speed test failed — no connection?");
+  });
 });
 
 function round1(n: number): number {

@@ -15,6 +15,7 @@ import {
 import { useCachedPromise } from "@raycast/utils";
 import { useEffect, useMemo, useState } from "react";
 import { client } from "./ticktick/client";
+import { loadOpenTasks } from "./ticktick/load";
 import { TickTickProject, TickTickTask } from "./ticktick/types";
 import {
   BUCKET_ORDER,
@@ -37,6 +38,7 @@ import {
 import { parseSearch, applySearch } from "./ticktick/search";
 import QuickAdd from "./quick-add";
 import CreateTask from "./ticktick/create-task";
+import { Stamped, formatAge, stamped } from "./lib/freshness";
 
 // ─── Sort ─────────────────────────────────────────────────────────────────────
 
@@ -299,19 +301,9 @@ function TaskActions({
             onAction={() => quickSetDue(today())}
           />
           <Action
-            title="Morgen"
-            icon={Icon.ArrowRight}
-            onAction={() => quickSetDue(daysFromNow(1))}
-          />
-          <Action
             title="Wochenende (sa)"
             icon={Icon.Calendar}
             onAction={() => quickSetDue(nextSaturday())}
-          />
-          <Action
-            title="Nächste Woche"
-            icon={Icon.Clock}
-            onAction={() => quickSetDue(daysFromNow(7))}
           />
           <Action
             title="Kein Datum"
@@ -469,12 +461,6 @@ function TaskItem({
                   }}
                 />
               )}
-              <List.Item.Detail.Metadata.Separator />
-              <List.Item.Detail.Metadata.Link
-                title="In TickTick öffnen"
-                target={`https://ticktick.com/webapp/#q/today/tasks/${task.id}`}
-                text="ticktick.com"
-              />
             </List.Item.Detail.Metadata>
           }
         />
@@ -522,23 +508,18 @@ export default function MyTasks() {
     });
   }
 
-  const { data, isLoading, revalidate, mutate } = useCachedPromise(
-    async (): Promise<CachedData> => {
-      const projects = await client.getProjects();
-      const results = await Promise.all(
-        projects.map((p) => client.getProjectData(p.id)),
-      );
-      const tasks = results
-        .flatMap((r) => r.tasks)
-        .filter((t) => t.status === 0);
-      return { projects, tasks: sortTasks(tasks) };
-    },
+  const { data, isLoading, error, revalidate, mutate } = useCachedPromise(
+    () =>
+      stamped(async (): Promise<CachedData> => {
+        const { projects, tasks } = await loadOpenTasks();
+        return { projects, tasks: sortTasks(tasks) };
+      }),
     [],
-    { keepPreviousData: true },
+    { keepPreviousData: true, onError: () => {} },
   );
 
-  const projects = data?.projects ?? [];
-  const projectTasks = data?.tasks ?? [];
+  const projects = data?.data.projects ?? [];
+  const projectTasks = data?.data.tasks ?? [];
 
   const projectMap = useMemo(
     () => Object.fromEntries(projects.map((p) => [p.id, p])),
@@ -566,16 +547,19 @@ export default function MyTasks() {
 
   function patchTask(taskId: string, changes: Partial<TickTickTask>) {
     mutate(undefined, {
-      optimisticUpdate: (current): CachedData => {
-        const safe = (current as CachedData | undefined) ?? {
-          projects: [],
-          tasks: [],
-        };
+      optimisticUpdate: (current): Stamped<CachedData> => {
+        const stampedCurrent = current as Stamped<CachedData> | undefined;
+        const safe = stampedCurrent?.data ?? { projects: [], tasks: [] };
         return {
-          ...safe,
-          tasks: sortTasks(
-            safe.tasks.map((t) => (t.id === taskId ? { ...t, ...changes } : t)),
-          ),
+          fetchedAt: stampedCurrent?.fetchedAt ?? Date.now(),
+          data: {
+            ...safe,
+            tasks: sortTasks(
+              safe.tasks.map((t) =>
+                t.id === taskId ? { ...t, ...changes } : t,
+              ),
+            ),
+          },
         };
       },
       shouldRevalidateAfter: false,
@@ -584,12 +568,13 @@ export default function MyTasks() {
 
   function removeTask(taskId: string) {
     mutate(undefined, {
-      optimisticUpdate: (current): CachedData => {
-        const safe = (current as CachedData | undefined) ?? {
-          projects: [],
-          tasks: [],
+      optimisticUpdate: (current): Stamped<CachedData> => {
+        const stampedCurrent = current as Stamped<CachedData> | undefined;
+        const safe = stampedCurrent?.data ?? { projects: [], tasks: [] };
+        return {
+          fetchedAt: stampedCurrent?.fetchedAt ?? Date.now(),
+          data: { ...safe, tasks: safe.tasks.filter((t) => t.id !== taskId) },
         };
-        return { ...safe, tasks: safe.tasks.filter((t) => t.id !== taskId) };
       },
       shouldRevalidateAfter: false,
     });
@@ -610,8 +595,12 @@ export default function MyTasks() {
     );
   }
 
+  const offlineSuffix =
+    error && data ? ` · offline, from ${formatAge(data.fetchedAt)}` : "";
+
   return (
     <List
+      navigationTitle={`Tasks${offlineSuffix}`}
       isLoading={isLoading}
       isShowingDetail={showDetail}
       filtering={false}
@@ -717,6 +706,7 @@ export default function MyTasks() {
               <Action
                 title="Neue Aufgabe"
                 icon={Icon.Plus}
+                shortcut={{ modifiers: ["cmd"], key: "n" }}
                 onAction={() => push(<QuickAdd />)}
               />
             </ActionPanel>
