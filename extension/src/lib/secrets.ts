@@ -20,7 +20,7 @@ const OP_ACCOUNT = "tkrumm";
 // are distinguished by account name (the secret key).
 export const KEYCHAIN_SERVICE = "tinycast-extensions";
 
-export type SecretKey = "apiToken" | "netgearPassword";
+export type SecretKey = "apiToken" | "netgearPassword" | "victronKey";
 
 export class SecretUnavailableError extends Error {
   constructor(key: SecretKey) {
@@ -141,7 +141,21 @@ export interface SecretPreferences {
   apiTokenRef: string;
   netgearPassword?: string;
   netgearPasswordRef: string;
+  victronKey?: string;
+  victronKeyRef: string;
 }
+
+const OVERRIDE_PREFERENCE = {
+  apiToken: "apiToken",
+  netgearPassword: "netgearPassword",
+  victronKey: "victronKey",
+} as const satisfies Record<SecretKey, keyof SecretPreferences>;
+
+const REF_PREFERENCE = {
+  apiToken: "apiTokenRef",
+  netgearPassword: "netgearPasswordRef",
+  victronKey: "victronKeyRef",
+} as const satisfies Record<SecretKey, keyof SecretPreferences>;
 
 // The convenience entry point every command uses:
 // `await getSecret("apiToken", prefs())`.
@@ -150,11 +164,10 @@ export function getSecret(
   preferences: SecretPreferences,
   runner?: SecretRunner,
 ): Promise<string> {
-  const override =
-    key === "apiToken" ? preferences.apiToken : preferences.netgearPassword;
-  const ref =
-    key === "apiToken"
-      ? preferences.apiTokenRef
-      : preferences.netgearPasswordRef;
-  return resolveSecret({ key, ref, override, runner });
+  return resolveSecret({
+    key,
+    ref: preferences[REF_PREFERENCE[key]] ?? "",
+    override: preferences[OVERRIDE_PREFERENCE[key]],
+    runner,
+  });
 }

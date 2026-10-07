@@ -54,6 +54,14 @@
       "icon": "netgear.png"
     },
     {
+      "name": "netgear-watchdog",
+      "title": "Netgear Watchdog",
+      "description": "Keeps the Netgear mobile connection up: unlocks the SIM, reconnects",
+      "mode": "no-view",
+      "interval": "1m",
+      "icon": "netgear.png"
+    },
+    {
       "name": "battery",
       "title": "Battery",
       "description": "MacBook charge, health, and charge-limit control",
@@ -68,6 +76,13 @@
       "icon": "speed-test.png"
     },
     {
+      "name": "van-power",
+      "title": "Van Power",
+      "description": "Camper van battery (Ective BLE BMS) and Victron solar, read over Bluetooth, with 72 h history",
+      "mode": "view",
+      "icon": "van.png"
+    },
+    {
       "name": "hub",
       "title": "Dashboard",
       "description": "One-glance grid over every command",
@@ -79,15 +94,23 @@
     "@raycast/api": "1.104.25",
     "@raycast/utils": "1.17.0",
     "chrono-node": "2.10.1",
+    "d3-scale": "4.0.2",
+    "d3-shape": "3.2.0",
+    "d3-time-format": "4.1.0",
     "similarity": "1.2.1"
   },
   "devDependencies": {
     "@raycast/eslint-config": "1.0.11",
+    "@types/d3-scale": "4.0.9",
+    "@types/d3-shape": "3.2.0",
+    "@types/d3-time-format": "4.0.3",
     "@types/node": "22.20.4",
     "@types/react": "19.0.10",
+    "@types/react-test-renderer": "19.0.0",
     "@types/similarity": "1.2.1",
     "eslint": "8.57.0",
     "prettier": "3.3.3",
+    "react-test-renderer": "19.0.0",
     "typescript": "5.4.5",
     "vitest": "4.1.11"
   },
@@ -100,7 +123,9 @@
     "prepublishOnly": "echo \"\\n\\nIt seems like you are trying to publish the Raycast extension to npm.\\n\\nIf you did intend to publish it to npm, remove the \\`prepublishOnly\\` script and rerun \\`npm publish\\` again.\\nIf you wanted to publish it to the Raycast Store instead, use \\`npm run publish\\` instead.\\n\\n\" && exit 1",
     "publish": "npx @raycast/api@latest publish",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "e2e": "vitest run --config vitest.e2e.config.ts",
+    "e2e:watch": "vitest --config vitest.e2e.config.ts"
   },
   "preferences": [
     {
@@ -155,6 +180,21 @@
       "type": "textfield",
       "required": true,
       "default": "op://Private/Netgear M2 Jo/Admin Passwort"
+    },
+    {
+      "name": "victronKey",
+      "title": "Victron Instant Readout Key (override)",
+      "description": "32-hex-char Instant Readout encryption key of the SmartSolar MPPT — leave blank to resolve it from Keychain / 1Password instead (see Victron Key 1Password Ref)",
+      "type": "password",
+      "required": false
+    },
+    {
+      "name": "victronKeyRef",
+      "title": "Victron Key 1Password Ref",
+      "description": "op:// reference used to resolve the Victron key when no override and no cached Keychain entry exist",
+      "type": "textfield",
+      "required": true,
+      "default": "op://Private/Solar Camper Victron/Instant Readout Key"
     }
   ]
 }

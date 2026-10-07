@@ -126,6 +126,7 @@ describe("getSecret", () => {
         apiToken: "tok",
         apiTokenRef: REF,
         netgearPasswordRef: "op://Private/x",
+        victronKeyRef: "op://Private/v",
       },
       runner,
     );
@@ -142,9 +143,30 @@ describe("getSecret", () => {
         apiTokenRef: REF,
         netgearPassword: undefined,
         netgearPasswordRef: "op://Private/Netgear M2 Jo/Admin Passwort",
+        victronKeyRef: "op://Private/v",
       },
       runner,
     );
     expect(value).toBe("router-pw");
+  });
+
+  it("resolves victronKey through its own override, Keychain account and ref", async () => {
+    const prefs = {
+      apiTokenRef: REF,
+      netgearPasswordRef: "op://Private/x",
+      victronKeyRef: "op://Private/Solar Camper Victron/Instant Readout Key",
+    };
+    expect(await getSecret("victronKey", { ...prefs, victronKey: "k" })).toBe(
+      "k",
+    );
+
+    const runner = new FakeRunner({
+      "/usr/bin/security find-generic-password": new Error("not found"),
+      "/opt/homebrew/bin/op read": "from-op\n",
+      "/usr/bin/security add-generic-password": "",
+    });
+    expect(await getSecret("victronKey", prefs, runner)).toBe("from-op");
+    expect(runner.calls[0].args).toContain("victronKey");
+    expect(runner.calls[1].args).toContain(prefs.victronKeyRef);
   });
 });

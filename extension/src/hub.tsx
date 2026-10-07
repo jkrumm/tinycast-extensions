@@ -1,29 +1,25 @@
-import { mkdir, readFile } from "fs/promises";
+import { readFile } from "fs/promises";
 import { join } from "path";
 import {
   Action,
   ActionPanel,
   Grid,
   Icon,
-  LocalStorage,
   launchCommand,
   LaunchType,
   environment,
 } from "@raycast/api";
-import { usePromise } from "@raycast/utils";
-import { client } from "./ticktick/client";
+import { useCachedPromise } from "@raycast/utils";
 import { isOverdue, isDueToday } from "./ticktick/format";
+import { loadOpenTasks } from "./ticktick/load";
 import { getQuota } from "./usage/quota";
 import { isQuotaError } from "./usage/types";
-import { prefs } from "./lib/argo";
-import { CurlNetgearHttp } from "./netgear/transport";
-import { NetgearClient } from "./netgear/client";
+import { getClient } from "./netgear/session";
 import { collectBatterySnapshot } from "./battery/collect";
-import { SpeedTestRecord } from "./speed-test/types";
+import { loadHistory } from "./speed-test/history";
+import { loadVanHistory } from "./van/storage";
+import { tileStatus } from "./van/format";
 import { RAYCAST_COLOR, RaycastColor, tile, toDataUri } from "./lib/svg";
-
-const DEFAULT_NETGEAR_HOST = "http://192.168.1.1";
-const SPEED_TEST_HISTORY_KEY = "speed-test-history";
 
 interface TileConfig {
   command: string;
@@ -76,71 +72,86 @@ const TILES: TileConfig[] = [
     name: "Battery",
     color: RAYCAST_COLOR.yellow,
   },
+  {
+    command: "van-power",
+    icon: "van",
+    glyph: "V",
+    name: "Van Power",
+    color: RAYCAST_COLOR.purple,
+  },
 ];
 
-async function tasksStatus(): Promise<string> {
-  const projects = await client.getProjects();
-  const results = await Promise.all(
-    projects.map((p) => client.getProjectData(p.id)),
-  );
-  const tasks = results.flatMap((r) => r.tasks).filter((t) => t.status === 0);
+// One tile's live data: the status line and, where a source has history, a
+// tiny trend drawn under it.
+interface TileData {
+  status: string;
+  trend?: number[];
+}
+
+async function tasksStatus(): Promise<TileData> {
+  const { tasks } = await loadOpenTasks();
   const overdue = tasks.filter((t) => isOverdue(t.dueDate)).length;
   const dueToday = tasks.filter((t) => isDueToday(t.dueDate)).length;
-  if (overdue > 0) return `${overdue} overdue`;
-  if (dueToday > 0) return `${dueToday} due today`;
-  return "All clear";
+  if (overdue > 0) return { status: `${overdue} overdue` };
+  if (dueToday > 0) return { status: `${dueToday} due today` };
+  return { status: "All clear" };
 }
 
-async function usageStatus(): Promise<string> {
+async function usageStatus(): Promise<TileData> {
   const quota = await getQuota();
-  if (isQuotaError(quota)) return "Error";
+  if (isQuotaError(quota)) return { status: "Error" };
   const fiveHour = Math.round(quota.five_hour.utilization ?? 0);
   const sevenDay = Math.round(quota.seven_day.utilization ?? 0);
-  return `5h ${fiveHour}% · 7d ${sevenDay}%`;
+  return { status: `5h ${fiveHour}% · 7d ${sevenDay}%` };
 }
 
-async function netgearStatus(): Promise<string> {
-  await mkdir(environment.supportPath, { recursive: true });
-  const jarPath = join(environment.supportPath, "netgear-cookies.jar");
-  const host = prefs().netgearHost?.replace(/\/$/, "") || DEFAULT_NETGEAR_HOST;
-  const netClient = new NetgearClient({
-    host,
-    transport: new CurlNetgearHttp(jarPath),
-  });
-  const status = await netClient.getStatus();
+async function netgearStatus(): Promise<TileData> {
+  const client = await getClient();
+  const status = await client.getStatus();
+  if (status.simStatus === "Locked") return { status: "SIM locked" };
+  if (status.simStatus === "Blocked") return { status: "SIM blocked" };
   const type = status.connectionText || status.connection;
-  return `${type} · ${status.radioQuality}%`;
+  return { status: `${type} · ${status.radioQuality}%` };
 }
 
-async function speedTestStatus(): Promise<string> {
-  const raw = await LocalStorage.getItem<string>(SPEED_TEST_HISTORY_KEY);
-  const history = raw ? (JSON.parse(raw) as SpeedTestRecord[]) : [];
-  if (history.length === 0) return "No test yet";
-  return `${history[0].dlMbps} Mbps`;
+async function speedTestStatus(): Promise<TileData> {
+  const history = await loadHistory();
+  if (history.length === 0) return { status: "No test yet" };
+  return {
+    status: `${history[0].dlMbps} Mbps`,
+    trend: [...history].reverse().map((r) => r.dlMbps),
+  };
 }
 
-async function batteryStatus(): Promise<string> {
+async function batteryStatus(): Promise<TileData> {
   const snapshot = await collectBatterySnapshot();
   const percent = snapshot.status.battery.currentChargePercent;
   const limit = snapshot.status.configuration.enabled
     ? `${snapshot.status.configuration.upperLimitPercent}%`
     : "100%";
-  return `${percent}% · limit ${limit}`;
+  return { status: `${percent}% · limit ${limit}` };
 }
 
-const STATUS_LOADERS: Record<string, () => Promise<string>> = {
+// Last stored sample only — a BLE read takes seconds and belongs to the
+// Van Power command, never to a dashboard glance.
+async function vanStatus(): Promise<TileData> {
+  const history = await loadVanHistory();
+  return {
+    status: tileStatus(history[history.length - 1]),
+    trend: history.flatMap((s) => (s.soc === null ? [] : [s.soc])),
+  };
+}
+
+const STATUS_LOADERS: Record<string, () => Promise<TileData>> = {
   "my-tasks": tasksStatus,
-  "quick-add": async () => "Natural language",
+  "quick-add": async () => ({ status: "" }),
   "claude-usage": usageStatus,
   netgear: netgearStatus,
   "speed-test": speedTestStatus,
   battery: batteryStatus,
+  "van-power": vanStatus,
 };
 
-// Each tile fetches its own status independently — a slow source (Netgear
-// on a dead LTE link, a cold Claude usage fetch) never blocks the rest of
-// the grid. The static tile (glyph + name, "…" status) renders immediately;
-// `usePromise` fills in the live status once it resolves.
 // The icon SVGs ship in the build's assets/src; drop the outer <svg> so the
 // markup can be placed inside the tile.
 async function loadIconMarkup(icon: string): Promise<string> {
@@ -151,17 +162,29 @@ async function loadIconMarkup(icon: string): Promise<string> {
   return svg.replace(/^[\s\S]*?<svg[^>]*>/, "").replace(/<\/svg>\s*$/, "");
 }
 
+// Each tile fetches its own status independently — a slow source (Netgear
+// on a dead LTE link, a cold Claude usage fetch) never blocks the rest of
+// the grid, and an unreachable source shows "Offline" on its own tile
+// instead of a toast (`onError` silences the generic failure toast
+// `usePromise` shows by default). The static tile (glyph + name, "…"
+// status) renders immediately; `usePromise` fills in the live status once
+// it resolves.
 function HubTile({ config }: { config: TileConfig }) {
   const loader = STATUS_LOADERS[config.command];
-  const { data: status } = usePromise(loader ?? (async () => ""));
-  const { data: iconMarkup } = usePromise(loadIconMarkup, [config.icon]);
+  const { data, error } = useCachedPromise(
+    loader ?? (async () => ({ status: "" })),
+    [],
+    { onError: () => {}, keepPreviousData: true },
+  );
+  const { data: iconMarkup } = useCachedPromise(loadIconMarkup, [config.icon]);
 
   const svg = tile({
     glyph: config.glyph,
     name: config.name,
-    status: status ?? "…",
+    status: error ? "Offline" : (data?.status ?? "…"),
     color: config.color,
     iconMarkup,
+    trend: error ? undefined : data?.trend,
   });
 
   return (
