@@ -14,11 +14,21 @@ import {
   topLanesWithOther,
 } from "./usage/spend";
 import {
-  formatUtilization,
+  formatPace,
+  formatPercent,
   formatRelativeReset,
   formatSpend,
+  formatWeekdayTime,
+  menuBarTitle,
+  modelLimitLabel,
 } from "./usage/format";
-import { isQuotaError, UsageQuota, SpendAggregate } from "./usage/types";
+import { QuotaWindow, quotaLimits, weeklyPace } from "./usage/limits";
+import {
+  isQuotaError,
+  UsageQuota,
+  UsageQuotaOk,
+  SpendAggregate,
+} from "./usage/types";
 import { menuBarRing, toDataUri } from "./lib/svg";
 
 // Matches the detail view's cap (5 lanes + "other") — argo tracks ~60 lanes,
@@ -57,12 +67,28 @@ function useUsage() {
   );
 }
 
-// A live ring reflecting the 5h quota — native menu-bar rendering (beta)
-// fits this into an 18×18pt NSStatusItem glyph, so no text: the ring's fill
-// is the whole signal.
+// A live ring reflecting the weekly quota — the limit that binds on a Max
+// plan. Native menu-bar rendering (beta) fits this into an 18×18pt
+// NSStatusItem glyph, so no text: the ring's fill is the whole signal.
 function menuBarIcon(quota: UsageQuota): string {
-  const percent = isQuotaError(quota) ? 0 : (quota.five_hour.utilization ?? 0);
+  const percent = isQuotaError(quota)
+    ? 0
+    : (quotaLimits(quota).weekly.percent ?? 0);
   return toDataUri(menuBarRing({ percent }));
+}
+
+function windowItem(label: string, window: QuotaWindow, reset: string) {
+  return (
+    <MenuBarExtra.Item
+      key={label}
+      icon={{ source: Icon.Circle, tintColor: dotColor(window.percent) }}
+      title={`${label}: ${formatPercent(window.percent)} — ${reset}`}
+    />
+  );
+}
+
+function resetText(window: QuotaWindow): string {
+  return `resets in ${formatRelativeReset(window.resetsAt)}`;
 }
 
 // UI (Color enum) counterpart of lib/svg's thresholdColor — same
@@ -87,42 +113,18 @@ export default function ClaudeUsageMenuBar() {
   return (
     <MenuBarExtra
       icon={icon}
-      // Compact: just the 5h number — native rendering costs real menu-bar
-      // space now, and the ring icon already signals "roughly how full".
-      // The dropdown below still spells out every quota in full.
+      // Compact: the weekly percent, labelled ("14%/wk") — a bare number was
+      // misread as the weekly while it was the 5h session. The dropdown
+      // spells out every limit.
       title={
         data && !isQuotaError(data.quota)
-          ? `${formatUtilization(data.quota.five_hour)}${offline ? " (offline)" : ""}`
+          ? `${menuBarTitle(data.quota)}${offline ? " (offline)" : ""}`
           : undefined
       }
       isLoading={isLoading}
       tooltip={`Claude Usage${offline ? " (offline)" : ""}`}
     >
-      {data && !isQuotaError(data.quota) && (
-        <MenuBarExtra.Section title="Quota">
-          <MenuBarExtra.Item
-            icon={{
-              source: Icon.Circle,
-              tintColor: dotColor(data.quota.five_hour.utilization),
-            }}
-            title={`5h: ${formatUtilization(data.quota.five_hour)} — resets ${formatRelativeReset(data.quota.five_hour.resets_at_epoch)}`}
-          />
-          <MenuBarExtra.Item
-            icon={{
-              source: Icon.Circle,
-              tintColor: dotColor(data.quota.seven_day.utilization),
-            }}
-            title={`7d: ${formatUtilization(data.quota.seven_day)} — resets ${formatRelativeReset(data.quota.seven_day.resets_at_epoch)}`}
-          />
-          <MenuBarExtra.Item
-            icon={{
-              source: Icon.Circle,
-              tintColor: dotColor(data.quota.seven_day_sonnet.utilization),
-            }}
-            title={`7d Sonnet: ${formatUtilization(data.quota.seven_day_sonnet)} — resets ${formatRelativeReset(data.quota.seven_day_sonnet.resets_at_epoch)}`}
-          />
-        </MenuBarExtra.Section>
-      )}
+      {data && !isQuotaError(data.quota) && <QuotaSection quota={data.quota} />}
 
       {data && isQuotaError(data.quota) && (
         <MenuBarExtra.Section>
@@ -170,5 +172,26 @@ export default function ClaudeUsageMenuBar() {
         />
       </MenuBarExtra.Section>
     </MenuBarExtra>
+  );
+}
+
+function QuotaSection({ quota }: { quota: UsageQuotaOk }) {
+  const { weekly, session, models } = quotaLimits(quota);
+  const pace = weeklyPace(weekly, Date.now() / 1000);
+  return (
+    <MenuBarExtra.Section title="Quota">
+      {windowItem(
+        "Weekly",
+        weekly,
+        weekly.resetsAt === null
+          ? "no reset time"
+          : `resets ${formatWeekdayTime(weekly.resetsAt)} (${formatRelativeReset(weekly.resetsAt)})`,
+      )}
+      {pace && <MenuBarExtra.Item title={`Pace: ${formatPace(pace)}`} />}
+      {windowItem("5h session", session, resetText(session))}
+      {models.map((model) =>
+        windowItem(modelLimitLabel(model), model, resetText(model)),
+      )}
+    </MenuBarExtra.Section>
   );
 }

@@ -2,9 +2,9 @@
 // without pulling in @raycast/api transitively (that package ships types
 // only — no runtime module — so anything importing it can't resolve under
 // vitest).
-import { SpendAggregate, TimeseriesResponse } from "./types";
+import { DailyTotal, SpendAggregate, TimeseriesResponse } from "./types";
 
-// "Today" = the last bucket of the 7d/day-grain series. argo buckets by UTC
+// "Today" = the last bucket of the 30d/day-grain series. argo buckets by UTC
 // day (grain=day), so this is the UTC calendar day, not the caller's local one.
 export function aggregateSpend(ts: TimeseriesResponse): SpendAggregate {
   const buckets = ts.buckets;
@@ -28,7 +28,9 @@ export function aggregateSpend(ts: TimeseriesResponse): SpendAggregate {
       0,
     ),
   }));
-  const sevenDayTotal = dailyTotals.reduce((sum, d) => sum + d.total, 0);
+  const sevenDayTotal = dailyTotals
+    .slice(-7)
+    .reduce((sum, d) => sum + d.total, 0);
 
   return { today, todayTotal, sevenDayTotal, dailyTotals };
 }
@@ -54,4 +56,17 @@ export function topLanesWithOther(
     .reduce((sum, [, value]) => sum + value, 0);
   if (restTotal > 0) top.push({ label: "other", value: restTotal });
   return top;
+}
+
+// Spend since an instant (the start of the quota week), at day grain: every
+// UTC day bucket from the one containing `fromSeconds` on — the first day
+// counts whole, the closest the day-grain series gets.
+export function spendSince(
+  dailyTotals: DailyTotal[],
+  fromSeconds: number,
+): number {
+  const fromDay = new Date(fromSeconds * 1000).toISOString().slice(0, 10);
+  return dailyTotals
+    .filter((d) => d.bucket >= fromDay)
+    .reduce((sum, d) => sum + d.total, 0);
 }

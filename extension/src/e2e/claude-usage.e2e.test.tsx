@@ -60,10 +60,14 @@ describe("claude-usage command", () => {
     );
     const markdown = renderer.root.findByType(Detail).props.markdown as string;
     expect(markdown).toContain("Claude Usage");
-    const totals = imageSvg(markdown, "Spend totals");
-    expect(totals).toContain(">TODAY<");
-    expect(totals).toContain(">7 DAYS<");
-    expect(totals).toContain(">$16.50<"); // 7-day total of the fixture
+    const panel = imageSvg(markdown, "Quota");
+    expect(panel.indexOf("WEEKLY")).toBeLessThan(panel.indexOf("5H SESSION"));
+    expect(panel).toContain(">68<"); // the weekly, first
+    const metrics = imageSvg(markdown, "Pace and spend");
+    expect(metrics).toContain(">TODAY<");
+    expect(metrics).toContain(">$6.50<"); // today's bucket of the fixture
+    expect(metrics).toContain(">THIS WEEK<");
+    expect(markdown).toContain("## Last 3 days · $16.50");
     assertNoBadSubstrings(
       markdown.replace(/data:[^)]+/g, "data:"),
       "claude-usage ok",
@@ -107,7 +111,7 @@ describe("claude-usage command", () => {
 
     const markdown = renderer.root.findByType(Detail).props.markdown as string;
     expect(markdown).toContain("Spend server not reachable");
-    expect(imageSvg(markdown, "Spend totals")).toContain(">7 DAYS<"); // still showing cached spend
+    expect(imageSvg(markdown, "Pace and spend")).toContain(">TODAY<"); // still showing cached spend
     assertNoBadSubstrings(markdown, "claude-usage spend offline");
   });
 });

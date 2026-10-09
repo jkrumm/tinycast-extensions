@@ -247,7 +247,7 @@ ExtensionMenuBarImage}.swift`, `Features/Extensions/Model/ExtensionImageSize.swi
   canvas works — nothing reads as text at that size, keep menu-bar icons to
   a simple shape). `claude-usage-menu-bar.tsx` uses `lib/svg.ts`'s
   `menuBarRing()` — a small filled-arc gauge, no text — for a live
-  quota-reflecting icon, and keeps `title` to just the 5h number now that a
+  quota-reflecting icon, and keeps `title` to the labelled weekly percent now that a
   status-item title costs real menu-bar space.
 
 ### Stable 0.11.3 differences (if this repo is ever reinstalled there)

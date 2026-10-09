@@ -1,47 +1,118 @@
 import { describe, expect, it } from "vitest";
-import { totalsCards } from "./heroes";
+import { quotaPanel, spendHeroes, usageMetrics } from "./heroes";
+import { QuotaLimits, WEEK_SECONDS } from "./limits";
 import { SpendAggregate } from "./types";
 
 const decode = (uri: string) =>
   Buffer.from(uri.split(";base64,")[1].split("?")[0], "base64").toString();
 
+const NOW = Date.UTC(2026, 9, 9, 12, 0);
+const RESET = NOW / 1000 + 0.68 * WEEK_SECONDS; // 32 % of the week gone
+
+function limits(weekly: number, models: QuotaLimits["models"] = []) {
+  return {
+    weekly: { label: "Weekly", percent: weekly, resetsAt: RESET },
+    session: { label: "5h session", percent: 12, resetsAt: NOW / 1000 + 3600 },
+    models,
+  };
+}
+
 function spend(totals: number[]): SpendAggregate {
   return {
     today: {},
     todayTotal: totals[totals.length - 1] ?? 0,
-    sevenDayTotal: totals.reduce((a, b) => a + b, 0),
+    sevenDayTotal: totals.slice(-7).reduce((a, b) => a + b, 0),
     dailyTotals: totals.map((total, i) => ({
-      bucket: `2026-10-0${i + 1}`,
+      bucket: new Date(NOW - (totals.length - 1 - i) * 86_400_000)
+        .toISOString()
+        .slice(0, 10),
       total,
     })),
   };
 }
 
-describe("totalsCards", () => {
-  it("shows today against the daily average, and the 7-day total", () => {
-    const svg = decode(totalsCards(spend([2, 2, 2, 2, 2, 2, 6])));
-    expect(svg).toContain(">TODAY<");
+describe("quotaPanel", () => {
+  it("leads with the weekly, then the 5h session, then the API's model cap", () => {
+    const svg = decode(
+      quotaPanel(
+        limits(14, [
+          { label: "Fable", percent: 3, resetsAt: RESET, shareOfWeekly: 50 },
+        ]),
+        NOW,
+      ),
+    );
+    const order = ["WEEKLY", "5H SESSION", "FABLE WEEKLY"].map((label) =>
+      svg.indexOf(label),
+    );
+    expect(order.every((i) => i >= 0)).toBe(true);
+    expect([...order].sort((a, b) => a - b)).toEqual(order);
+    expect(svg.indexOf(">14<")).toBeLessThan(svg.indexOf(">12<"));
+    expect(svg).toContain("cap = 50% of weekly");
+    expect(svg).not.toMatch(/sonnet/i);
+  });
+
+  it("colours the weekly by pace, not by the raw percent", () => {
+    // 40 % at 32 % of the week: well under 50 %, but ahead of pace
+    expect(decode(quotaPanel(limits(40), NOW))).toContain("raycast-red");
+    expect(decode(quotaPanel(limits(14), NOW))).not.toContain("raycast-red");
+  });
+});
+
+describe("usageMetrics", () => {
+  it("projects the weekly at reset and shows this quota week's spend", () => {
+    const svg = decode(
+      usageMetrics({
+        limits: limits(14),
+        spend: spend(Array.from({ length: 30 }, () => 2)),
+        nowMs: NOW,
+      }),
+    );
+    expect(svg).toContain(">AT RESET<");
+    expect(svg).toContain("~44%");
+    expect(svg).toContain(">WEEK GONE<");
+    expect(svg).toContain(">32%<");
+    expect(svg).toContain(">THIS WEEK<");
+    // the week started 2.24 days ago → 3 UTC day buckets
     expect(svg).toContain(">$6.00<");
-    expect(svg).toContain("▲ $3.43 vs avg"); // average 2.571…
-    expect(svg).toContain(">$18.00<");
-    expect(svg).not.toContain('stroke-width="1.75"'); // the day bars are the trend
   });
 
-  it("spending under the average is the good direction", () => {
-    const svg = decode(totalsCards(spend([6, 6, 6, 6, 6, 6, 2])));
-    expect(svg).toContain("▼");
-    expect(svg).toContain("raycast-green");
+  it("says when the weekly runs out while ahead of pace", () => {
+    const svg = decode(
+      usageMetrics({ limits: limits(40), spend: null, nowMs: NOW }),
+    );
+    expect(svg).toContain(">RUNS OUT<");
+    expect(svg).not.toContain("TODAY");
   });
 
-  it("omits the delta with fewer than three days of history", () => {
-    const svg = decode(totalsCards(spend([4, 5])));
-    expect(svg).not.toContain("vs avg");
-    expect(svg).toContain(">$5.00<");
+  it("compares today against the average complete day", () => {
+    const svg = decode(
+      usageMetrics({
+        limits: limits(14),
+        spend: spend([2, 2, 2, 2, 2, 2, 6]),
+        nowMs: NOW,
+      }),
+    );
+    expect(svg).toContain(">$6.00<");
+    expect(svg).toContain("▲ $4.00 vs avg");
   });
 
   it("copes with no history at all", () => {
-    const svg = decode(totalsCards(spend([])));
+    const svg = decode(
+      usageMetrics({ limits: limits(14), spend: spend([]), nowMs: NOW }),
+    );
     expect(svg).not.toMatch(/NaN|undefined/);
     expect(svg).toContain(">$0.00<");
+  });
+});
+
+describe("spendHeroes", () => {
+  it("draws one bar per day, the days before the quota week quieter", () => {
+    const { days } = spendHeroes(
+      spend(Array.from({ length: 30 }, (_, i) => i + 1)),
+      RESET - WEEK_SECONDS,
+    );
+    const svg = decode(days);
+    expect(svg).not.toMatch(/NaN|undefined/);
+    expect(svg).toContain("avg $");
   });
 });

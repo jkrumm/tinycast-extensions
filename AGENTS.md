@@ -28,7 +28,7 @@ extension/
     my-tasks.tsx         command — TickTick task list
     quick-add.tsx        command — TickTick quick add
     ticktick-menu-bar.tsx command — TickTick menu bar
-    claude-usage.tsx      command — Claude quota rings + spend charts, Detail view
+    claude-usage.tsx      command — Claude weekly/5h/model limits, weekly pace + spend charts, Detail view
     claude-usage-menu-bar.tsx command — Claude quota + spend, menu bar (5m interval)
     netgear.tsx           command — Netgear MR2100 status + actions + sub-views
     netgear-watchdog.tsx    command — no-view background: keeps the mobile connection up
@@ -279,7 +279,14 @@ run make secrets" while still reading the battery.
 - **Claude usage (quota)** — `/tmp/claude_sl/usage_api.json`, refreshed via
   `~/.claude/fetch_usage.py` (the same rate-limit-aware fetcher the
   statusline uses) when missing or >5 min stale. **Never calls
-  `api.anthropic.com` directly.**
+  `api.anthropic.com` directly.** Weekly-first (a Max plan's binding limit):
+  `usage/limits.ts` reads `seven_day`/`five_hour` and the model-specific
+  weekly caps from the fetcher's generic `limits` list (`kind:
+  "weekly_scoped"`, labelled by the API — Fable as of 2026-10; never hardcode
+  a model, the legacy `seven_day_sonnet` is only a fallback for old files),
+  plus the weekly pace (linear projection to the reset, `runsOutAt` when
+  ahead). The menu-bar title is the weekly, **labelled** (`14%/wk`) — a bare
+  number was once read as the weekly while it was the 5h session.
 - **Claude usage (spend)** — argo proxy (`{baseUrl}/usage/timeseries`,
   `{baseUrl}/usage/summary`), bearer token from the secrets chain.
 - **Netgear** — the router's own HTTP API at `netgearHost` (default
@@ -851,11 +858,11 @@ table**, and **every number is drawn once**.
   number, a horizontal gauge, one sub line); it replaces rows of big rings that
   ate the fold for two numbers. Van Power (battery + solar), battery
   (charge + health), speed-test (download + upload), netgear (signal + battery).
-  Rings stay only where the ring *is* the information: Claude quota.
+  Claude usage (weekly with a week-elapsed tick + 5h + one model cap).
 - `statCards({ size: "compact" })` — one hairline row of label-over-value
   metrics: battery's voltage/temperature/adapter, speed-test's
   latency/responsiveness/interface, netgear's internet (toned)/data/uptime/
-  clients, claude-usage's today (vs average) and 7-day spend. Van Power has
+  clients, claude-usage's weekly pace/week gone/today (vs avg)/quota-week spend. Van Power has
   none: cell spread and temperature are **warning lines** (spread ≥ 100 mV, or ≥ 50 mV while the charge is 20–90 % — cells naturally diverge at the ends of charge —
   < 5 °C or > 40 °C), cycles/capacity/charger current are cut as numbers that
   change no decision.
@@ -879,7 +886,7 @@ so both commands are invisible there.** This repo's target channel is
 already beta (`com.tinycast.app.beta`) for exactly this reason — see the
 top of this file. `claude-usage-menu-bar` uses `lib/svg.ts`'s
 `menuBarRing()` for a live, no-text ring icon (18×18pt, nothing reads at
-that size) and keeps its status-item `title` to just the 5h percent, since
+that size, the weekly quota) and keeps its status-item `title` to the labelled weekly percent, since
 a native title now costs real menu-bar space next to every other app's.
 
 ## Adding a command

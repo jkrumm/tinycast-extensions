@@ -11,8 +11,8 @@ usage) and the secrets chain (TickTick, Netgear, Victron) where useful.
 | `my-tasks` | view | `src/my-tasks.tsx` | `ticktick/{client,types,format,search,create-task}.ts(x)` | argo `/ticktick/*` |
 | `quick-add` | view | `src/quick-add.tsx` | `ticktick/{client,types,format,parse}.ts` | argo `/ticktick/*` |
 | `ticktick-menu-bar` | menu-bar | `src/ticktick-menu-bar.tsx` | `ticktick/{client,types,format}.ts` | argo `/ticktick/*` |
-| `claude-usage` | view | `src/claude-usage.tsx` | `usage/{quota,spend,aggregate,format,heroes,types}.ts`, `lib/svg.ts` | `/tmp/claude_sl/usage_api.json` + argo `/usage/*` |
-| `claude-usage-menu-bar` | menu-bar, `interval: 5m` | `src/claude-usage-menu-bar.tsx` | `usage/{quota,spend,aggregate,format,types}.ts` | same as above |
+| `claude-usage` | view | `src/claude-usage.tsx` | `usage/{quota,limits,spend,aggregate,format,heroes,types}.ts`, `lib/svg.ts` | `/tmp/claude_sl/usage_api.json` + argo `/usage/*` |
+| `claude-usage-menu-bar` | menu-bar, `interval: 5m` | `src/claude-usage-menu-bar.tsx` | `usage/{quota,limits,spend,aggregate,format,types}.ts` | same as above |
 | `netgear` | view | `src/netgear.tsx` | `netgear/{client,transport,types,session,flows,pin-store,wifi,status-view,action-lock,internet-probe,apn-model,signal,signal-view,ping}.ts`, sub-views `netgear/{sim-forms,apn,sms,devices,watchdog-view,signal-meter}.tsx` (test/dev only: `netgear/fake-router.ts`), `lib/svg.ts` | Netgear MR2100 HTTP API (`netgearHost` pref) |
 | `netgear-watchdog` | no-view, `interval: 1m` | `src/netgear-watchdog.tsx` | `netgear/{watchdog,watchdog-storage,internet-probe,action-lock,session}.ts` | same Netgear HTTP API + `curl` captive-portal probe + `LocalStorage` |
 | `battery` | view | `src/battery.tsx` | `battery/{collect,parse,heroes,types}.ts`, `lib/svg.ts` | `batt status --json` + `ioreg -rn AppleSmartBattery` |

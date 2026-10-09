@@ -4,7 +4,8 @@
 // to this list is checked and looked at everywhere. Not imported by any command.
 
 import { aggregateSpend } from "../../usage/aggregate";
-import { quotaHero, spendHeroes, totalsCards } from "../../usage/heroes";
+import { quotaPanel, spendHeroes, usageMetrics } from "../../usage/heroes";
+import { quotaLimits } from "../../usage/limits";
 import {
   historyImage as speedHistory,
   metricsImage as speedMetrics,
@@ -97,18 +98,31 @@ export function productionHeroes(now: number): ProductionHero[] {
   const add = (group: string, name: string, uri: string) =>
     heroes.push({ group, name, svg: decodeDataUri(uri) });
 
+  // Max plan, 2026-10: weekly ahead of pace (62 % with ~45 % of the week
+  // gone), the 5h session light, a Fable cap worth half the weekly.
+  const weeklyReset = now / 1000 + 330_000;
   const quota: UsageQuotaOk = {
-    five_hour: { utilization: 62, resets_at_epoch: now / 1000 + 8_040 },
-    seven_day: { utilization: 88, resets_at_epoch: now / 1000 + 273_600 },
-    seven_day_sonnet: {
-      utilization: 34,
-      resets_at_epoch: now / 1000 + 273_600,
-    },
+    five_hour: { utilization: 13, resets_at_epoch: now / 1000 + 4_080 },
+    seven_day: { utilization: 62, resets_at_epoch: weeklyReset },
+    seven_day_sonnet: { utilization: null, resets_at_epoch: null },
+    limits: [
+      {
+        kind: "weekly_scoped",
+        group: "weekly",
+        label: "Fable",
+        percent: 8,
+        resets_at_epoch: weeklyReset,
+        severity: "normal",
+        is_active: false,
+        allowance_percent_of_weekly: 50,
+      },
+    ],
     fetched_at: now / 1000,
   };
-  add("usage", "usage-quota", quotaHero(quota));
+  const limits = quotaLimits(quota);
+  add("usage", "usage-quota", quotaPanel(limits, now));
 
-  const totals = dailySpend({ days: 7 });
+  const totals = dailySpend({ days: 30 });
   const spend = aggregateSpend({
     groupKeys: [
       "claude-code",
@@ -120,8 +134,10 @@ export function productionHeroes(now: number): ProductionHero[] {
       "tinycast",
     ],
     buckets: totals.map((total, i) => ({
-      bucket: new Date(now - (6 - i) * DAY).toISOString().slice(0, 10),
-      groups: (i === 6
+      bucket: new Date(now - (totals.length - 1 - i) * DAY)
+        .toISOString()
+        .slice(0, 10),
+      groups: (i === totals.length - 1
         ? {
             "claude-code": 4.82,
             codex: 2.1,
@@ -137,8 +153,8 @@ export function productionHeroes(now: number): ProductionHero[] {
       >,
     })),
   });
-  const spendImages = spendHeroes(spend);
-  add("usage", "usage-totals", totalsCards(spend));
+  const spendImages = spendHeroes(spend, weeklyReset - 7 * 24 * 3600);
+  add("usage", "usage-metrics", usageMetrics({ limits, spend, nowMs: now }));
   add("usage", "usage-lanes", spendImages.lanes);
   add("usage", "usage-days", spendImages.days);
 

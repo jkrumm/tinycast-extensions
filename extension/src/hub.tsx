@@ -14,6 +14,8 @@ import { isOverdue, isDueToday } from "./ticktick/format";
 import { loadOpenTasks } from "./ticktick/load";
 import { getQuota } from "./usage/quota";
 import { isQuotaError } from "./usage/types";
+import { quotaLimits } from "./usage/limits";
+import { usageTileStatus } from "./usage/format";
 import { getClient } from "./netgear/session";
 import { collectBatterySnapshot } from "./battery/collect";
 import { loadHistory } from "./speed-test/history";
@@ -100,9 +102,7 @@ async function tasksStatus(): Promise<TileData> {
 async function usageStatus(): Promise<TileData> {
   const quota = await getQuota();
   if (isQuotaError(quota)) return { status: "Error" };
-  const fiveHour = Math.round(quota.five_hour.utilization ?? 0);
-  const sevenDay = Math.round(quota.seven_day.utilization ?? 0);
-  return { status: `5h ${fiveHour}% · 7d ${sevenDay}%` };
+  return { status: usageTileStatus(quotaLimits(quota)) };
 }
 
 async function netgearStatus(): Promise<TileData> {

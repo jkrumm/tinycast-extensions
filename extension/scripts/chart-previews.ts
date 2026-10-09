@@ -729,10 +729,10 @@ const PAGES: Record<string, PageItem[]> = {
   ],
   "page-usage": [
     "usage-quota",
-    "usage-totals",
+    "usage-metrics",
     lineMock("Spend today"),
     "usage-lanes",
-    lineMock("Last 7 days"),
+    lineMock("Last 30 days"),
     "usage-days",
   ],
   "page-netgear": [

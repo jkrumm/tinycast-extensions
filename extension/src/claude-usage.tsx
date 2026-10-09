@@ -4,7 +4,18 @@ import { useMemo, useRef } from "react";
 import { getQuota, isStaleHint } from "./usage/quota";
 import { getTimeseries, aggregateSpend } from "./usage/spend";
 import { isQuotaError, UsageQuota, SpendAggregate } from "./usage/types";
-import { quotaHero, spendHeroes, totalsCards } from "./usage/heroes";
+import {
+  periodTotal,
+  quotaPanel,
+  spendHeroes,
+  usageMetrics,
+} from "./usage/heroes";
+import { WEEK_SECONDS, quotaLimits } from "./usage/limits";
+import {
+  extraUsageLine,
+  formatSpend,
+  overflowModelsLine,
+} from "./usage/format";
 import { freshnessBanner, updatingLine } from "./lib/freshness";
 
 const ARGO_DASHBOARD_URL = "https://argo.jkrumm.com";
@@ -110,13 +121,24 @@ function renderMarkdown(
     lines.push(`_Stale — last fetched ${ageMin}m ago._`, "");
   }
 
-  lines.push(`![Quota](${quotaHero(quota)})`, "");
+  const now = Date.now();
+  const limits = quotaLimits(quota);
+  lines.push(`![Quota](${quotaPanel(limits, now)})`, "");
+  // The panel has room for weekly, 5h and one model cap.
+  const overflow = overflowModelsLine(limits.models.slice(1));
+  if (overflow) lines.push(overflow, "");
+  const extra = extraUsageLine(quota.extra_usage);
+  if (extra) lines.push(extra, "");
 
   const spendBanner = freshnessBanner({
     fetchedAt: spendFetchedAt,
     error: spendError,
     offlineLabel: "Spend server not reachable",
   });
+  lines.push(
+    `![Pace and spend](${usageMetrics({ limits, spend, nowMs: now })})`,
+    "",
+  );
 
   if (!spend) {
     lines.push(spendBanner ?? "_Spend unavailable — argo request failed._", "");
@@ -125,14 +147,20 @@ function renderMarkdown(
 
   if (spendBanner) lines.push(spendBanner, "");
 
-  // No Detail.Metadata sidebar — the rings carry the quota, the stat cards
-  // today's and the 7-day spend, the charts the breakdown. No table left.
-  const { lanes, days } = spendHeroes(spend);
-  lines.push(`![Spend totals](${totalsCards(spend)})`, "");
+  // No Detail.Metadata sidebar — the panel carries the limits, the metrics
+  // row the pace and the spend totals, the charts the breakdown. No table.
+  const weekStart =
+    limits.weekly.resetsAt === null
+      ? null
+      : limits.weekly.resetsAt - WEEK_SECONDS;
+  const { lanes, days } = spendHeroes(spend, weekStart);
   lines.push("## Spend today", "");
   lines.push(`![Spend by lane](${lanes})`, "");
-  lines.push("## Last 7 days", "");
-  lines.push(`![7-day spend](${days})`);
+  lines.push(
+    `## Last ${spend.dailyTotals.length} days · ${formatSpend(periodTotal(spend))}`,
+    "",
+  );
+  lines.push(`![Daily spend](${days})`);
 
   return [...lines, ...updatingLines].join("\n");
 }
