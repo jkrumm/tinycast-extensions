@@ -1,4 +1,4 @@
-.PHONY: help install build helper deploy check test lint typecheck clean secrets secrets-clear icons status e2e e2e-live fake-router previews van-eval
+.PHONY: help install build helper deploy check test lint typecheck clean secrets secrets-clear icons status e2e e2e-live fake-router previews van-eval tinycast-version
 
 EXT_DIR := extension
 RAY := node_modules/.bin/ray
@@ -105,6 +105,18 @@ NETGEAR_LOG := $(HOME)/Library/Application Support/com.tinycast.app.beta/extensi
 
 logs: ## Last 100 lines of the extension's own Netgear action log (console.log is dead in Tinycast)
 	@test -f "$(NETGEAR_LOG)" && tail -n 100 "$(NETGEAR_LOG)" || echo "No log yet: $(NETGEAR_LOG)"
+
+TINYCAST_APP := /Applications/Tinycast Beta.app
+TINYCAST_VERIFIED := 2026-10-09
+
+tinycast-version: ## Installed Tinycast Beta vs latest upstream release + extension-runtime commits since SINCE (default: last skill verification)
+	@echo "installed: $$(defaults read '$(TINYCAST_APP)/Contents/Info' CFBundleShortVersionString)"
+	@echo "latest:    $$(gh api repos/abue-ammar/tinycast/releases --jq '[.[]|select(.prerelease)][0].tag_name')"
+	@echo "--- commits since $${SINCE:-$(TINYCAST_VERIFIED)} touching the extension runtime (see .claude/skills/tinycast/SKILL.md § Checking upstream)"
+	@for p in Tinycast/Features/Extensions Scripts/raycast-runtime docs/features/extensions.md; do \
+		gh api "repos/abue-ammar/tinycast/commits?sha=main&since=$${SINCE:-$(TINYCAST_VERIFIED)}T00:00:00Z&per_page=100&path=$$p" \
+			--jq '.[]|"\(.sha[0:7]) \(.commit.author.date[0:10]) \(.commit.message|split("\n")[0])"'; \
+	done | sort -u -k2,2r -k1,1
 
 icons: ## Regenerate 512x512 PNG command icons from assets/src/*.svg via rsvg-convert
 	@mkdir -p $(EXT_DIR)/assets

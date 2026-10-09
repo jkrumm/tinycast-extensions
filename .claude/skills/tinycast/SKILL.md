@@ -13,16 +13,19 @@ JavaScriptCore, UI drawn in SwiftUI. **There is no separate Tinycast SDK** —
 you write a normal Raycast extension and install the built output.
 
 **This repo targets the beta channel** (`com.tinycast.app.beta`,
-`0.11.x-beta.N` = upstream `main`; installed 0.11.12-beta.109, latest
-0.11.13-beta.111 as of 2026-10-05) — see § Designing for Tinycast beta. The
-Homebrew cask lags (`brew info` still said 0.11.11-beta.107) because the app
-self-updates; trust the app's `Info.plist`, not brew.
+`0.11.x-beta.N` = upstream `main`; installed 0.11.15-beta.113, latest
+0.11.17-beta.115 = `main` @ `9e6beba` as of 2026-10-09) — see § Designing for
+Tinycast beta. The Homebrew cask lags (`brew info` still says 0.11.11-beta.107)
+because the app self-updates; trust the app's `Info.plist`, not brew.
+`make tinycast-version` prints installed vs latest and the extension-runtime
+commits in between (§ Checking upstream).
 Sourced from `tinycast.dev` docs + the project's engineering spec
 (`docs/features/extensions.md`) for general Raycast-format behaviour, and
 directly from Tinycast's `main`-branch Swift source (via `gh api
 repos/abue-ammar/tinycast/contents/<path>?ref=main`) for anything
-render-size/layout-specific, compiled 2026-09-27, re-checked against commits
-through 2026-10-05 (§ Changes since 0.11.10). **UNCONFIRMED** items are
+render-size/layout-specific, compiled 2026-09-27, re-checked against `main`
+through 2026-10-09 (§ Changes since 0.11.10; every file:line below is `main`
+@ `9e6beba`). **UNCONFIRMED** items are
 flagged; check them again before relying on them for anything load-bearing.
 
 ## Install route used by this repo: "Add from folder"
@@ -69,7 +72,6 @@ name>.json`; `environment.supportPath` → `extension-support/<safe name>/`.
   `getApplications`/`getDefaultApplication`/`getFrontmostApplication`,
   `getSelectedText`, `getSelectedFinderItems`, `launchCommand`,
   `updateCommandMetadata`, `openExtensionPreferences`, `useNavigation`,
-  `OAuth` (Keychain-backed, own service `com.tinycast.extensions.oauth`),
   `Icon`, `Color`, `Image.Mask`.
 - **`@raycast/utils` hooks** (`useFetch`, `usePromise`, `useCachedPromise`,
   `useLocalStorage`, …): **UNCONFIRMED** by name in any doc, but they're
@@ -110,7 +112,7 @@ Transforms (compress on flush, not streaming; `ce7535c5`). `WebAssembly.compile`
 | Gap | Detail |
 |-|-|
 | `AI`, `BrowserExtension`, `WindowManagement` | Import works, calling throws |
-| Raycast's OAuth proxy (`oauth.raycast.com`) | `OAuth.PKCEClient` itself works |
+| `OAuth` (PKCE client + Raycast's proxy) | **Removed in 0.11.17-beta.115** (`c45da6f`, #1445: `oauth.js`, Keychain/session Swift deleted). Unused here (argo bearer token via `lib/secrets.ts`) |
 | Cancelling an in-flight `fetch` | Caller gets `AbortError`; the request runs to completion server-side anyway |
 | Streaming HTTP (SSE, download progress, backpressure) | Bridge delivers the whole body at once |
 | `net` / `tls` | Resolve, throw on use |
@@ -289,9 +291,31 @@ ExtensionMenuBarImage}.swift`, `Features/Extensions/Model/ExtensionImageSize.swi
 - Settings: opt-in `settings.json` mirror of preferences (`1d7d2266`, beta.106),
   "Install from GitHub" (builds a repo link, `4935e937`), option to disable
   automatic update checks (`2c9b4459`, beta.111 — useful to pin a beta).
+- **0.11.13 → 0.11.17 (checked 2026-10-09, 44 commits, `main` @ `9e6beba`)**:
+  nothing in the Detail/List/Grid/markdown/SVG/node-shim/background paths broke.
+  Relevant: OAuth removed (`c45da6f`, see table above); **search text now
+  survives pushing/popping extension screens** (`27b103c`,
+  `Model/ExtensionSearchState.swift`); **action shortcuts fire while the actions
+  panel is open** (`6c1334a`); a List row's **accessories keep their full width and
+  the title truncates instead** (`fdf46d1`) — a tag no longer collapses to "…";
+  Refresh Now feedback (`de9f2d4`); `EventEmitter` state lazy + `once` receiver
+  fix (`cf6821e`, `6e86b91`); fs shim gained `utimes`/`opendir`; Raycast Store
+  deeplink install fixes (`a5a80f0`). Not in the runtime: AI Chat window,
+  Quicklink/window-command work.
 - **Unchanged** (no commits touching them since 2026-09-27): `ExtensionIconCache`
   (`raycast-*` rewrite), `ExtensionMenuBarImage`, Detail metadata/width rules,
   image sizing, deeplink handling (`ExtensionLink`), background refresh policy.
+
+## Checking upstream
+
+`make tinycast-version` = installed `Info.plist` version vs the newest
+`releases` entry, plus the commits since `SINCE` (default: the last skill
+verification, below) that touch `Features/Extensions`, `Scripts/raycast-runtime`
+or `docs/features/extensions.md`. Then `gh api repos/abue-ammar/tinycast/commits/<sha>
+--jq '.files[].filename'` and read the diff; re-verify only the file:line
+citations whose file shows up. **Last verified: 2026-10-09 against `main`
+`9e6beba` (0.11.17-beta.115); installed 0.11.15-beta.113.** Update that line
+and the header when you re-check.
 
 ## Fast access: deeplinks, hotkeys, aliases, favorites
 
@@ -346,26 +370,37 @@ Releases polling).
   Floor is 60s (`no-view`) / 10s (`menu-bar`). No toasts/HUD during a
   background run — only `updateCommandMetadata` can surface state.
 - **One JS runtime — background ticks never run beside a foreground command**
-  (verified against `main`, 2026-10-07; all `Features/Extensions/Service/
+  (verified against `main`, 2026-10-09; all `Features/Extensions/Service/
   ExtensionManager.swift`): `runDueBackgroundCommands` bails on
-  `running == nil` (`:639-640`, again per command at `:655`, `:662`,
-  `runInBackground` at `:681`), and launching a foreground command first calls
-  `abortBackgroundRun()` (`:430`, defined `:764` — "a background tick in flight
-  yields to the manual run", ended as a success so the schedule survives). A
+  `running == nil` (`:635`, again per command at `:650`, `nextBackgroundDelay`
+  `:657`, `runInBackground` `:676`), and launching a foreground command first
+  calls `abortBackgroundRun()` (`:425`, defined `:759` — "the runtime holds one
+  context: a background tick in flight yields to the manual run", ended as a
+  success so the schedule survives). A
   foreground session ends only on Escape (`UI/ExtensionCoordinator.swift`
-  `exitExtensionScreen` `:219` / `popExtensionToRoot` `:228`) or when the
+  `exitExtensionScreen` `:228` / `popExtensionToRoot` `:237`) or when the
   palette switches mode (`Palette/RootPaletteView.swift` `onChange`) — merely
   hiding the Tinycast window leaves it running. Consequence: an interval
   command goes silent for as long as any command view stays open (seen
   2026-10-07: Netgear view open, `netgear-watchdog` quiet for hours). Anything
   that must keep ticking must also run from the open view — this repo's
   `netgear.tsx` does (`netgear/watchdog-runner.ts` + `startViewTicker`).
+- **Scheduler numbers** (`Model/ExtensionRefreshPolicy.swift`): only `no-view`
+  commands with an `interval` are scheduled here (`isSchedulable`; menu-bar has its
+  own scheduler); floors 60 s / 10 s menu-bar; **a background run is killed after
+  `min(max(interval, 15), 120)` s** — i.e. 60 s for our `1m` watchdog, not a flat 60;
+  due commands within a 30 s `coalescingWindow` fire as one batch; per-command
+  deterministic jitter of up to `min(10 % of interval, 300 s)` is added to every
+  next-due time; an idle loop wakes every 300 s. **Refresh Now** (Settings) is refused,
+  never queued, while a foreground command or another tick holds the runtime
+  — HUD "Another extension command is running…" / "Already refreshing."
+  (`de9f2d4`, `ExtensionManager.refreshNow` `:566`).
 
 ## Debugging
 
 **`console.log`/`console.error` are dead in the shipped app** — they're
 `#if DEBUG` print statements, compiled out of the release build
-(`ExtensionManager.swift:785-789`). `log show` shows nothing; there is no
+(`ExtensionManager.swift:878`, `runtime(_:log:message:)`, still `#if DEBUG`, re-checked 2026-10-09). `log show` shows nothing; there is no
 end-user log viewer. Confirmed state surfaces instead:
 
 - **Background command metadata** (subtitle, `backgroundEnabled`, `lastRun`
@@ -449,9 +484,11 @@ against `Scripts/raycast-runtime/src/node-shims.js` on Tinycast's `main`).
 `fs`: `openSync closeSync readSync writeSync readFileSync writeFileSync
 appendFileSync existsSync statSync lstatSync readdirSync mkdirSync rmSync
 rmdirSync unlinkSync renameSync copyFileSync realpathSync accessSync
-mkdtempSync chmodSync`; `fs/promises`: `readFile writeFile appendFile stat
-lstat readdir mkdir rm rmdir unlink rename copyFile realpath access mkdtemp
-chmod`. Anything else (e.g. `fs/promises.open`) passes vitest on real Node and
+mkdtempSync chmodSync` plus, new on `main` (not yet in
+`tinycast-runtime.test.ts`' allowlist), `utimesSync opendirSync`; `fs/promises`:
+`readFile writeFile appendFile stat lstat readdir mkdir rm rmdir unlink rename
+copyFile realpath access mkdtemp chmod` plus `opendir utimes`
+(`node-shims.js:380-470, 536, 619-653`, re-checked 2026-10-09). Anything else (e.g. `fs/promises.open`) passes vitest on real Node and
 throws "x is not a function" only once deployed — that took down every
 watchdog tick and admin action on 2026-10-01. `src/lib/tinycast-runtime.test.ts`
 pins every non-test named `fs`/`fs/promises` import to that list; keep it
@@ -491,11 +528,11 @@ Verified against `gh api repos/abue-ammar/tinycast/contents/<path>?ref=main`,
   own line — see § Designing for Tinycast beta above for the table/image
   specifics.
 - **Every component open is a cold `JSContext`** — no state, no module
-  cache, no closures survive between opens (`ExtensionRuntime.swift:333-347`).
+  cache, no closures survive between opens (`ExtensionRuntime.bootOnQueue`, `ExtensionRuntime.swift:88`: `JSContext()` per boot, `runtime.shutdown()` after every run).
 - **Detail/List/Grid have no loading chrome of their own**: `Detail` shows
   the literal text "Loading…" only when `markdown` is an empty string
-  (`ExtensionDetailView.swift:29-31`); `List`/`Grid` only change their
-  empty-state text while `isLoading` (`ExtensionListView.swift:37-41`).
+  (`ExtensionDetailView.swift:29-30`); `List`/`Grid` only change their
+  empty-state text while `isLoading` (`ExtensionListView.swift:39`).
   There is no spinner overlay — see § Loading & performance below.
 - **Inline `data:` images are never cached** and re-decode (off-main) every
   time the data-URI string changes (`ExtensionIconCache.swift:57-66`); an
