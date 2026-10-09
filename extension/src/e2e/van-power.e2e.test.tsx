@@ -24,8 +24,14 @@ import {
   HELPER_NO_KEY,
   fixtureSamples,
   fixtureVictronAll,
+  simulateVan,
 } from "../van/fixtures";
 import { saveVanHistory } from "../van/storage";
+import {
+  appendCaptureLog,
+  appendTrendsLog,
+  trendsLogLine,
+} from "../van/capture-log";
 
 const readMock =
   vi.fn<() => Promise<{ helper: HelperResult; keyMissing: boolean }>>();
@@ -125,7 +131,7 @@ describe("van power command", () => {
     );
     expect(markdown).not.toContain("voltage");
     expect(imageSvg(markdown, "Yield")).toContain("avg ");
-    expect(markdown.match(DATA_URI)).toHaveLength(3); // panel + charge + yield
+    expect(markdown.match(DATA_URI)).toHaveLength(4); // panel + charge + yield + consumption
     assertClean(markdown, "van with victron history");
   });
 
@@ -275,7 +281,7 @@ describe("van power command", () => {
     await saveVanHistory(fixtureSamples(Date.now() - 3_600_000, 12));
     readMock.mockResolvedValue({ helper: HELPER_FULL, keyMissing: false });
     const markdown = markdownOf(await open());
-    expect(markdown.match(DATA_URI)).toHaveLength(3); // panel + charge + yield
+    expect(markdown.match(DATA_URI)).toHaveLength(4); // panel + charge + yield + consumption
     expect(imageSvg(markdown, "Charge")).toContain(">Battery ·");
     assertClean(markdown, "van with history");
   });
@@ -288,6 +294,64 @@ describe("van power command", () => {
     expect(markdown).not.toContain("![Charge");
     expect(markdown).not.toContain("readings so far");
     expect(markdown.match(DATA_URI)).toHaveLength(1); // the panel only
+    expect(markdown).not.toContain("Consumption"); // no charger trend: nothing to derive
+  });
+
+  it("shows the daily consumption from the logs: the measured days recover the true 24 Ah, today is partial, the blind spot is stated", async () => {
+    const now = Date.now();
+    const midnight = new Date(now);
+    midnight.setHours(0, 0, 0, 0);
+    // 1 A house load all day, the charger gives 2 A from 06:30 to 17:30 (the
+    // pack never fills): the truth is 24 Ah consumed per day. Seeded as the
+    // log files a week of opens would have left, up to a day ago.
+    const van = simulateVan({
+      from: midnight.getTime() - 8 * 86_400_000,
+      to: midnight.getTime(),
+      loadA: 1,
+      sunA: 2,
+      startSoc: 90,
+    });
+    const logPath = join(environment.supportPath, "van-log.jsonl");
+    for (let d = 8; d >= 1; d--) {
+      for (const hour of [7, 22]) {
+        const t = midnight.getTime() - d * 86_400_000 + hour * 3_600_000;
+        if (t > midnight.getTime()) continue;
+        appendCaptureLog({
+          path: logPath,
+          now,
+          entry: {
+            t,
+            ective: {
+              soc: Math.round(van.truthAt(t)),
+              currentA: 0,
+              voltageV: 13.3,
+              capacityAh: 100,
+              tempC: 20,
+            },
+            victron: null,
+            estimateAtT: null,
+          },
+        });
+      }
+    }
+    appendTrendsLog({
+      path: join(environment.supportPath, "van-trends.jsonl"),
+      line: trendsLogLine(van.trends, now)!,
+      now,
+    });
+
+    readMock.mockResolvedValue({ helper: HELPER_FULL, keyMissing: false });
+    const markdown = markdownOf(await open());
+    expect(markdown).toMatch(
+      /### Consumption · last 14 days · \d+ Ah\/day avg · \d+ Ah\/day charged in/,
+    );
+    expect(markdown).toContain("Charging the Victron does not see");
+    const chart = imageSvg(markdown, "Consumption");
+    expect(chart).toContain(">Today<");
+    expect(chart).toContain(">so far<");
+    expect(chart).toMatch(/>2[345] Ah</); // the seeded days
+    expect(chart).toContain("avg ");
+    assertClean(markdown, "van consumption");
   });
 
   it("history without trends still draws the bars; trends without history still draw the chart", async () => {
@@ -308,6 +372,36 @@ describe("van power command", () => {
     markdown = markdownOf(await open());
     expect(markdown).not.toContain("![Yield");
     expect(imageSvg(markdown, "Charge")).toContain(">Solar<");
+  });
+
+  it("says in one quiet line that it samples in the background, and pauses / resumes that from an action", async () => {
+    readMock.mockResolvedValue({ helper: HELPER_FULL, keyMissing: false });
+    const renderer = await open();
+    expect(markdownOf(renderer)).toContain(
+      "_Background sampling every 15 min_",
+    );
+    const action = (title: string) =>
+      renderer.root.findAllByType(Action).find((a) => a.props.title === title);
+
+    await act(async () => {
+      await action("Pause Background Sampling")!.props.onAction();
+    });
+    await waitFor(() =>
+      markdownOf(renderer).includes("_Background sampling paused_"),
+    );
+    expect(action("Resume Background Sampling")).toBeDefined();
+    expect(
+      JSON.parse((await LocalStorage.getItem<string>("van-sampler"))!).paused,
+    ).toBe(true);
+
+    await act(async () => {
+      await action("Resume Background Sampling")!.props.onAction();
+    });
+    await waitFor(() =>
+      markdownOf(renderer).includes("_Background sampling every 15 min_"),
+    );
+    expect(action("Pause Background Sampling")).toBeDefined();
+    assertClean(markdownOf(renderer), "van sampler status");
   });
 
   it("keeps the battery and says the Victron key is missing", async () => {

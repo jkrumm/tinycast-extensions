@@ -23,7 +23,7 @@ there.
 
 ```
 extension/
-  package.json          ← manifest: name "jkrumm", 11 commands, 9 preferences
+  package.json          ← manifest: name "jkrumm", 12 commands, 9 preferences
   src/
     my-tasks.tsx         command — TickTick task list
     quick-add.tsx        command — TickTick quick add
@@ -35,6 +35,7 @@ extension/
     battery.tsx            command — MacBook charge/health + charge-limit control
     speed-test.tsx          command — networkQuality speed/latency/data-used + history
     van-power.tsx           command — Van Power: Ective battery + Victron solar over BLE, 72 h charts
+    van-sampler.tsx         command — no-view background: a live read every 15 min + low-battery alert
     hub.tsx                 command — Grid dashboard, one tile per command
     ticktick/             feature code: client, types, format, parse, search, create-task
     usage/                feature code: quota (fs read), spend (argo), aggregate (pure), format
@@ -64,7 +65,11 @@ extension/
                            `van-history`), victron-history (pure: the Victron's on-device 30-day
                            history registers → days/total; `runVictronHistory()` is in run.ts),
                            victron-trends (pure: stored-trend replies → 72 h series;
-                           `runVictronTrends()` is in run.ts), types, fixtures
+                           `runVictronTrends()` is in run.ts), consumption (pure: Ah consumed /
+                           charged per local day + quality), sampler (pure: pause state, result
+                           classification, low-battery alert state machine, subtitle/status words),
+                           sampler-runner (one run), sampler-storage (LocalStorage `van-sampler`),
+                           notify (osascript notification), types, fixtures
     lib/                  shared: argo.ts (fetch client), secrets.ts (Keychain/1Password chain),
                            action-log.ts (persistent log file), svg.ts + chart/ (hero/chart library, see svg-charts skill), preferences.ts (Preferences type),
                            action-log.ts (persistent log file, pure fs)
@@ -120,6 +125,8 @@ deployed `package.json` changed. Verify with `shasum` of the installed vs built 
 run `make status` — it prints that same deployed-vs-built check alongside
 background command metadata and the netgear-watchdog log (see § Debugging in
 the tinycast skill). There is no hot reload or dev mode.
+
+`make tinycast-version` prints the installed Tinycast Beta vs the latest upstream release and the runtime commits since the skill was last verified (recipe: tinycast skill § Checking upstream).
 
 `make previews` renders the chart gallery and every production hero (see § SVG hero images).
 
@@ -488,11 +495,46 @@ run make secrets" while still reading the battery.
     record `0x10`, readout type `0x01` = solar charger), AES-128-CTR with the
     little-endian counter block from the IV, key-check byte = key[0]. Needs the
     per-device Instant Readout key (`victronKey`).
-  - **No background sampler** — reads happen only when Van Power is opened,
-    which appends one sample to `LocalStorage` `van-history` (72 h, samples
-    closer than 2 min dedupe). Charts (SoC; solar W vs battery A) draw only
-    with ≥6 samples in the window, otherwise they are omitted silently. The hub
-    tile shows the last stored sample and never runs BLE.
+  - **Readings** come from opening Van Power and from the pausable background
+    sampler (below); each appends one sample to `LocalStorage` `van-history`
+    (72 h, samples closer than 2 min dedupe) through the one shared
+    `readAndPersist(source)` in `van/load.ts`. Charts (SoC; solar W vs battery
+    A) draw only with ≥6 samples in the window, otherwise they are omitted
+    silently. The hub tile shows the last stored sample and never runs BLE.
+  - **Background sampler** (`van-sampler`, `no-view`, `interval: "15m"`, the
+    van-power icon; `van-sampler.tsx` → `van/sampler-runner.ts`): each run is
+    the same **live read only** as an open (Ective frame + Victron Instant
+    Readout advert via `readVan`; **never** the connected Victron GATT
+    session, no new BLE write), persisted exactly like an open — a
+    `van-history` sample plus a `van-log.jsonl` capture line with `source:
+    "background"` and `estimateReason: "background"` (no Victron read, so no live
+    estimate). The Victron key is resolved **Keychain-only**
+    (`lib/secrets.ts` `KeychainOnlyRunner`): a missing entry means no solar
+    decode until `make secrets`, never a 1Password biometric prompt nobody can
+    answer. Nothing found is an outcome, not an error: no sample, no log line,
+    launcher subtitle "Van not in range" / "Phone app holds the battery"
+    (BMS `battery-connect-failed`) / "Bluetooth off" / "83 % · 12:40" /
+    "Paused" (`updateCommandMetadata`; a failed read is "Read failed", the run
+    still succeeds so Tinycast's failure backoff never parks it). **Pause /
+    Resume**: LocalStorage `van-sampler` `{ paused, lastRunAt, lastResult,
+    lastAlert }` (default active; `van/sampler.ts` pure, `sampler-storage.ts`
+    glue); Van Power's **Pause / Resume Background Sampling** action flips it and
+    one quiet line says "Background sampling every 15 min · last 12:40" or
+    "paused" — a paused run returns at once, so pausing for a month costs
+    nothing. **Low-battery alert**: a reading at or below 30 % or 15 % posts one
+    macOS notification (`van/notify.ts`, `osascript display notification` via
+    callback-style `execFile`, never throws: "Van battery 28 % — stop charging
+    devices from the van"); a threshold is latched once reported and re-armed
+    only after the charge is ≥ 5 points above it (`alertStep`); a reading that
+    jumps through both reports the lower. The first notification may need
+    allowing under System Settings → Notifications → Script Editor. Constraints:
+    one JS runtime — no background run while any view is open (the Van Power
+    open samples itself); the run is killed after `min(max(interval, 15), 120)`
+    s = 120 s, the helper's own 15 s deadline fits. **Enable once**: Tinycast
+    Settings → Extensions → Van Sampler → Background refresh (off until then, as
+    for the Netgear watchdog); `make deploy` restarts Tinycast when the manifest
+    changed so the command appears. The charge chart draws a dot per reading
+    only up to 30 readings, then one per 2 h plus the latest.
   - **Victron on-device history** (`van-ble --victron-history`, no stdin/key;
     TS API `runVictronHistory()` in `van/run.ts` → `van/victron-history.ts`,
     wired into Van Power, see below): the charger's own 30 daily records over a
@@ -634,16 +676,49 @@ run make secrets" while still reading the battery.
     integration far from a reading drifts: where it has to clamp at 0 or 100 the
     estimate there is not to be trusted. The cache keeps PV power, battery V and
     A (and PV V when pushed); a cache without the current is read in full once.
-    There is **no background sampling**, ever: readings exist only because the
-    command was opened. Below the charts, "Solar yield · last 14 days" (daily
+    Readings exist only because the command was opened or the background sampler
+    ran (never a Victron GATT session in the background). Below the charts, "Solar yield · last 14 days" (daily
     bars, weekday over day number, only the best day labelled, subtle dashed
-    average over complete days, 30-day total in the heading).
+    average over complete days, 30-day total in the heading), then
+    "Consumption · last 14 days" (next bullet).
 
+  - **Daily consumption** (`van/consumption.ts`, pure, unit-tested; chart in
+    `van/heroes.ts` `consumptionChartImage`, heading `consumptionSummaryText`):
+    Ah the house loads drew per **local day** and Ah the Victron charged in, with
+    a quality marker. A day's consumption is ∫ of the load the estimator already
+    infers between consecutive anchors (`intervalLoads`), an interval split across
+    midnight proportionally; hours outside every reliable interval (before the
+    first / after the last anchor, unreliable or full-pinned intervals) use the
+    estimator's `typicalLoadA` (the median-of-reliable-intervals fallback,
+    refactored out of `estimateSoc`). `chargedAh` = ∫ charger current (5-min steps
+    like `chargeBetween`; `null` when the trend has no sample that day).
+    `coverage` = share of the day's elapsed hours inside reliable intervals →
+    `quality`: **measured** ≥ 0.8, **mixed** ≥ 0.3, else **estimated**; today is
+    `partial`. A day with neither a trend sample nor an anchor interval is `null`
+    (omitted), and with no charger-current trend at all every day is `null`.
+    `dailyConsumption` first **thins the readings to ≥ 2 h apart**
+    (`thinCaptures`): the sampler's 15-minute readings would make every interval
+    "unreliable". **Accuracy ~±3–5 %** on days with anchors hours apart (the SoC is
+    an integer %, ≈ 0.94 Ah per step on this pack); **blind spot**: charging the
+    Victron does not see (shore power, alternator) raises the SoC without
+    `chargedAh`, so it reads as *lower* consumption. Data source
+    (`loadConsumption` in `van/load.ts`, after the Victron read lands and from the
+    cache on first paint): 14 days exceed the 72 h cache, so readings come from
+    `van-log.jsonl` (`parseCaptureLog`/`toCaptures`) with the `van-history`
+    samples laid over them, trends from `van-trends.jsonl` (`parseTrendsLog`)
+    with the cached trends laid over (`mergeLongTrends`, no 72 h trim). The chart
+    is the yield chart's twin (weekday over day number, "Today / so far", dashed
+    average over complete measured/mixed days — also in the heading with the
+    average charged in): estimated days are faded (`BarItem.opacity`, mixed
+    slightly), a day with no data keeps its place as "—". Starts at the first
+    known day; fewer than two days → no chart.
   - **SoC estimator tuning loop.** Two append-only files in the extension's
     support dir (`~/Library/Application Support/com.tinycast.app.beta/extension-support/jkrumm/`,
     written by `van/capture-log.ts` with only shim-safe fs calls, never throwing):
-    - `van-log.jsonl` — one line per Van Power open, 60 days:
-      `{ t, ective: { soc, currentA, voltageV, capacityAh, tempC }, victron:
+    - `van-log.jsonl` — one line per Van Power open or background-sampler run
+      (`source: "open" | "background"`, absent in older lines = open;
+      `make van-eval` shows it as `src`), 60 days:
+      `{ t, source, ective: { soc, currentA, voltageV, capacityAh, tempC }, victron:
       { chargeA, batteryV, pvW, state } | null, estimateAtT }`, plus, in the same
       file, one `{ t, victronRead: { phase: "start"|"done"|"failed", … } }` line
       per Victron read phase (since-when, whether the history was asked for,
@@ -677,9 +752,11 @@ run make secrets" while still reading the battery.
       between consecutive anchors** (readings and confirmed fulls — the table the
       estimator itself uses, flagged where an interval is too short to trust), the
       fallback load, the **Victron read log** and the current constants
-      (`ESTIMATOR_CONSTANTS`: `DEFAULT_LOAD_A`, `FULL_VOLTS`, `FULL_TAPER_C`, …).
+      (`ESTIMATOR_CONSTANTS`: `DEFAULT_LOAD_A`, `FULL_VOLTS`, `FULL_TAPER_C`, …),
+      and a **per-day table** of the last 14 days (consumed Ah, charged Ah,
+      coverage, quality — `van/consumption.ts`).
       Tune a constant in `van/soc-estimate.ts`, re-run, compare MAE. It is thin
-      until the log has filled: each open adds one reading.
+      until the log has filled: each open (and each background run) adds one reading.
 
 ## Bun-only, exact pins
 

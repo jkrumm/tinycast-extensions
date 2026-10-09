@@ -30,6 +30,9 @@ export interface BarItem {
   sublabel?: string; // a second, muted axis line under the label (e.g. the day number under the weekday)
   value: number; // non-finite is drawn as 0 and labelled "—"
   color?: RaycastColor;
+  // Vertical only: multiplies the bar's strength (0–1), e.g. to mute a day
+  // that rests on an estimate.
+  opacity?: number;
   // Stacked bar: segments are stacked from the baseline and `value` is ignored.
   segments?: BarSegment[];
 }
@@ -196,7 +199,9 @@ function verticalBars(spec: BarChartSpec, opts: Size | undefined): string {
     const cx = (band(i) ?? 0) + band.bandwidth() / 2;
     const x = cx - barW / 2;
     const isHighlight = highlight === undefined || highlight === i;
-    const strength = isHighlight || spec.dim === false ? 1 : THEME.opacity.dim;
+    const strength =
+      (isHighlight || spec.dim === false ? 1 : THEME.opacity.dim) *
+      (item.opacity ?? 1);
     const yEnd = y(total);
 
     if (Math.abs(yBase - yEnd) >= 1) {
@@ -252,8 +257,9 @@ function verticalBars(spec: BarChartSpec, opts: Size | undefined): string {
           y: struck ? yEnd + 18 : total >= 0 ? yEnd - 7 : yEnd + 16,
           content,
           size: THEME.font.tick + 1,
+          // inside a coloured bar the muted grey is unreadable
           color:
-            isHighlight && highlight !== undefined
+            struck || (isHighlight && highlight !== undefined)
               ? THEME.color.text
               : THEME.color.muted,
           weight: isHighlight && highlight !== undefined ? 600 : 400,

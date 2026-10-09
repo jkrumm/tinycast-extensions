@@ -45,6 +45,20 @@ export class SystemSecretRunner implements SecretRunner {
   }
 }
 
+// For unattended runs (a background command): Keychain only. 1Password's
+// `op read` raises a biometric prompt nobody is there to answer, and a miss
+// just means the secret is unavailable until `make secrets` has run.
+export class KeychainOnlyRunner implements SecretRunner {
+  private readonly system = new SystemSecretRunner();
+
+  exec(bin: string, args: string[]): Promise<string> {
+    if (bin !== SECURITY_BIN) {
+      return Promise.reject(new Error(`${bin} is not allowed unattended`));
+    }
+    return this.system.exec(bin, args);
+  }
+}
+
 const defaultRunner = new SystemSecretRunner();
 
 async function readKeychain(

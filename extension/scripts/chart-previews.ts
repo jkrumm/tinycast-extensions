@@ -614,7 +614,10 @@ type PageItem = string | { svg: string };
 // Approximates Tinycast's markdown table: a blank shaded header row (the
 // "| | |" no-header trick) and hairline-bordered cells, 13pt text, label cells
 // muted. `before` mocks of the tables the cards replace.
-function tableMock(rows: string[][], width = svg.HERO_COL_WIDTH): { svg: string } {
+function tableMock(
+  rows: string[][],
+  width = svg.HERO_COL_WIDTH,
+): { svg: string } {
   const ROW = 30;
   const columns = rows[0].length;
   // label columns narrow, value columns wide (Tinycast sizes by content)
@@ -660,7 +663,10 @@ const bodyText = (o: {
 }) => svgText({ ...o, size: 13, anchor: "start" });
 
 // One markdown text line (a headline sentence) in body size.
-function lineMock(content: string, width = svg.HERO_COL_WIDTH): { svg: string } {
+function lineMock(
+  content: string,
+  width = svg.HERO_COL_WIDTH,
+): { svg: string } {
   return {
     svg: `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="22" viewBox="0 0 ${width} 22">${bodyText({ x: 0, y: 16, content, color: C.primaryText })}</svg>`,
   };
@@ -701,6 +707,10 @@ const PAGES: Record<string, PageItem[]> = {
     "van-charge",
     lineMock("Solar yield · last 14 days · 35.5 kWh in 30 days"),
     "van-yield",
+    lineMock(
+      "Consumption · last 14 days · 41 Ah/day avg · 56 Ah/day charged in",
+    ),
+    "van-consumption",
   ],
   "page-van-dense": ["van-panel", "van-charge-dense", "van-yield"],
   "page-van-solar-only": ["van-panel", "van-charge-solar-only", "van-yield"],

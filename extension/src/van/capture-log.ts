@@ -2,9 +2,10 @@
 // purpose: tuning the SoC estimator (`make van-eval`, see AGENTS.md § SoC
 // estimator tuning loop).
 //
-//   van-log.jsonl     one line per Van Power open: the exact Ective reading, the
-//                     Victron's live reading, and what the estimator predicted
-//                     for that moment WITHOUT this reading — 60 days.
+//   van-log.jsonl     one line per Van Power open or background-sampler run (its
+//                     `source`): the exact Ective reading, the Victron's live
+//                     reading, and what the estimator predicted for that moment
+//                     WITHOUT this reading — 60 days.
 //   van-trends.jsonl  the Victron's trend samples (battery A, battery V, PV W) at
 //                     native resolution, appended on every read — 30 days. The
 //                     view itself still only uses 72 h; this is the long tail.
@@ -28,9 +29,10 @@ import { VictronTrends } from "./victron-trends";
 const DAY_MS = 86_400_000;
 export const CAPTURE_LOG_KEEP_MS = 60 * DAY_MS;
 export const TRENDS_LOG_KEEP_MS = 30 * DAY_MS;
-// A file is rewritten (trimmed) only once it has outgrown this — roughly a
-// month of heavy use for the capture log, two weeks of native-resolution trends.
-export const CAPTURE_LOG_TRIM_BYTES = 256 * 1024;
+// A file is rewritten (trimmed) only once it has outgrown this — the capture
+// log's 60 days at one reading per 15 minutes (~1.5 MB), two weeks of
+// native-resolution trends.
+export const CAPTURE_LOG_TRIM_BYTES = 2 * 1024 * 1024;
 export const TRENDS_LOG_TRIM_BYTES = 1024 * 1024;
 
 export const CAPTURE_LOG_FILE = "van-log.jsonl";
@@ -38,8 +40,13 @@ export const TRENDS_LOG_FILE = "van-trends.jsonl";
 
 // ─── The capture log ────────────────────────────────────────────────────────
 
+export type CaptureSource = "open" | "background";
+
 export interface CaptureLogEntry {
   t: number; // epoch ms of the reading
+  // What took the reading: opening Van Power, or the background sampler. Absent
+  // in lines written before the sampler existed (= "open").
+  source?: CaptureSource;
   ective: {
     soc: number;
     currentA: number; // net, + charging
@@ -59,7 +66,8 @@ export interface CaptureLogEntry {
   estimateAtT: number | null;
   // Why `estimateAtT` is null: "stale-trends" (the open ended or the Victron read
   // failed before the trends were refreshed — a prediction from the stale cache
-  // would be misleading), "no-estimate" (nothing to anchor or integrate from).
+  // would be misleading), "no-estimate" (nothing to anchor or integrate from),
+  // "background" (the sampler takes no Victron read, so there is no live estimate).
   estimateReason?: string | null;
 }
 
@@ -74,11 +82,13 @@ export interface EstimateUpdateEntry {
 export function captureLogEntry(
   reading: VanReading,
   estimateAtT: number | null,
+  source: CaptureSource = "open",
 ): CaptureLogEntry | null {
   const { battery, solar } = reading;
   if (!battery) return null;
   return {
     t: reading.readAt,
+    source,
     ective: {
       soc: battery.soc,
       currentA: battery.currentA,
@@ -96,7 +106,11 @@ export function captureLogEntry(
       : null,
     ...estimateFields(
       estimateAtT,
-      estimateAtT === null ? "stale-trends" : null,
+      estimateAtT === null
+        ? source === "background"
+          ? "background"
+          : "stale-trends"
+        : null,
     ),
   };
 }

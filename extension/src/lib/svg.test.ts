@@ -920,6 +920,7 @@ describe("production heroes", () => {
         "van-panel",
         "van-charge",
         "van-yield",
+        "van-consumption",
         "usage-days",
         "speed-history",
       ]),

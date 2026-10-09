@@ -50,6 +50,7 @@ const report = evaluate({
 describe("evaluate (leave-one-out on a simulated van)", () => {
   it("one row per reading, with measured, predicted without it, and the error", () => {
     expect(report.rows).toHaveLength(entries.length);
+    expect(report.rows.every((r) => r.source === "open")).toBe(true); // no source logged = an open
     for (const row of report.rows) {
       expect(row.predicted).not.toBeNull();
       expect(row.error).toBeCloseTo(row.predicted! - row.measured, 6);
@@ -149,6 +150,26 @@ describe("implied load per interval between anchors", () => {
     );
     expect(reliable.length).toBeGreaterThan(0);
     for (const i of reliable) expect(i.loadA).toBeCloseTo(1.0, 0);
+  });
+});
+
+describe("per-day consumption table", () => {
+  it("one entry per local day up to `now`, today partial, the days with readings recovered", () => {
+    const withDays = evaluate({
+      entries,
+      trends: van.trends,
+      location: (t) => defaultLocation(t),
+      now: NOW,
+    });
+    expect(withDays.days).toHaveLength(14);
+    const today = withDays.days.at(-1)!;
+    expect(today.partial).toBe(true);
+    // days nothing was logged for are omitted, not zero
+    expect(withDays.days[0]).toBeNull();
+    const known = withDays.days.flatMap((d) => (d ? [d] : []));
+    expect(known.length).toBeGreaterThanOrEqual(4);
+    expect(known.at(-2)!.consumedAh).toBeGreaterThan(15); // 24 Ah true, 1 A load
+    expect(known.at(-2)!.consumedAh).toBeLessThan(30);
   });
 });
 

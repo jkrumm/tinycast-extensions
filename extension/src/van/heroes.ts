@@ -14,6 +14,11 @@ import {
   thresholdColor,
   toDataUri,
 } from "../lib/svg";
+import {
+  DayConsumption,
+  averageChargedAh,
+  averageConsumedAh,
+} from "./consumption";
 import { formatAmps, formatEta, formatYield } from "./format";
 import {
   HISTORY_WINDOW_MS,
@@ -127,6 +132,24 @@ export function chargePoints(samples: Sample[], now: number): ChargePoints {
   return { times, values, readings: readings.length };
 }
 
+// The background sampler leaves a reading every ~15 minutes, and a dot for each
+// would be a solid band: past MAX_MARKS readings, a dot at most every
+// MARK_GAP_MS plus the latest reading (the line still runs through every one).
+const MAX_MARKS = 30;
+const MARK_GAP_MS = 2 * 3_600_000;
+
+function markedReadings<T extends { t: number }>(readings: T[]): T[] {
+  if (readings.length <= MAX_MARKS) return readings;
+  const marked: T[] = [];
+  for (const r of readings) {
+    const last = marked.at(-1);
+    if (!last || r.t - last.t >= MARK_GAP_MS) marked.push(r);
+  }
+  const newest = readings.at(-1);
+  if (newest && marked.at(-1) !== newest) marked.push(newest);
+  return marked;
+}
+
 const AXIS_WIDTH = 56; // both stacked charts reserve it, so their plots line up
 
 // The headline: the last 3 days as two stacked charts sharing one x axis, the
@@ -182,7 +205,7 @@ export function chargeChartImage(opts: {
           hideXLabels: solar.length > 0,
           // measured readings: small solid dots, no per-dot text
           marks: hasEstimate
-            ? readings.map((r) => ({
+            ? markedReadings(readings).map((r) => ({
                 t: r.t,
                 v: r.soc,
                 color: RAYCAST_COLOR.green,
@@ -293,4 +316,91 @@ export function yieldTotalText(history: VictronHistory | null): string | null {
   const total = history.days.reduce((sum, d) => sum + d.yieldWh, 0);
   const kwh = (total / 1000).toFixed(total >= 10_000 ? 1 : 2);
   return `${kwh} kWh in ${history.days.length} days`;
+}
+
+// ─── Daily consumption (derived from the readings, see consumption.ts) ─────
+
+const MIN_CONSUMPTION_DAYS = 2;
+const QUALITY_STRENGTH = { measured: 1, mixed: 0.75, estimated: 0.4 } as const;
+
+const dayLabel = (dayStart: number): { label: string; sublabel: string } => {
+  const date = new Date(dayStart);
+  return {
+    label: WEEKDAYS[date.getDay()],
+    sublabel: String(date.getDate()),
+  };
+};
+
+const formatAh = (ah: number): string => `${Math.round(ah)} Ah`;
+
+// Leading days nothing is known about are cut — the chart starts where the
+// data does; a gap inside the window stays a gap.
+function drawnDays(
+  days: Array<DayConsumption | null>,
+): Array<DayConsumption | null> {
+  const first = days.findIndex((d) => d !== null);
+  return first < 0 ? [] : days.slice(first);
+}
+
+// Daily consumption, last 14 days: today bold ("so far"), a day that rests on
+// an estimate muted, a subtle dashed average over the complete days that do not.
+// Null when there are fewer than two days to compare.
+export function consumptionChartImage(
+  days: Array<DayConsumption | null>,
+): string | null {
+  const drawn = drawnDays(days);
+  if (drawn.filter((d) => d !== null).length < MIN_CONSUMPTION_DAYS)
+    return null;
+  const first = drawn[0]!; // drawnDays starts at the first known day
+  const average = averageConsumedAh(drawn);
+  return toDataUri(
+    barChart({
+      items: drawn.map((day, i) => {
+        if (!day) {
+          // a gap keeps its place on the axis, with the weekday it stands for
+          const d = new Date(first.dayStart);
+          return {
+            ...dayLabel(
+              new Date(
+                d.getFullYear(),
+                d.getMonth(),
+                d.getDate() + i,
+              ).getTime(),
+            ),
+            value: Number.NaN,
+          };
+        }
+        return {
+          ...(day.partial
+            ? { label: "Today", sublabel: "so far" }
+            : dayLabel(day.dayStart)),
+          value: day.consumedAh,
+          opacity: QUALITY_STRENGTH[day.quality],
+        };
+      }),
+      color: RAYCAST_COLOR.blue,
+      format: formatAh,
+      highlight: "last",
+      dim: false,
+      ...(average === null
+        ? {}
+        : { threshold: { value: average, label: `avg ${formatAh(average)}` } }),
+    }),
+  );
+}
+
+// "42 Ah/day avg · 51 Ah/day charged in" for the heading — the numbers the
+// bars do not draw. Null without a usable day.
+export function consumptionSummaryText(
+  days: Array<DayConsumption | null>,
+): string | null {
+  const consumed = averageConsumedAh(days);
+  if (consumed === null) return null;
+  const charged = averageChargedAh(days);
+  return [
+    `${formatAh(consumed)}/day avg`,
+    charged === null ? null : `${formatAh(charged)}/day charged in`,
+  ]
+    .filter(Boolean)
+    .join(" · ");
 }

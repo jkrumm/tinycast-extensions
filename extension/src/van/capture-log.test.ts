@@ -55,6 +55,24 @@ describe("captureLogEntry", () => {
     });
   });
 
+  it("says what took the reading; a background reading has no live estimate, and a line without a source still parses", () => {
+    expect(captureLogEntry(reading, null)).toMatchObject({
+      source: "open",
+      estimateReason: "stale-trends",
+    });
+    const background = captureLogEntry(reading, null, "background")!;
+    expect(background).toMatchObject({
+      source: "background",
+      estimateAtT: null,
+      estimateReason: "background",
+    });
+    const legacy = { ...captureLogEntry(reading, 80)!, source: undefined };
+    const parsed = parseCaptureLog(
+      `${JSON.stringify(legacy)}\n${JSON.stringify(background)}`,
+    );
+    expect(parsed.map((e) => e.source)).toEqual([undefined, "background"]);
+  });
+
   it("victron is null without a solar reading, estimateAtT null without an estimate, nothing without a battery", () => {
     const noSolar = captureLogEntry({ ...reading, solar: null }, null)!;
     expect(noSolar.victron).toBeNull();

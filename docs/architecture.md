@@ -17,7 +17,8 @@ usage) and the secrets chain (TickTick, Netgear, Victron) where useful.
 | `netgear-watchdog` | no-view, `interval: 1m` | `src/netgear-watchdog.tsx` | `netgear/{watchdog,watchdog-storage,internet-probe,action-lock,session}.ts` | same Netgear HTTP API + `curl` captive-portal probe + `LocalStorage` |
 | `battery` | view | `src/battery.tsx` | `battery/{collect,parse,heroes,types}.ts`, `lib/svg.ts` | `batt status --json` + `ioreg -rn AppleSmartBattery` |
 | `speed-test` | view | `src/speed-test.tsx` | `speed-test/{run,parse,heroes,types}.ts`, `lib/svg.ts` | `/usr/bin/networkQuality` + `LocalStorage` history |
-| `van-power` | view | `src/van-power.tsx` | `van/{run,load,parse,history,victron-history,format,heroes,storage,types}.ts`, `lib/svg.ts` | `assets/van-ble` (Swift BLE helper: Ective BMS notify + Victron Instant Readout advert) + `LocalStorage` 72 h history |
+| `van-power` | view | `src/van-power.tsx` | `van/{run,load,parse,history,victron-history,victron-trends,consumption,soc-estimate,capture-log,sampler,sampler-storage,format,heroes,storage,types}.ts`, `lib/svg.ts` | `assets/van-ble` (Swift BLE helper: Ective BMS notify + Victron Instant Readout advert, Victron GATT history/trends) + `LocalStorage` 72 h history + the `van-log.jsonl` / `van-trends.jsonl` logs (14-day consumption) |
+| `van-sampler` | no-view, `interval: 15m` | `src/van-sampler.tsx` | `van/{sampler-runner,sampler,sampler-storage,notify,load,run}.ts` | the same live `assets/van-ble` read as an open (no Victron GATT session) + `LocalStorage` `van-sampler` (pause state) + `osascript` low-battery notification |
 | `hub` | view | `src/hub.tsx` | reads every feature module above, one tile each | all of the above, loaded independently per tile |
 
 Shared: `lib/argo.ts` (bearer-authed fetch client, `prefs()`, `useAuthHeaders()`),
@@ -68,7 +69,18 @@ Van Power command
        │    └─ Victron: manufacturer-data advert, AES-128-CTR decrypt
        ├─ van/parse.ts (pure) → reading → sample
        └─ van/history.ts (pure) + van/storage.ts → LocalStorage `van-history` (72 h)
-  (hub tile reads the last stored sample only; no background command)
+     (that read + persist is `readAndPersist(source)` in van/load.ts, shared with the sampler)
+  └─ van/load.ts loadConsumption() → van-log.jsonl + van-trends.jsonl (+ cached samples/trends)
+       └─ van/consumption.ts (pure) → Ah consumed / charged per local day → van/heroes.ts bars
+  (hub tile reads the last stored sample only)
+
+Van Sampler command (background, every 15 min, pausable from Van Power)
+  └─ van/sampler-runner.ts
+       ├─ paused (LocalStorage `van-sampler`) → return at once
+       ├─ van/load.ts readAndPersist("background") → van/run.ts readVan({ unattended })
+       │    (Victron key from Keychain only — never a 1Password prompt)
+       ├─ van/sampler.ts (pure): classify → subtitle, low-battery alert state (30 % / 15 %)
+       └─ van/notify.ts → execFile /usr/bin/osascript display notification (never throws)
 
 Victron on-device history (`runVictronHistory()`, API only — not wired into a command yet)
   └─ van/run.ts → spawn assets/van-ble --victron-history (no key, no stdin)

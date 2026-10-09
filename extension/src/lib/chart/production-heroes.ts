@@ -16,9 +16,11 @@ import {
 } from "../../battery/heroes";
 import {
   chargeChartImage as vanCharge,
+  consumptionChartImage as vanConsumption,
   statusPanelImage as vanPanel,
   yieldChartImage as vanYield,
 } from "../../van/heroes";
+import type { DayConsumption } from "../../van/consumption";
 import { fixtureVictronAll } from "../../van/fixtures";
 import { compactTrends } from "../../van/history";
 import { estimateSoc } from "../../van/soc-estimate";
@@ -280,12 +282,58 @@ export function productionHeroes(now: number): ProductionHero[] {
       location: berlin,
     })!,
   );
+  // The background sampler: a reading every ~25 min for three days.
+  add(
+    "van",
+    "van-charge-sampled",
+    vanCharge({
+      samples: samples.map(reading),
+      trends,
+      now,
+      location: berlin,
+    })!,
+  );
   add(
     "van",
     "van-charge-solar-only",
     vanCharge({ samples: [], trends, now, location: berlin })!,
   );
   add("van", "van-yield", vanYield(victronAll.history)!);
+  // A fortnight of the van: measured days around 30–45 Ah, a mixed one, two
+  // resting on an estimate (muted), the gap of a day nobody looked, and today.
+  const dayStart = (k: number) => {
+    const d = new Date(now);
+    return new Date(d.getFullYear(), d.getMonth(), d.getDate() - k).getTime();
+  };
+  const fortnight: Array<[number, number, DayConsumption["quality"]] | null> = [
+    [38, 61, "measured"],
+    [44, 70, "measured"],
+    [29, 54, "measured"],
+    [52, 33, "mixed"],
+    [41, 12, "estimated"],
+    null,
+    [35, 66, "estimated"],
+    [47, 58, "measured"],
+    [31, 72, "measured"],
+    [36, 64, "measured"],
+    [58, 41, "mixed"],
+    [33, 69, "measured"],
+    [40, 63, "measured"],
+    [19, 28, "measured"],
+  ];
+  const consumption = fortnight.map((day, i): DayConsumption | null =>
+    day
+      ? {
+          dayStart: dayStart(fortnight.length - 1 - i),
+          consumedAh: day[0],
+          chargedAh: day[1],
+          coverage: day[2] === "measured" ? 0.95 : day[2] === "mixed" ? 0.5 : 0,
+          quality: day[2],
+          partial: i === fortnight.length - 1,
+        }
+      : null,
+  );
+  add("van", "van-consumption", vanConsumption(consumption)!);
 
   const router = {
     radioQuality: 48,

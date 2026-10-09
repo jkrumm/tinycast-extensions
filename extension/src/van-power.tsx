@@ -1,20 +1,33 @@
 import { useMemo } from "react";
-import { Action, ActionPanel, Detail, Icon, showToast } from "@raycast/api";
+import {
+  Action,
+  ActionPanel,
+  Detail,
+  Icon,
+  Toast,
+  showToast,
+} from "@raycast/api";
 import { useCachedPromise } from "@raycast/utils";
 import {
   VictronHistoryView,
+  loadConsumption,
   loadVan,
   loadVictronCache,
   loadVictronHistory,
 } from "./van/load";
 import {
   chargeChartImage,
+  consumptionChartImage,
+  consumptionSummaryText,
   statusPanelImage,
   yieldChartImage,
   yieldTotalText,
 } from "./van/heroes";
 import { batteryWarnings } from "./van/format";
 import { defaultLocation } from "./van/sun";
+import { DayConsumption } from "./van/consumption";
+import { SamplerState, samplerStatusLine } from "./van/sampler";
+import { loadSamplerState, setSamplerPaused } from "./van/sampler-storage";
 import { Sample, VanView } from "./van/types";
 import {
   Stamped,
@@ -40,11 +53,12 @@ function pushVictronSection(
     samples: Sample[];
     now: number;
     victron: VictronHistoryView | undefined;
+    consumption: Array<DayConsumption | null> | undefined;
     working: boolean;
     capacityAh?: number | null;
   },
 ): void {
-  const { samples, now, victron, working, capacityAh } = opts;
+  const { samples, now, victron, consumption, working, capacityAh } = opts;
   const charge = chargeChartImage({
     samples,
     trends: victron?.trends ?? null,
@@ -66,6 +80,21 @@ function pushVictronSection(
     );
   }
 
+  const consumptionChart = consumption
+    ? consumptionChartImage(consumption)
+    : null;
+  if (consumption && consumptionChart) {
+    const summary = consumptionSummaryText(consumption);
+    lines.push(
+      "",
+      `### Consumption · last 14 days${summary ? ` · ${summary}` : ""}`,
+      "",
+      `![Consumption](${consumptionChart})`,
+      "",
+      "_Faded days rest mostly on an estimate. Charging the Victron does not see (shore power, alternator) reads as lower consumption._",
+    );
+  }
+
   const hasData = charge !== null || yieldChart !== null;
   if (working && hasData && victron?.updatedAt) {
     lines.push(
@@ -84,6 +113,8 @@ function renderMarkdown(
   error: unknown,
   isLoading: boolean,
   victron: VictronHistoryView | undefined,
+  consumption: Array<DayConsumption | null> | undefined,
+  sampler: SamplerState | undefined,
   historyLoading: boolean,
 ): string {
   if (!data) {
@@ -96,6 +127,7 @@ function renderMarkdown(
       samples: [],
       now: Date.now(),
       victron,
+      consumption,
       working: true,
     });
     return lines.join("\n");
@@ -130,9 +162,12 @@ function renderMarkdown(
     samples: view.samples,
     now: data.fetchedAt,
     victron,
+    consumption,
     working: isLoading || historyLoading,
     capacityAh: battery?.capacityAh,
   });
+
+  if (sampler) lines.push("", `_${samplerStatusLine(sampler)}_`);
 
   // Kept last so it never shifts the hero image above.
   const updating = updatingLine({ fetchedAt: data.fetchedAt, isLoading });
@@ -165,10 +200,55 @@ export default function VanPower() {
   // What LocalStorage holds paints on the first frame; a landed read replaces it.
   const cached = useCachedPromise(loadVictronCache, [], { onError: () => {} });
   const victron = history.data ?? cached.data;
-  const markdown = useMemo(
-    () => renderMarkdown(data, error, isLoading, victron, history.isLoading),
-    [data, error, isLoading, victron, history.isLoading],
+  // The two weeks of consumption come from the logs plus what the stores hold:
+  // computed from the cache on the first frame, again when the live reading
+  // lands and when the Victron read has merged the day's charger current in.
+  const consumption = useCachedPromise(
+    (liveAt: number, victronAt: number) =>
+      loadConsumption(Math.max(Date.now(), liveAt, victronAt)),
+    [data?.fetchedAt ?? 0, victron?.updatedAt ?? 0],
+    { keepPreviousData: true, onError: () => {} },
   );
+  const sampler = useCachedPromise(loadSamplerState, [], {
+    keepPreviousData: true,
+    onError: () => {},
+  });
+  const markdown = useMemo(
+    () =>
+      renderMarkdown(
+        data,
+        error,
+        isLoading,
+        victron,
+        consumption.data,
+        sampler.data,
+        history.isLoading,
+      ),
+    [
+      data,
+      error,
+      isLoading,
+      victron,
+      consumption.data,
+      sampler.data,
+      history.isLoading,
+    ],
+  );
+  const samplerPaused = sampler.data?.paused ?? false;
+
+  // Written through to the stored state the background command reads, so it
+  // takes effect at its next run (a paused run returns at once).
+  async function toggleSampler() {
+    const paused = !samplerPaused;
+    await setSamplerPaused(paused);
+    await showToast({
+      style: Toast.Style.Success,
+      title: paused
+        ? "Background sampling paused"
+        : "Background sampling resumed",
+    });
+    sampler.revalidate();
+  }
 
   // A live read while the history session is open would find the charger
   // silent; ask for a moment's patience instead.
@@ -193,6 +273,15 @@ export default function VanPower() {
             icon={Icon.ArrowClockwise}
             shortcut={{ modifiers: ["cmd"], key: "r" }}
             onAction={refresh}
+          />
+          <Action
+            title={
+              samplerPaused
+                ? "Resume Background Sampling"
+                : "Pause Background Sampling"
+            }
+            icon={samplerPaused ? Icon.Play : Icon.Pause}
+            onAction={toggleSampler}
           />
         </ActionPanel>
       }

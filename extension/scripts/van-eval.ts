@@ -92,11 +92,11 @@ console.log(
   "\nper reading (leave-one-out: the estimator without that reading)",
 );
 console.log(
-  `${"time".padEnd(12)}${"measured".padStart(9)}${"LOO".padStart(7)}${"error".padStart(8)}${"Δanchor h".padStart(11)}  ${"d/n".padEnd(4)}${"logged".padStart(8)}${"logErr".padStart(8)}`,
+  `${"time".padEnd(12)}${"src".padEnd(5)}${"measured".padStart(9)}${"LOO".padStart(7)}${"error".padStart(8)}${"Δanchor h".padStart(11)}  ${"d/n".padEnd(4)}${"logged".padStart(8)}${"logErr".padStart(8)}`,
 );
 for (const r of report.rows) {
   console.log(
-    `${stamp(r.t).padEnd(12)}${num(r.measured, 0, 9)}${num(r.predicted, 1)}${signed(r.error, 8)}${num(r.hoursToAnchor, 1, 11)}  ${(r.night ? "night" : "day").padEnd(5)}${r.logged === null ? (r.loggedNote ?? "—").slice(0, 7).padStart(7) : num(r.logged, 1, 7)}${signed(r.loggedError, 8)}`,
+    `${stamp(r.t).padEnd(12)}${(r.source === "background" ? "bg" : "open").padEnd(5)}${num(r.measured, 0, 9)}${num(r.predicted, 1)}${signed(r.error, 8)}${num(r.hoursToAnchor, 1, 11)}  ${(r.night ? "night" : "day").padEnd(5)}${r.logged === null ? (r.loggedNote ?? "—").slice(0, 7).padStart(7) : num(r.logged, 1, 7)}${signed(r.loggedError, 8)}`,
   );
 }
 
@@ -130,6 +130,24 @@ if (report.intervals.length === 0) {
   for (const i of report.intervals) {
     console.log(
       `  ${stamp(i.from).padEnd(12)}${stamp(i.to).padEnd(12)}${i.hours.toFixed(1).padStart(6)}${`${i.fromSoc.toFixed(0)}→${i.toSoc.toFixed(0)}`.padStart(11)}${i.chargeAh.toFixed(1).padStart(11)}${i.loadA.toFixed(2).padStart(8)}  ${i.fromKind === "full" || i.toKind === "full" ? `${i.fromKind}→${i.toKind} ` : ""}${i.reliable ? "" : "(too short / inside a full: borrows the reliable median)"}`.trimEnd(),
+    );
+  }
+}
+
+console.log("\nconsumption per local day (van/consumption.ts)");
+console.log(
+  "  consumed = ∫ implied load; charged = ∫ Victron charge current; coverage = share of the day inside reliable intervals",
+);
+const dayRows = report.days.flatMap((d) => (d ? [d] : []));
+if (dayRows.length === 0) {
+  console.log("  none yet — needs readings or a charger trend");
+} else {
+  console.log(
+    `  ${"day".padEnd(8)}${"consumed Ah".padStart(13)}${"charged Ah".padStart(12)}${"coverage".padStart(10)}  quality`,
+  );
+  for (const d of dayRows) {
+    console.log(
+      `  ${stamp(d.dayStart).slice(0, 5).padEnd(8)}${num(d.consumedAh, 1, 13)}${num(d.chargedAh, 1, 12)}${`${Math.round(d.coverage * 100)} %`.padStart(10)}  ${d.quality}${d.partial ? " (today, partial)" : ""}`,
     );
   }
 }

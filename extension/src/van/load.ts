@@ -1,5 +1,6 @@
-// Opening Van Power reads live and appends one sample to the 72 h history.
-// Reads happen only here — never from the hub, never in the background.
+// Opening Van Power reads live and appends one sample to the 72 h history; the
+// background sampler (van-sampler.tsx, sampler-runner.ts) takes the same live
+// read through `readAndPersist`. Never from the hub.
 
 import {
   VictronHistoryCache,
@@ -17,7 +18,7 @@ import {
   saveVanHistory,
   saveVictronHistoryCache,
 } from "./storage";
-import { Sample, VanReading, VanView } from "./types";
+import { HelperResult, Sample, VanReading, VanView } from "./types";
 import { environment } from "@raycast/api";
 import { join } from "path";
 import {
@@ -28,25 +29,52 @@ import {
   estimateUpdateEntry,
   appendTrendsLog,
   appendVictronReadLog,
+  CaptureSource,
   captureLogEntry,
+  parseCaptureLog,
+  parseTrendsLog,
+  readTextFile,
   trendsLogLine,
 } from "./capture-log";
-import { estimateAt } from "./soc-estimate";
+import {
+  DayConsumption,
+  dailyConsumption,
+  mergeLongTrends,
+} from "./consumption";
+import { DEFAULT_CAPACITY_AH, SocCapture, estimateAt } from "./soc-estimate";
+import { toCaptures } from "./soc-eval";
 import { VictronHistory } from "./victron-history";
 import { VictronTrends, mergeTrends } from "./victron-trends";
 
-export async function loadVan(): Promise<VanView> {
-  const { helper, keyMissing } = await readVan();
+// The one live read + persist both callers share — the view on open and the
+// background sampler: read Ective + Victron advert, append the reading to the
+// capture log and the 72 h sample ring. `samples` is null when nothing could be
+// read at all (nothing is persisted then). Never touches the Victron GATT
+// session — that stays the view's own, after its live read.
+export async function readAndPersist(source: CaptureSource): Promise<{
+  reading: VanReading;
+  helper: HelperResult;
+  samples: Sample[] | null;
+}> {
+  const { helper, keyMissing } = await readVan({
+    unattended: source === "background",
+  });
   const reading = toReading({ helper, keyMissing, now: Date.now() });
-  // Nothing read at all: throw, so the view keeps showing the last cached
-  // reading under an honest banner instead of replacing it with an empty one.
   if (!reading.battery && !reading.solar) {
-    throw new Error(reading.issues.join(" "));
+    return { reading, helper, samples: null };
   }
   const previous = await loadVanHistory();
-  await logCapture(reading, previous);
+  await logCapture(reading, previous, source);
   const samples = appendSample(previous, toSample(reading));
   await saveVanHistory(samples);
+  return { reading, helper, samples };
+}
+
+export async function loadVan(): Promise<VanView> {
+  const { reading, samples } = await readAndPersist("open");
+  // Nothing read at all: throw, so the view keeps showing the last cached
+  // reading under an honest banner instead of replacing it with an empty one.
+  if (!samples) throw new Error(reading.issues.join(" "));
   return { reading, samples };
 }
 
@@ -60,7 +88,7 @@ let pendingCapture: {
   previous: { t: number; soc: number; netA: number | null }[];
 } | null = null;
 
-// The estimator-tuning log (capture-log.ts): this reading goes in at once with
+// The estimator-tuning log (capture-log.ts): an open's reading goes in at once with
 // `estimateAtT: null, reason "stale-trends"` — the cache is hours old, a
 // prediction from it would mislead — and `logLiveEstimate` replaces that with the
 // real prediction (without this reading) once the Victron read has merged the
@@ -69,16 +97,20 @@ let pendingCapture: {
 async function logCapture(
   reading: VanReading,
   previous: Sample[],
+  source: CaptureSource,
 ): Promise<void> {
   try {
     if (!reading.battery) return;
-    const entry = captureLogEntry(reading, null);
+    const entry = captureLogEntry(reading, null, source);
     if (!entry) return;
     appendCaptureLog({
       path: supportFile(CAPTURE_LOG_FILE),
       entry,
       now: reading.readAt,
     });
+    // A background reading takes no Victron read, so it has no live estimate to
+    // fill in later (its line says `estimateReason: "background"`).
+    if (source === "background") return;
     pendingCapture = {
       t: reading.readAt,
       capacityAh: reading.battery.capacityAh,
@@ -233,5 +265,40 @@ export async function loadVictronHistory(
       },
     });
     return viewOf(failed, `Victron history unavailable (${reason})`);
+  }
+}
+
+// The last two weeks' consumption per local day (consumption.ts): 14 days need
+// more than the 72 h LocalStorage cache, so the readings come from the capture
+// log (60 days) and the Victron trends from the trends log (30 days), with what
+// LocalStorage holds laid over them so today is fresh the moment a read lands.
+// Plain JSON; never a rejection — a broken log must not break the view.
+export async function loadConsumption(
+  now: number = Date.now(),
+): Promise<Array<DayConsumption | null>> {
+  try {
+    const [cache, samples] = await Promise.all([
+      loadVictronHistoryCache(),
+      loadVanHistory(),
+    ]);
+    const entries = parseCaptureLog(
+      readTextFile(supportFile(CAPTURE_LOG_FILE)),
+    );
+    const byTime = new Map<number, SocCapture>();
+    for (const c of toCaptures(entries)) byTime.set(c.t, c);
+    for (const s of samples) {
+      if (s.soc !== null) byTime.set(s.t, { t: s.t, soc: s.soc, netA: s.batA });
+    }
+    return dailyConsumption({
+      trends: mergeLongTrends(
+        parseTrendsLog(readTextFile(supportFile(TRENDS_LOG_FILE))),
+        cache?.trends ?? null,
+      ),
+      captures: [...byTime.values()],
+      now,
+      capacityAh: entries.at(-1)?.ective.capacityAh ?? DEFAULT_CAPACITY_AH,
+    });
+  } catch {
+    return [];
   }
 }

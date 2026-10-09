@@ -4,6 +4,7 @@ import {
   resolveSecret,
   SecretUnavailableError,
   SecretRunner,
+  KeychainOnlyRunner,
 } from "./secrets";
 
 class FakeRunner implements SecretRunner {
@@ -168,5 +169,26 @@ describe("getSecret", () => {
     expect(await getSecret("victronKey", prefs, runner)).toBe("from-op");
     expect(runner.calls[0].args).toContain("victronKey");
     expect(runner.calls[1].args).toContain(prefs.victronKeyRef);
+  });
+});
+
+describe("KeychainOnlyRunner", () => {
+  it("refuses 1Password — an unattended run must never raise a biometric prompt", async () => {
+    await expect(
+      new KeychainOnlyRunner().exec("/opt/homebrew/bin/op", ["read", REF]),
+    ).rejects.toThrow(/not allowed unattended/);
+  });
+
+  it("makes resolveSecret end in SecretUnavailableError when Keychain is empty", async () => {
+    // a runner that behaves like the keychain-only one on an empty Keychain
+    const runner: SecretRunner = {
+      exec: (bin) =>
+        bin === "/usr/bin/security"
+          ? Promise.reject(new Error("not found"))
+          : new KeychainOnlyRunner().exec(bin, []),
+    };
+    await expect(
+      resolveSecret({ key: "victronKey", ref: REF, runner }),
+    ).rejects.toBeInstanceOf(SecretUnavailableError);
   });
 });

@@ -8,6 +8,7 @@
 // (an anchored estimate is trivially exact at its own anchors).
 
 import { CaptureLogEntry } from "./capture-log";
+import { DayConsumption, dailyConsumption } from "./consumption";
 import { Location, nightSpans } from "./sun";
 import {
   ESTIMATOR_CONSTANTS,
@@ -25,6 +26,7 @@ const HOUR = 3_600_000;
 
 export interface EvalRow {
   t: number;
+  source: "open" | "background"; // what took the reading (lines before the sampler: open)
   measured: number;
   predicted: number | null; // leave-one-out
   error: number | null; // predicted − measured
@@ -49,6 +51,7 @@ export interface EvalReport {
   };
   loadA: number; // the instantaneous-current fallback load (used only with no interval)
   intervals: IntervalLoad[]; // the load implied between every pair of consecutive anchors
+  days: Array<DayConsumption | null>; // Ah consumed / charged per local day (consumption.ts)
   constants: Record<string, number>;
 }
 
@@ -84,6 +87,7 @@ export function evaluate(opts: {
   entries: CaptureLogEntry[];
   trends: VictronTrends | null;
   location: (t: number) => Location;
+  now?: number; // the end of the per-day table; default the present
 }): EvalReport {
   const { trends } = opts;
   const entries = [...opts.entries].sort((a, b) => a.t - b.t);
@@ -124,6 +128,7 @@ export function evaluate(opts: {
     });
     return {
       t: entry.t,
+      source: entry.source ?? "open",
       measured: entry.ective.soc,
       predicted,
       error: predicted === null ? null : predicted - entry.ective.soc,
@@ -158,6 +163,12 @@ export function evaluate(opts: {
     },
     loadA: estimateLoadA({ trends, captures }),
     intervals: intervalLoads({ trends, captures, from, to, capacityAh }),
+    days: dailyConsumption({
+      trends,
+      captures,
+      now: opts.now ?? Date.now(),
+      capacityAh,
+    }),
     constants: { ...ESTIMATOR_CONSTANTS },
   };
 }

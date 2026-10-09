@@ -11,7 +11,11 @@ import { spawn } from "child_process";
 import { join } from "path";
 import { environment, getPreferenceValues } from "@raycast/api";
 import { Preferences } from "../lib/preferences";
-import { SecretUnavailableError, getSecret } from "../lib/secrets";
+import {
+  KeychainOnlyRunner,
+  SecretUnavailableError,
+  getSecret,
+} from "../lib/secrets";
 import { parseHelperOutput } from "./parse";
 import { HelperResult } from "./types";
 import { VictronHistory, parseHistoryOutput } from "./victron-history";
@@ -23,9 +27,14 @@ import {
 } from "./victron-trends";
 
 // A missing key must never break the battery read — the view says so instead.
-async function resolveVictronKey(): Promise<string | null> {
+// `unattended` (the background sampler): Keychain only, never a 1Password prompt.
+async function resolveVictronKey(unattended: boolean): Promise<string | null> {
   try {
-    return await getSecret("victronKey", getPreferenceValues<Preferences>());
+    return await getSecret(
+      "victronKey",
+      getPreferenceValues<Preferences>(),
+      unattended ? new KeychainOnlyRunner() : undefined,
+    );
   } catch (e) {
     if (e instanceof SecretUnavailableError) return null;
     throw e;
@@ -96,11 +105,11 @@ function spawnHelper<T>({
 const runHelper = (key: string | null): Promise<HelperResult> =>
   spawnHelper({ args: [], input: key ?? undefined, parse: parseHelperOutput });
 
-export async function readVan(): Promise<{
+export async function readVan(opts: { unattended?: boolean } = {}): Promise<{
   helper: HelperResult;
   keyMissing: boolean;
 }> {
-  const key = await resolveVictronKey();
+  const key = await resolveVictronKey(opts.unattended ?? false);
   return { helper: await runHelper(key), keyMissing: key === null };
 }
 

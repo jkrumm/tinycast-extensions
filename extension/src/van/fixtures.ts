@@ -29,6 +29,29 @@ const ascii = (text: string): string =>
 // SOF 0x5E + payload — what the helper reports as `frameHex`.
 export const ECTIVE_FRAME_HEX = `5e${ascii(ECTIVE_PAYLOAD)}`;
 
+// HELPER_FULL with another charge: the SoC u16 (bytes 14–15) rewritten and the
+// frame's CRC (sum of d[0..53], big-endian in d[54..55]) recomputed.
+export function helperAtSoc(soc: number): HelperResult {
+  const bytes = Array.from({ length: 56 }, (_, i) =>
+    parseInt(ECTIVE_PAYLOAD.slice(i * 2, i * 2 + 2), 16),
+  );
+  bytes[14] = soc & 0xff;
+  bytes[15] = soc >> 8;
+  const crc = bytes.slice(0, 54).reduce((a, b) => a + b, 0) & 0xffff;
+  bytes[54] = crc >> 8;
+  bytes[55] = crc & 0xff;
+  const payload = bytes
+    .map((b) => b.toString(16).padStart(2, "0").toUpperCase())
+    .join("");
+  return {
+    ...HELPER_FULL,
+    battery: {
+      ...HELPER_FULL.battery!,
+      frameHex: `5e${ascii(payload)}`,
+    },
+  };
+}
+
 export const VICTRON_KEY = "adeccb947395801a4dd45a2eaa44bf17";
 export const VICTRON_MANUFACTURER_HEX =
   "e102100242a0016207adceb37b605d7e0ee21b24df5c";

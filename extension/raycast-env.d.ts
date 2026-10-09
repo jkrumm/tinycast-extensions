@@ -52,6 +52,8 @@ declare namespace Preferences {
   export type SpeedTest = ExtensionPreferences & {}
   /** Preferences accessible in the `van-power` command */
   export type VanPower = ExtensionPreferences & {}
+  /** Preferences accessible in the `van-sampler` command */
+  export type VanSampler = ExtensionPreferences & {}
   /** Preferences accessible in the `hub` command */
   export type Hub = ExtensionPreferences & {}
 }
@@ -77,6 +79,8 @@ declare namespace Arguments {
   export type SpeedTest = {}
   /** Arguments passed to the `van-power` command */
   export type VanPower = {}
+  /** Arguments passed to the `van-sampler` command */
+  export type VanSampler = {}
   /** Arguments passed to the `hub` command */
   export type Hub = {}
 }

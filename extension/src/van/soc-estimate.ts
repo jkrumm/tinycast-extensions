@@ -56,7 +56,7 @@ const AWAKE_W = 1; // PV power above this: the charger is running
 const AWAKE_A = 0.05;
 const GRID_MS = 10 * 60_000;
 const NEAR_SAMPLE_MS = 40 * 60_000; // a trend sample further away than this is "no data"
-const MIN_INTERVAL_MS = 2 * 3_600_000; // shorter spans are too noisy to infer a load from
+export const MIN_INTERVAL_MS = 2 * 3_600_000; // shorter spans are too noisy to infer a load from
 const RECENT_INTERVALS_MS = 3 * 24 * 3_600_000; // the loads a prediction beyond the anchors is based on
 const CAPTURE_PRECEDENCE_MS = 2 * 3_600_000; // a full-anchor this close to a reading yields to it
 const MAX_STEP_MS = 3 * GRID_MS; // a longer hole in the output is a gap, not a line
@@ -88,7 +88,7 @@ export const VREG = {
   pvV: 0xedbb,
 } as const;
 
-type Series = ReadonlyArray<{ t: number; v: number }>;
+export type Series = ReadonlyArray<{ t: number; v: number }>;
 
 export function seriesOf(trends: VictronTrends | null, vreg: number): Series {
   const trend = trends?.trends.find((t) => t.vreg === vreg);
@@ -144,6 +144,24 @@ export function estimateLoadA(opts: {
     return a === null ? [] : [Math.max(0, a - c.netA)];
   });
   return votes.length > 0 ? median(votes) : DEFAULT_LOAD_A;
+}
+
+// What carries on beyond the anchors and stands in for the short or unreliable
+// intervals: the median load of the reliable intervals of the last ~3 days
+// before `to` (all of them when none is that recent); with none at all the
+// instantaneous-current median (then 0.6 A).
+export function typicalLoadA(opts: {
+  intervals: IntervalLoad[];
+  to: number;
+  trends: VictronTrends | null;
+  captures: SocCapture[];
+}): number {
+  const reliable = opts.intervals.filter((i) => i.reliable);
+  const recent = reliable.filter((i) => i.to >= opts.to - RECENT_INTERVALS_MS);
+  const pool = recent.length ? recent : reliable;
+  return pool.length
+    ? median(pool.map((i) => i.loadA))
+    : estimateLoadA({ trends: opts.trends, captures: opts.captures });
 }
 
 // ─── Full detection ─────────────────────────────────────────────────────────
@@ -227,7 +245,11 @@ export interface IntervalLoad {
   reliable: boolean; // long enough to trust (and not the inside of one full run)
 }
 
-const chargeBetween = (charge: Series, from: number, to: number): number => {
+export const chargeBetween = (
+  charge: Series,
+  from: number,
+  to: number,
+): number => {
   let ah = 0;
   for (let t = from; t < to; t += 5 * 60_000) {
     const dt = Math.min(5 * 60_000, to - t);
@@ -341,11 +363,12 @@ export function estimateSoc(opts: {
   // night. With no reliable interval the instantaneous-current median (then
   // 0.6 A) stands in.
   const intervals = intervalsBetween(anchors, charge, runs, capacityAh);
-  const reliable = intervals.filter((i) => i.reliable);
-  const recent = reliable.filter((i) => i.to >= to - RECENT_INTERVALS_MS);
-  const typicalA = (recent.length ? recent : reliable).length
-    ? median((recent.length ? recent : reliable).map((i) => i.loadA))
-    : estimateLoadA({ trends, captures: opts.captures });
+  const typicalA = typicalLoadA({
+    intervals,
+    to,
+    trends,
+    captures: opts.captures,
+  });
   const loadOf = (i: IntervalLoad): number => (i.reliable ? i.loadA : typicalA);
   const loadBefore = typicalA;
   const loadAfter = typicalA;
