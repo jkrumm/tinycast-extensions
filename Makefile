@@ -1,4 +1,4 @@
-.PHONY: help install build helper deploy check test lint typecheck clean secrets secrets-clear icons status e2e e2e-live fake-router previews van-eval tinycast-version
+.PHONY: help install build helper deploy check test lint typecheck clean secrets secrets-clear icons status e2e e2e-live fake-router previews van-eval tinycast-version van-sampler-check
 
 EXT_DIR := extension
 RAY := node_modules/.bin/ray
@@ -105,6 +105,9 @@ NETGEAR_LOG := $(HOME)/Library/Application Support/com.tinycast.app.beta/extensi
 
 logs: ## Last 100 lines of the extension's own Netgear action log (console.log is dead in Tinycast)
 	@test -f "$(NETGEAR_LOG)" && tail -n 100 "$(NETGEAR_LOG)" || echo "No log yet: $(NETGEAR_LOG)"
+
+van-sampler-check: ## Judge the van-sampler background runs; ARGS="--wait 2" blocks for the next two and checks each
+	@python3 scripts/van-sampler-check.py $(ARGS)
 
 TINYCAST_APP := /Applications/Tinycast Beta.app
 TINYCAST_VERIFIED := 2026-10-09

@@ -126,6 +126,8 @@ run `make status` — it prints that same deployed-vs-built check alongside
 background command metadata and the netgear-watchdog log (see § Debugging in
 the tinycast skill). There is no hot reload or dev mode.
 
+`make van-sampler-check` judges the latest `van-sampler` background run (metadata + LocalStorage state + the `background` lines in `van-log.jsonl`); `ARGS="--wait 2"` blocks for the next two runs and exits non-zero on a failure or an overdue run.
+
 `make tinycast-version` prints the installed Tinycast Beta vs the latest upstream release and the runtime commits since the skill was last verified (recipe: tinycast skill § Checking upstream).
 
 `make previews` renders the chart gallery and every production hero (see § SVG hero images).
