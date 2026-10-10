@@ -256,18 +256,28 @@ export class Cache {
 
 // ─── environment ────────────────────────────────────────────────────────────
 
-import { mkdtempSync } from "fs";
+import { mkdtempSync, rmSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
+import { afterAll } from "vitest";
 
 // A real (temp) directory — session.ts's getClient() does a real
 // `mkdir(environment.supportPath, { recursive: true })`, and hub.tsx reads
 // real command-icon SVGs off `environment.assetsPath`.
-const supportPath = mkdtempSync(join(tmpdir(), "tinycast-e2e-support-"));
+// Created lazily and removed in afterAll: a fully skipped file (live.e2e)
+// never runs its hooks, so it must not create the directory in the first place.
+let supportPath: string | undefined;
+afterAll(() => {
+  if (supportPath) rmSync(supportPath, { recursive: true, force: true });
+});
 const assetsPath = join(__dirname, "..", "..", "assets");
 
 export const environment = {
-  supportPath,
+  get supportPath() {
+    return (supportPath ??= mkdtempSync(
+      join(tmpdir(), "tinycast-e2e-support-"),
+    ));
+  },
   assetsPath,
   isDevelopment: true,
   extensionName: "jkrumm",
