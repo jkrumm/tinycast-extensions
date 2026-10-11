@@ -9,6 +9,9 @@ subtitle), the sampler's LocalStorage state (`van-sampler`) and the
   idle      ran, but the van was not in range / Bluetooth off (not a failure)
   FAIL      consecutiveFailures > 0, lastError set, or an `error` result
 
+Each report also prints the last Victron trends top-up from the sampler state
+(time + ok/failed/pairing); that line is informational, it never fails a run.
+
 `--wait N` blocks until N more runs happened after the current one (polls the
 metadata's lastRun), checking each, then exits 0 if all were ok/idle, 1 if any
 failed, 2 on timeout. A run is overdue when no run lands within interval +
@@ -17,6 +20,9 @@ is open (tinycast skill § background), so close Tinycast's window with Esc.
 
 stdlib only, run via `make van-sampler-check` (ARGS="--wait 2").
 """
+
+from __future__ import annotations
+
 
 import argparse
 import json
@@ -111,6 +117,19 @@ def judge(meta: dict, state: dict | None, run_unix: float | None) -> tuple[bool,
     return True, f"idle — {kind}: {json.dumps(result)}"
 
 
+def trends_line(state: dict | None) -> str:
+    """The sampler's last Victron trends top-up (informational, never a failure)."""
+    last = (state or {}).get("lastTrends")
+    if not last:
+        return "Victron trends top-up: none yet (needs the cache over 3 h old and the charger in range)"
+    detail = f" — {last['detail']}" if last.get("detail") else ""
+    line = f"Victron trends top-up: {local(last['at'] / 1000)} {last.get('outcome')}{detail}"
+    backoff = (state or {}).get("trendsBackoffUntil")
+    if backoff and backoff / 1000 > time.time():
+        line += f" (pairing backoff until {local(backoff / 1000)})"
+    return line
+
+
 def report() -> tuple[bool, float | None]:
     meta = metadata()
     state = sampler_state()
@@ -118,6 +137,7 @@ def report() -> tuple[bool, float | None]:
     ok, verdict = judge(meta, state, run_unix)
     when = local(run_unix) if run_unix else "—"
     print(f"{when}  {verdict}   [subtitle: {meta.get('subtitle', '—')}]")
+    print(f"  {trends_line(state)}")
     return ok, run_unix
 
 

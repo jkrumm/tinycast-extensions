@@ -34,6 +34,7 @@ const interval = (
   toSoc: 50,
   chargeAh: 0,
   loadA,
+  covered: true,
   reliable,
 });
 
@@ -102,6 +103,24 @@ describe("consumptionPerDay", () => {
   });
 
   it("a day with a trend but no anchor is all typical load, charge integrated", () => {
+    const charge = Array.from({ length: 25 }, (_, i) => ({
+      t: at(-1, 0) + i * H,
+      v: 4,
+    }));
+    const [day] = consumptionPerDay({
+      intervals: [],
+      charge,
+      typicalA: 0.8,
+      now: at(0, 0, 30),
+      days: 2,
+    }) as DayConsumption[];
+    expect(day.consumedAh).toBeCloseTo(24 * 0.8);
+    expect(day.quality).toBe("estimated");
+    expect(day.chargedAh).toBeCloseTo(96, 0);
+  });
+
+  it("charged is only given for a day the trend covers completely", () => {
+    // 06:00–18:00 yesterday only, the rest of the day has no trend
     const charge = Array.from({ length: 13 }, (_, i) => ({
       t: at(-1, 6) + i * H,
       v: 4,
@@ -113,11 +132,24 @@ describe("consumptionPerDay", () => {
       now: at(0, 12),
       days: 2,
     }) as DayConsumption[];
-    expect(day.consumedAh).toBeCloseTo(24 * 0.8);
-    expect(day.quality).toBe("estimated");
-    // 06:00–18:00 at 4 A, the series' ends held for a sample gap (≤ 40 min)
-    expect(day.chargedAh).toBeGreaterThan(48);
-    expect(day.chargedAh).toBeLessThan(56);
+    expect(day.chargedAh).toBeNull();
+    expect(day.quality).toBe("pending"); // its tail lies beyond the trend
+  });
+
+  it("a day whose tail lies beyond the trend is pending, never measured", () => {
+    const charge = Array.from({ length: 13 }, (_, i) => ({
+      t: at(0, i),
+      v: 2,
+    }));
+    const [day] = consumptionPerDay({
+      intervals: [interval(at(0, 0), at(0, 12), 1)],
+      charge,
+      typicalA: 1,
+      now: at(0, 18),
+      days: 1,
+    }) as DayConsumption[];
+    expect(day.quality).toBe("pending");
+    expect(day.chargedAh).toBeNull();
   });
 });
 
@@ -201,6 +233,65 @@ describe("dailyConsumption on a simulated van", () => {
   });
 });
 
+describe("regression: the Victron trend stops mid-day while the Ective readings go on", () => {
+  // 2026-10-10: the last Victron read was 08:46, the background sampler kept
+  // logging the Ective all day, the pack went 65 → 100 % on solar (here a
+  // smaller sun, so the pack never reaches a full run of its own). Everything
+  // after 08:46 used to count as 0 A charged, so the load clamped to 0 and the
+  // day was "measured" with 0 Ah charged.
+  const dayStart = at(0, 0);
+  const trendEnd = at(0, 8, 46);
+  const van = simulateVan({
+    from: at(-3, 0),
+    to: at(0, 23, 59),
+    loadA: 1,
+    sunA: 4,
+    startSoc: 20,
+  });
+  const cut: VictronTrends = {
+    ...van.trends,
+    trends: van.trends.trends.map((tr) => ({
+      ...tr,
+      samples: tr.samples.filter((s) => s.t <= trendEnd),
+    })),
+  };
+  const risingDay: SocCapture[] = [];
+  for (let t = at(-2, 0); t <= at(0, 20); t += 15 * 60_000) {
+    risingDay.push({ t, soc: Math.round(van.truthAt(t)) });
+  }
+  const now = at(0, 20);
+
+  it("the intervals after the trend ends are not covered and not reliable", () => {
+    const days = dailyConsumption({
+      trends: cut,
+      captures: risingDay,
+      now,
+      capacityAh: 100,
+      days: 3,
+    }) as DayConsumption[];
+    const today = days.at(-1)!;
+    expect(today.quality).toBe("pending");
+    expect(today.chargedAh).toBeNull();
+    expect(today.coverage).toBeLessThan(0.5);
+    // the yesterday before it is covered completely and still measured
+    expect(days.at(-2)!.quality).toBe("measured");
+    expect(days.at(-2)!.chargedAh).not.toBeNull();
+  });
+
+  it("a top-up that reaches the evening makes the same day measured, with the real charge", () => {
+    const days = dailyConsumption({
+      trends: van.trends,
+      captures: risingDay,
+      now,
+      capacityAh: 100,
+      days: 1,
+    }) as DayConsumption[];
+    expect(days[0].quality).toBe("measured");
+    expect(days[0].chargedAh).toBeGreaterThan(30);
+    expect(days[0].dayStart).toBe(dayStart);
+  });
+});
+
 describe("thinCaptures", () => {
   it("keeps readings at least two hours apart, oldest first", () => {
     const captures = [0, 30, 125, 90, 150, 245, 300].map((m) => ({
@@ -260,6 +351,7 @@ describe("averages", () => {
 
   it("average complete measured and mixed days only", () => {
     const days = [
+      day({ consumedAh: 99, chargedAh: null, quality: "pending" }),
       day({ consumedAh: 20, chargedAh: 10 }),
       day({ consumedAh: 40, chargedAh: 30, quality: "mixed" }),
       day({ consumedAh: 99, chargedAh: 99, quality: "estimated" }),

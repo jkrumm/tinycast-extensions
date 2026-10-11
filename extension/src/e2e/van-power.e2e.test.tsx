@@ -310,6 +310,7 @@ describe("van power command", () => {
       loadA: 1,
       sunA: 2,
       startSoc: 90,
+      capacityAh: 194.86, // the capacity the live BMS fixture reports and the estimator then uses
     });
     const logPath = join(environment.supportPath, "van-log.jsonl");
     for (let d = 8; d >= 1; d--) {
@@ -325,7 +326,7 @@ describe("van power command", () => {
               soc: Math.round(van.truthAt(t)),
               currentA: 0,
               voltageV: 13.3,
-              capacityAh: 100,
+              capacityAh: 194.86,
               tempC: 20,
             },
             victron: null,

@@ -321,7 +321,12 @@ export function yieldTotalText(history: VictronHistory | null): string | null {
 // ─── Daily consumption (derived from the readings, see consumption.ts) ─────
 
 const MIN_CONSUMPTION_DAYS = 2;
-const QUALITY_STRENGTH = { measured: 1, mixed: 0.75, estimated: 0.4 } as const;
+const QUALITY_STRENGTH = {
+  measured: 1,
+  mixed: 0.75,
+  estimated: 0.4,
+  pending: 0.25, // waiting for the Victron's charge data: barely there
+} as const;
 
 const dayLabel = (dayStart: number): { label: string; sublabel: string } => {
   const date = new Date(dayStart);
@@ -343,7 +348,7 @@ function drawnDays(
 }
 
 // Daily consumption, last 14 days: today bold ("so far"), a day that rests on
-// an estimate muted, a subtle dashed average over the complete days that do not.
+// an estimate muted, one waiting for the Victron's data fainter still, a subtle dashed average over the complete days that do not.
 // Null when there are fewer than two days to compare.
 export function consumptionChartImage(
   days: Array<DayConsumption | null>,

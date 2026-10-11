@@ -7,8 +7,13 @@ import {
   applyRun,
   classifyRead,
   formatSamplerSubtitle,
+  PAIRING_BACKOFF_MS,
+  TRENDS_ATTEMPT_GAP_MS,
+  TRENDS_STALE_MS,
+  applyTrendsTopUp,
   migrateSamplerState,
   samplerStatusLine,
+  trendsTopUpDue,
 } from "./sampler";
 import {
   HELPER_BATTERY_BUSY,
@@ -212,9 +217,100 @@ describe("migrateSamplerState", () => {
       lastRunAt: NOW,
       lastResult: { kind: "sampled", soc: 40 },
       lastAlert: { latched: [30], threshold: 30, at: NOW },
+      lastTrendsAttemptAt: NOW - 60_000,
+      trendsBackoffUntil: NOW + PAIRING_BACKOFF_MS,
+      lastTrends: {
+        at: NOW - 60_000,
+        outcome: "pairing",
+        detail: "victron-pairing-timeout",
+      },
     };
     expect(migrateSamplerState(JSON.parse(JSON.stringify(valid)))).toEqual(
       valid,
     );
+  });
+});
+
+describe("trendsTopUpDue", () => {
+  const stale = NOW - TRENDS_STALE_MS - 60_000;
+  const due = (over: Partial<SamplerState> = {}, trendsUpdatedAt = stale) =>
+    trendsTopUpDue({
+      state: { ...INITIAL_SAMPLER_STATE, ...over },
+      victronHeard: true,
+      trendsUpdatedAt,
+      now: NOW,
+    });
+
+  it("is due when the cached trends are over 3 h old and the charger was heard", () => {
+    expect(due()).toBe(true);
+    expect(due({}, NOW - TRENDS_STALE_MS + 60_000)).toBe(false);
+  });
+
+  it("is not due out of range, or before any foreground read paired the Victron", () => {
+    expect(
+      trendsTopUpDue({
+        state: INITIAL_SAMPLER_STATE,
+        victronHeard: false,
+        trendsUpdatedAt: stale,
+        now: NOW,
+      }),
+    ).toBe(false);
+    expect(
+      trendsTopUpDue({
+        state: INITIAL_SAMPLER_STATE,
+        victronHeard: true,
+        trendsUpdatedAt: null,
+        now: NOW,
+      }),
+    ).toBe(false);
+  });
+
+  it("waits 3 h after the last attempt, a failure included", () => {
+    expect(
+      due({ lastTrendsAttemptAt: NOW - TRENDS_ATTEMPT_GAP_MS + 60_000 }),
+    ).toBe(false);
+    expect(
+      due({ lastTrendsAttemptAt: NOW - TRENDS_ATTEMPT_GAP_MS - 60_000 }),
+    ).toBe(true);
+  });
+
+  it("stays off for 24 h after a pairing error", () => {
+    expect(due({ trendsBackoffUntil: NOW + 60_000 })).toBe(false);
+    expect(due({ trendsBackoffUntil: NOW - 1 })).toBe(true);
+  });
+});
+
+describe("applyTrendsTopUp", () => {
+  it("records a success without a backoff", () => {
+    const next = applyTrendsTopUp(INITIAL_SAMPLER_STATE, {
+      now: NOW,
+      reason: null,
+    });
+    expect(next.lastTrends).toEqual({ at: NOW, outcome: "ok", detail: null });
+    expect(next.trendsBackoffUntil).toBeNull();
+  });
+
+  it("records a failure, and a pairing error also backs off 24 h", () => {
+    const failed = applyTrendsTopUp(INITIAL_SAMPLER_STATE, {
+      now: NOW,
+      reason: "victron-connect-failed",
+    });
+    expect(failed.lastTrends?.outcome).toBe("failed");
+    expect(failed.trendsBackoffUntil).toBeNull();
+    for (const reason of [
+      "victron-pairing-timeout",
+      "x, victron-pairing-failed",
+    ]) {
+      const pairing = applyTrendsTopUp(INITIAL_SAMPLER_STATE, {
+        now: NOW,
+        reason,
+      });
+      expect(pairing.lastTrends).toEqual({
+        at: NOW,
+        outcome: "pairing",
+        detail: reason,
+      });
+      expect(pairing.trendsBackoffUntil).toBe(NOW + PAIRING_BACKOFF_MS);
+    }
   });
 });

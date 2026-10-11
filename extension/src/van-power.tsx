@@ -25,7 +25,7 @@ import {
 } from "./van/heroes";
 import { batteryWarnings } from "./van/format";
 import { defaultLocation } from "./van/sun";
-import { DayConsumption } from "./van/consumption";
+import { DayConsumption, hasPendingDays } from "./van/consumption";
 import { SamplerState, samplerStatusLine } from "./van/sampler";
 import { loadSamplerState, setSamplerPaused } from "./van/sampler-storage";
 import { Sample, VanView } from "./van/types";
@@ -42,6 +42,7 @@ const NO_HISTORY: VictronHistoryView = {
   trends: null,
   updatedAt: null,
   error: null,
+  reason: null,
 };
 
 // The Victron's own data — the 3-day charts from the cache the moment the view
@@ -93,6 +94,12 @@ function pushVictronSection(
       "",
       "_Faded days rest mostly on an estimate. Charging the Victron does not see (shore power, alternator) reads as lower consumption._",
     );
+    if (hasPendingDays(consumption)) {
+      lines.push(
+        "",
+        "_Victron data pending for the faintest days — the charge current is fetched when this view opens and about every 3 h in the background._",
+      );
+    }
   }
 
   const hasData = charge !== null || yieldChart !== null;

@@ -155,16 +155,18 @@ export interface VictronHistoryView {
   trends: VictronTrends | null;
   updatedAt: number | null; // when anything was last read from the device
   error: string | null;
+  reason: string | null; // the raw failure reason behind `error` (the background top-up reads it)
 }
 
 const viewOf = (
   cache: VictronHistoryCache | null,
-  error: string | null,
+  reason: string | null,
 ): VictronHistoryView => ({
   history: cache?.history ?? null,
   trends: cache?.trends ?? null,
   updatedAt: cache?.updatedAt ?? null,
-  error,
+  error: reason === null ? null : `Victron history unavailable (${reason})`,
+  reason,
 });
 
 // No BLE: what LocalStorage holds, to paint on the first frame while the live
@@ -175,7 +177,8 @@ export async function loadVictronCache(): Promise<VictronHistoryView> {
 
 // One connected session (~10–25 s) tops the cache up. Run only after the live
 // read finished (the connected session blocks the charger's advert); every open
-// does it, because it is cheap: only trend samples newer than the cache are
+// does it, and so does the background sampler when the cache is over 3 h old
+// (sampler-runner.ts), because it is cheap: only trend samples newer than the cache are
 // fetched (`sinceMs`) and merged in, and the 30-day history is skipped unless it
 // is from a previous day or over an hour old. A partial result is used.
 export async function loadVictronHistory(
@@ -264,7 +267,7 @@ export async function loadVictronHistory(
         victronRead: { phase: "failed", ms: Date.now() - startedAt, reason },
       },
     });
-    return viewOf(failed, `Victron history unavailable (${reason})`);
+    return viewOf(failed, reason);
   }
 }
 

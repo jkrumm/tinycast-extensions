@@ -513,8 +513,9 @@ run make secrets" while still reading the battery.
   - **Background sampler** (`van-sampler`, `no-view`, `interval: "15m"`, the
     van-power icon; `van-sampler.tsx` → `van/sampler-runner.ts`): each run is
     the same **live read only** as an open (Ective frame + Victron Instant
-    Readout advert via `readVan`; **never** the connected Victron GATT
-    session, no new BLE write), persisted exactly like an open — a
+    Readout advert via `readVan`; the live read itself never opens the connected
+    Victron GATT session — the trends top-up below is a separate step after it),
+    persisted exactly like an open — a
     `van-history` sample plus a `van-log.jsonl` capture line with `source:
     "background"` and `estimateReason: "background"` (no Victron read, so no live
     estimate). The Victron key is resolved **Keychain-only**
@@ -535,7 +536,21 @@ run make secrets" while still reading the battery.
     callback-style `execFile`, never throws: "Van battery 28 % — stop charging
     devices from the van"); a threshold is latched once reported and re-armed
     only after the charge is ≥ 5 points above it (`alertStep`); a reading that
-    jumps through both reports the lower. The first notification may need
+    jumps through both reports the lower. **Trends top-up**: the charge-current
+    trend (what the consumption needs) only grows through the connected GATT
+    session, so after the live read, when the charger's advert was heard and the
+    cache's `updatedAt` is over 3 h old (and was set by a foreground read at
+    least once — pairing happens there, never unattended), the run calls the same
+    `loadVictronHistory` an open does (`--victron-all --since`, history only if
+    `victronHistoryDue`; merge, cache, `van-trends.jsonl` and the `victronRead`
+    start/done/failed lines all come with it; ~9–25 s, no new BLE write, the
+    helper allowlist untouched). Sampler state adds `lastTrendsAttemptAt` (saved
+    *before* the read, so a run Tinycast kills mid-session still counts: one
+    attempt per 3 h, a failure included), `lastTrends { at, outcome: ok | failed
+    | pairing, detail }` and `trendsBackoffUntil` (a `victron-pairing-timeout` /
+    `-failed` backs off 24 h so the macOS pairing dialog never appears
+    unattended). `make van-sampler-check` prints `lastTrends`. The first
+    notification may need
     allowing under System Settings → Notifications → Script Editor. Constraints:
     one JS runtime — no background run while any view is open (the Van Power
     open samples itself); the run is killed after `min(max(interval, 15), 120)`
@@ -699,11 +714,23 @@ run make secrets" while still reading the battery.
     midnight proportionally; hours outside every reliable interval (before the
     first / after the last anchor, unreliable or full-pinned intervals) use the
     estimator's `typicalLoadA` (the median-of-reliable-intervals fallback,
-    refactored out of `estimateSoc`). `chargedAh` = ∫ charger current (5-min steps
-    like `chargeBetween`; `null` when the trend has no sample that day).
-    `coverage` = share of the day's elapsed hours inside reliable intervals →
-    `quality`: **measured** ≥ 0.8, **mixed** ≥ 0.3, else **estimated**; today is
-    `partial`. A day with neither a trend sample nor an anchor interval is `null`
+    refactored out of `estimateSoc`). **The charger trend bounds what is known**
+    (regression 2026-10-10: the trend ended 08:46, the sampler kept reading the
+    Ective, the pack went 65 → 100 %, and the day came out "measured" with 0 Ah
+    charged because `valueAt` past the last sample read as 0 A):
+    `coveredSpans`/`spansCover` (soc-estimate.ts) say where the trend has samples
+    — one 30-min step of tolerance at its ends, no interior hole over 1 h — and an
+    `IntervalLoad` the trend does not fully cover has `covered: false` and is
+    never `reliable` (the consumption borrows the typical load there; in
+    `estimateSoc` it is drawn as a straight line between the two readings, and
+    nothing is extrapolated beyond the trend's ends). `chargedAh` = ∫ charger
+    current (5-min steps like `chargeBetween`), **only for a day the trend covers
+    for all its elapsed hours**, else `null`. `coverage` = share of the day's
+    elapsed hours inside reliable intervals → `quality`: **measured** ≥ 0.8,
+    **mixed** ≥ 0.3, else **estimated**; **pending** when the trend ends over 1 h
+    before the day does (waiting for Victron data: an open, or the sampler's
+    top-up) — faded most, excluded from the averages, noted under the chart; today
+    is `partial`. A day with neither a trend sample nor an anchor interval is `null`
     (omitted), and with no charger-current trend at all every day is `null`.
     `dailyConsumption` first **thins the readings to ≥ 2 h apart**
     (`thinCaptures`): the sampler's 15-minute readings would make every interval
@@ -719,7 +746,7 @@ run make secrets" while still reading the battery.
     is the yield chart's twin (weekday over day number, "Today / so far", dashed
     average over complete measured/mixed days — also in the heading with the
     average charged in): estimated days are faded (`BarItem.opacity`, mixed
-    slightly), a day with no data keeps its place as "—". Starts at the first
+    slightly, pending most), a day with no data keeps its place as "—". Starts at the first
     known day; fewer than two days → no chart.
   - **SoC estimator tuning loop.** Two append-only files in the extension's
     support dir (`~/Library/Application Support/com.tinycast.app.beta/extension-support/jkrumm/`,
@@ -763,7 +790,8 @@ run make secrets" while still reading the battery.
       fallback load, the **Victron read log** and the current constants
       (`ESTIMATOR_CONSTANTS`: `DEFAULT_LOAD_A`, `FULL_VOLTS`, `FULL_TAPER_C`, …),
       and a **per-day table** of the last 14 days (consumed Ah, charged Ah,
-      coverage, quality — `van/consumption.ts`).
+      coverage, quality incl. `pending` — `van/consumption.ts`; intervals the
+      Victron trend does not cover are flagged in the interval table).
       Tune a constant in `van/soc-estimate.ts`, re-run, compare MAE. It is thin
       until the log has filled: each open (and each background run) adds one reading.
 

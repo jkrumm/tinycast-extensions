@@ -6,6 +6,13 @@
 // daily consumption have readings while nobody looks. It can be paused (the
 // user leaves the van for a month) and posts one macOS notification when the
 // battery crosses down through a low threshold.
+//
+// The Victron's charge-current trend (what the daily consumption is derived
+// from) only grows through its connected GATT session, so when the cached trend
+// is over 3 h old and the charger was heard, the run tops it up the way an open
+// of Van Power does (`trendsTopUpDue`). One attempt per 3 h, a failure included;
+// a pairing failure backs off 24 h — the macOS pairing dialog must never appear
+// unattended.
 
 import { HelperResult, VanReading } from "./types";
 
@@ -15,6 +22,12 @@ export const SAMPLER_INTERVAL_MIN = 15;
 // points above it.
 export const ALERT_THRESHOLDS = [30, 15] as const;
 export const ALERT_REARM_MARGIN = 5;
+// Top up the Victron trends when the cache is older than this, at most once per
+// attempt gap (a failed attempt counts), and not for a day after a pairing error.
+export const TRENDS_STALE_MS = 3 * 3_600_000;
+export const TRENDS_ATTEMPT_GAP_MS = 3 * 3_600_000;
+export const PAIRING_BACKOFF_MS = 24 * 3_600_000;
+const PAIRING_ERROR = /victron-pairing-(timeout|failed)/;
 
 export type SamplerResult =
   | { kind: "sampled"; soc: number | null } // soc null: only the charger was heard
@@ -29,11 +42,20 @@ export interface SamplerAlert {
   at: number | null;
 }
 
+export interface TrendsTopUp {
+  at: number;
+  outcome: "ok" | "failed" | "pairing"; // pairing: the Victron wants macOS' pairing dialog
+  detail: string | null; // the failure reason
+}
+
 export interface SamplerState {
   paused: boolean;
   lastRunAt: number | null;
   lastResult: SamplerResult | null;
   lastAlert: SamplerAlert;
+  lastTrendsAttemptAt: number | null; // set before the read: a killed run counts too
+  trendsBackoffUntil: number | null; // after a pairing error
+  lastTrends: TrendsTopUp | null;
 }
 
 export const INITIAL_SAMPLER_STATE: SamplerState = {
@@ -41,6 +63,9 @@ export const INITIAL_SAMPLER_STATE: SamplerState = {
   lastRunAt: null,
   lastResult: null,
   lastAlert: { latched: [], threshold: null, at: null },
+  lastTrendsAttemptAt: null,
+  trendsBackoffUntil: null,
+  lastTrends: null,
 };
 
 // A state persisted by an older build (or a damaged one) still yields a usable
@@ -70,6 +95,23 @@ export function migrateSamplerState(raw: unknown): SamplerState {
       threshold: num(alert.threshold),
       at: num(alert.at),
     },
+    lastTrendsAttemptAt: num(r.lastTrendsAttemptAt),
+    trendsBackoffUntil: num(r.trendsBackoffUntil),
+    lastTrends: migrateTrendsTopUp(r.lastTrends),
+  };
+}
+
+function migrateTrendsTopUp(raw: unknown): TrendsTopUp | null {
+  if (typeof raw !== "object" || raw === null) return null;
+  const r = raw as Partial<Record<keyof TrendsTopUp, unknown>>;
+  if (typeof r.at !== "number" || !Number.isFinite(r.at)) return null;
+  if (r.outcome !== "ok" && r.outcome !== "failed" && r.outcome !== "pairing") {
+    return null;
+  }
+  return {
+    at: r.at,
+    outcome: r.outcome,
+    detail: typeof r.detail === "string" ? r.detail : null,
   };
 }
 
@@ -89,6 +131,52 @@ export function classifyRead(opts: {
     return { kind: "phone-app" };
   }
   return { kind: "not-in-range" };
+}
+
+// ─── The Victron trends top-up ──────────────────────────────────────────────
+
+// Whether this run should read the Victron's stored trends after its live read.
+// `trendsUpdatedAt`: when the cache last got anything from the device — null
+// means no foreground read ever succeeded, i.e. the macOS pairing dialog may
+// still be due, which an unattended run must not trigger.
+export function trendsTopUpDue(opts: {
+  state: SamplerState;
+  victronHeard: boolean; // the live read saw the charger's advert
+  trendsUpdatedAt: number | null;
+  now: number;
+}): boolean {
+  const { state, now, trendsUpdatedAt } = opts;
+  if (!opts.victronHeard || trendsUpdatedAt === null) return false;
+  if (now < (state.trendsBackoffUntil ?? 0)) return false;
+  if (
+    state.lastTrendsAttemptAt !== null &&
+    now - state.lastTrendsAttemptAt <= TRENDS_ATTEMPT_GAP_MS
+  ) {
+    return false;
+  }
+  return now - trendsUpdatedAt > TRENDS_STALE_MS;
+}
+
+// The state after a top-up attempt. `reason`: why the read failed, null when it
+// worked (nothing newer on the device counts as worked).
+export function applyTrendsTopUp(
+  state: SamplerState,
+  opts: { now: number; reason: string | null },
+): SamplerState {
+  const { now, reason } = opts;
+  if (reason === null) {
+    return { ...state, lastTrends: { at: now, outcome: "ok", detail: null } };
+  }
+  const pairing = PAIRING_ERROR.test(reason);
+  return {
+    ...state,
+    trendsBackoffUntil: pairing ? now + PAIRING_BACKOFF_MS : null,
+    lastTrends: {
+      at: now,
+      outcome: pairing ? "pairing" : "failed",
+      detail: reason,
+    },
+  };
 }
 
 // ─── The low-battery alert ──────────────────────────────────────────────────

@@ -14,6 +14,15 @@
 // much of the day it is: measured ≥ 80 % of the elapsed hours inside reliable
 // intervals, mixed ≥ 30 %, otherwise estimated.
 //
+// **The charger-current trend decides what can be known at all.** It only grows
+// when the Victron's connected GATT session is read (Van Power on open, or the
+// sampler's top-up every ~3 h), while the Ective readings keep coming. Past the
+// trend's last sample "no sample" is not "0 A charged": an interval the trend
+// does not cover is not reliable (`IntervalLoad.covered`), `chargedAh` is only
+// given for a day the trend covers completely, and a day whose tail (over an
+// hour) lies beyond the trend is "pending" — waiting for Victron data — never
+// "measured".
+//
 // Accuracy: about ±3–5 % on a day with anchors hours apart — the SoC is an
 // integer % (≈ 0.94 Ah on this pack), which is the error of each anchor and is
 // spread over its interval. Blind spot: charge from a source the Victron does not see (shore
@@ -30,21 +39,25 @@ import {
   SocCapture,
   VREG,
   chargeBetween,
+  coveredSpans,
   intervalLoads,
   seriesOf,
+  spansCover,
   typicalLoadA,
 } from "./soc-estimate";
 
 export const CONSUMPTION_DAYS = 14;
 export const MEASURED_COVERAGE = 0.8;
 export const MIXED_COVERAGE = 0.3;
+// A day whose tail lies this far beyond the charger trend waits for Victron data.
+export const PENDING_TAIL_MS = 3_600_000;
 
-export type ConsumptionQuality = "measured" | "mixed" | "estimated";
+export type ConsumptionQuality = "measured" | "mixed" | "estimated" | "pending"; // the Victron trend stops before the day does — not yet knowable
 
 export interface DayConsumption {
   dayStart: number; // local midnight, epoch ms
   consumedAh: number;
-  chargedAh: number | null; // null: the Victron trend does not cover the day
+  chargedAh: number | null; // null: the Victron trend does not cover all of the day's elapsed hours
   coverage: number; // 0–1, share of the day's elapsed hours inside reliable intervals
   quality: ConsumptionQuality;
   partial: boolean; // today: only the hours so far
@@ -87,6 +100,8 @@ export function consumptionPerDay(opts: {
 }): Array<DayConsumption | null> {
   const { intervals, charge, typicalA, now } = opts;
   const reliable = intervals.filter((i) => i.reliable);
+  const spans = coveredSpans(charge);
+  const trendEnd = spans.at(-1)?.to;
   return localDayStarts(now, opts.days ?? CONSUMPTION_DAYS).map((dayStart) => {
     const end = Math.min(nextMidnight(dayStart), now);
     if (end <= dayStart) return null;
@@ -105,12 +120,18 @@ export function consumptionPerDay(opts: {
     }
     consumedAh += Math.max(0, elapsedH - coveredH) * typicalA;
     const coverage = Math.min(1, coveredH / elapsedH);
+    const tailMs =
+      trendEnd === undefined
+        ? 0
+        : Math.max(0, end - Math.max(dayStart, trendEnd));
     return {
       dayStart,
       consumedAh,
-      chargedAh: hasTrend ? chargeBetween(charge, dayStart, end) : null,
+      chargedAh: spansCover(spans, dayStart, end)
+        ? chargeBetween(charge, dayStart, end)
+        : null,
       coverage,
-      quality: qualityOf(coverage),
+      quality: tailMs > PENDING_TAIL_MS ? "pending" : qualityOf(coverage),
       partial: end < nextMidnight(dayStart),
     };
   });
@@ -192,13 +213,16 @@ export function mergeLongTrends(
   return { anchor: later.anchor, trends };
 }
 
+const countsInAverage = (d: DayConsumption): boolean =>
+  d.quality === "measured" || d.quality === "mixed";
+
 // The average of the complete days that were not merely estimated — what the
 // chart's dashed line and the heading say. null when there is no such day.
 export function averageConsumedAh(
   days: Array<DayConsumption | null>,
 ): number | null {
   const usable = days.flatMap((d) =>
-    d && !d.partial && d.quality !== "estimated" ? [d.consumedAh] : [],
+    d && !d.partial && countsInAverage(d) ? [d.consumedAh] : [],
   );
   return usable.length > 0
     ? usable.reduce((a, b) => a + b, 0) / usable.length
@@ -210,7 +234,7 @@ export function averageChargedAh(
   days: Array<DayConsumption | null>,
 ): number | null {
   const usable = days.flatMap((d) =>
-    d && !d.partial && d.quality !== "estimated" && d.chargedAh !== null
+    d && !d.partial && countsInAverage(d) && d.chargedAh !== null
       ? [d.chargedAh]
       : [],
   );
@@ -218,3 +242,7 @@ export function averageChargedAh(
     ? usable.reduce((a, b) => a + b, 0) / usable.length
     : null;
 }
+
+// Any day still waiting for the Victron's charge data (the chart says so).
+export const hasPendingDays = (days: Array<DayConsumption | null>): boolean =>
+  days.some((d) => d?.quality === "pending");

@@ -129,14 +129,17 @@ if (report.intervals.length === 0) {
   );
   for (const i of report.intervals) {
     console.log(
-      `  ${stamp(i.from).padEnd(12)}${stamp(i.to).padEnd(12)}${i.hours.toFixed(1).padStart(6)}${`${i.fromSoc.toFixed(0)}→${i.toSoc.toFixed(0)}`.padStart(11)}${i.chargeAh.toFixed(1).padStart(11)}${i.loadA.toFixed(2).padStart(8)}  ${i.fromKind === "full" || i.toKind === "full" ? `${i.fromKind}→${i.toKind} ` : ""}${i.reliable ? "" : "(too short / inside a full: borrows the reliable median)"}`.trimEnd(),
+      `  ${stamp(i.from).padEnd(12)}${stamp(i.to).padEnd(12)}${i.hours.toFixed(1).padStart(6)}${`${i.fromSoc.toFixed(0)}→${i.toSoc.toFixed(0)}`.padStart(11)}${i.chargeAh.toFixed(1).padStart(11)}${i.loadA.toFixed(2).padStart(8)}  ${i.fromKind === "full" || i.toKind === "full" ? `${i.fromKind}→${i.toKind} ` : ""}${i.reliable ? "" : i.covered ? "(too short / inside a full: borrows the reliable median)" : "(Victron trend does not cover it: charge unknown, borrows the reliable median)"}`.trimEnd(),
     );
   }
 }
 
 console.log("\nconsumption per local day (van/consumption.ts)");
 console.log(
-  "  consumed = ∫ implied load; charged = ∫ Victron charge current; coverage = share of the day inside reliable intervals",
+  "  consumed = ∫ implied load; charged = ∫ Victron charge current (— unless the trend covers the whole day); coverage = share of the day inside reliable intervals",
+);
+console.log(
+  "  pending = the Victron trend ends over an hour before the day does: waiting for Victron data (open Van Power, or the sampler's 3 h top-up)",
 );
 const dayRows = report.days.flatMap((d) => (d ? [d] : []));
 if (dayRows.length === 0) {

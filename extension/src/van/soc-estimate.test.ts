@@ -637,3 +637,87 @@ describe("regression: extrapolation uses the typical load, not the last interval
     expect(before.soc).toBeLessThanOrEqual(100);
   });
 });
+
+describe("regression: a charger trend that stops is not 0 A", () => {
+  // a pack that never fills, so no confirmed-full anchors get in the way
+  const slow = simulateVan({
+    from: FROM,
+    to: NOW,
+    loadA: LOAD,
+    capacityAh: CAPACITY,
+    sunA: 3,
+    startSoc: 50,
+  });
+  const reading = (t: number): SocCapture => ({ t, soc: slow.truthAt(t) });
+  const cutAt = NOW - 6 * HOUR;
+  const cut: VictronTrends = {
+    ...slow.trends,
+    trends: slow.trends.trends.map((tr) => ({
+      ...tr,
+      samples: tr.samples.filter((s) => s.t <= cutAt),
+    })),
+  };
+  const before = reading(NOW - 12 * HOUR);
+  const after = reading(NOW - 3 * HOUR); // beyond the trend's last sample
+  const last = reading(NOW - 1 * HOUR);
+
+  it("an interval the trend does not fully cover is not reliable, one inside it is", () => {
+    const [inside, across, beyond] = intervalLoads({
+      trends: cut,
+      captures: [reading(NOW - 20 * HOUR), before, after, last],
+      from: FROM,
+      to: NOW,
+      capacityAh: CAPACITY,
+    });
+    expect(inside.covered).toBe(true);
+    expect(inside.reliable).toBe(true);
+    expect(across.covered).toBe(false);
+    expect(across.reliable).toBe(false);
+    expect(beyond.covered).toBe(false);
+    expect(beyond.reliable).toBe(false);
+  });
+
+  it("an hour-long hole inside the trend breaks coverage, a short one does not", () => {
+    const withHole = (holeMin: number): VictronTrends => ({
+      ...slow.trends,
+      trends: slow.trends.trends.map((tr) => ({
+        ...tr,
+        samples: tr.samples.filter(
+          (s) => s.t < NOW - 10 * HOUR || s.t > NOW - 10 * HOUR + holeMin * MIN,
+        ),
+      })),
+    });
+    const across = (trends: VictronTrends) =>
+      intervalLoads({
+        trends,
+        captures: [reading(NOW - 12 * HOUR), reading(NOW - 8 * HOUR)],
+        from: FROM,
+        to: NOW,
+        capacityAh: CAPACITY,
+      })[0];
+    expect(across(withHole(50)).covered).toBe(true);
+    expect(across(withHole(90)).covered).toBe(false);
+  });
+
+  it("draws no estimate past the trend's end, and a straight line between readings over the uncovered stretch", () => {
+    const points = estimateSoc({
+      trends: cut,
+      captures: [before, after, last],
+      from: FROM,
+      to: NOW,
+      capacityAh: CAPACITY,
+    });
+    const estimated = points.filter((p) => p.kind === "estimated");
+    expect(Math.max(...estimated.map((p) => p.t))).toBeLessThanOrEqual(last.t);
+    // halfway between `before` and `after` the line is the average of the two
+    const mid = at(estimated, (before.t + after.t) / 2);
+    const frac = (mid.t - before.t) / (after.t - before.t);
+    expect(mid.soc).toBeCloseTo(
+      before.soc + (after.soc - before.soc) * frac,
+      0,
+    );
+    // after the last reading nothing is invented on a 0 A charger
+    const afterLast = estimated.filter((p) => p.t > last.t);
+    expect(afterLast).toEqual([]);
+  });
+});

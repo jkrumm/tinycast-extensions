@@ -60,6 +60,11 @@ export const MIN_INTERVAL_MS = 2 * 3_600_000; // shorter spans are too noisy to 
 const RECENT_INTERVALS_MS = 3 * 24 * 3_600_000; // the loads a prediction beyond the anchors is based on
 const CAPTURE_PRECEDENCE_MS = 2 * 3_600_000; // a full-anchor this close to a reading yields to it
 const MAX_STEP_MS = 3 * GRID_MS; // a longer hole in the output is a gap, not a line
+// The charger-current trend only "covers" a time within its samples: one native
+// step (the coarsest, 30 min) beyond its first / last sample, and no interior
+// hole longer than an hour. Anywhere else "no sample" is NOT "0 A".
+const TREND_END_TOLERANCE_MS = 30 * 60_000;
+const TREND_HOLE_MS = 60 * 60_000;
 
 // What `make van-eval` prints next to its error table — the knobs to tune.
 export const ESTIMATOR_CONSTANTS = {
@@ -74,6 +79,8 @@ export const ESTIMATOR_CONSTANTS = {
   MIN_INTERVAL_H: MIN_INTERVAL_MS / 3_600_000,
   RECENT_INTERVALS_DAYS: RECENT_INTERVALS_MS / 86_400_000,
   CAPTURE_PRECEDENCE_MS,
+  TREND_END_TOLERANCE_MS,
+  TREND_HOLE_MS,
 } as const;
 
 const clamp = (v: number, lo: number, hi: number): number =>
@@ -119,6 +126,33 @@ export function valueAt(series: Series, t: number): number | null {
   }
   return a.v + ((b.v - a.v) * (t - a.t)) / (b.t - a.t);
 }
+
+// The stretches the series actually covers (see TREND_*): maximal runs of
+// samples with no hole over an hour, the first run's start and the last run's
+// end widened by the tolerance. Empty for an empty series.
+export function coveredSpans(series: Series): Run[] {
+  const runs: Run[] = [];
+  for (const s of series) {
+    const last = runs.at(-1);
+    if (last && s.t - last.to <= TREND_HOLE_MS) last.to = s.t;
+    else runs.push({ from: s.t, to: s.t });
+  }
+  if (runs.length > 0) {
+    runs[0].from -= TREND_END_TOLERANCE_MS;
+    runs[runs.length - 1].to += TREND_END_TOLERANCE_MS;
+  }
+  return runs;
+}
+
+export const spansCover = (spans: Run[], from: number, to: number): boolean =>
+  spans.some((r) => r.from <= from && r.to >= to);
+
+// How much of [from, to) the spans cover, in ms.
+export const spansOverlap = (spans: Run[], from: number, to: number): number =>
+  spans.reduce(
+    (ms, r) => ms + Math.max(0, Math.min(r.to, to) - Math.max(r.from, from)),
+    0,
+  );
 
 // ─── House load ─────────────────────────────────────────────────────────────
 
@@ -242,7 +276,8 @@ export interface IntervalLoad {
   toSoc: number;
   chargeAh: number; // what the charger put in
   loadA: number; // implied average load, ≥ 0
-  reliable: boolean; // long enough to trust (and not the inside of one full run)
+  covered: boolean; // the charger-current trend covers the whole span (else chargeAh is unknown, not 0)
+  reliable: boolean; // covered, long enough to trust (and not the inside of one full run)
 }
 
 export const chargeBetween = (
@@ -264,6 +299,7 @@ function intervalsBetween(
   runs: Run[],
   capacityAh: number,
 ): IntervalLoad[] {
+  const spans = coveredSpans(charge);
   const out: IntervalLoad[] = [];
   for (let k = 0; k + 1 < anchors.length; k++) {
     const a = anchors[k];
@@ -271,6 +307,7 @@ function intervalsBetween(
     const hours = (b.t - a.t) / 3_600_000;
     const chargeAh = chargeBetween(charge, a.t, b.t);
     const insideFull = runs.some((r) => a.t >= r.from && b.t <= r.to);
+    const covered = spansCover(spans, a.t, b.t);
     out.push({
       from: a.t,
       to: b.t,
@@ -287,7 +324,8 @@ function intervalsBetween(
               (chargeAh - ((b.soc - a.soc) * capacityAh) / 100) / hours,
             )
           : 0, // two anchors at the same instant imply nothing
-      reliable: b.t - a.t >= MIN_INTERVAL_MS && !insideFull,
+      covered,
+      reliable: covered && b.t - a.t >= MIN_INTERVAL_MS && !insideFull,
     });
   }
   return out;
@@ -388,6 +426,8 @@ export function estimateSoc(opts: {
     ]),
   ].sort((a, b) => a - b);
 
+  const spans = coveredSpans(charge);
+  const isCovered = (t: number): boolean => spansCover(spans, t, t);
   const amps = nodes.map((t) => valueAt(charge, t) ?? 0);
   // The change in % from node i-1 to node i under a load of `loadA` (trapezoid).
   const step = (i: number, loadA: number): number =>
@@ -401,8 +441,12 @@ export function estimateSoc(opts: {
 
   const first = indexOf.get(anchors[0].t)!;
   soc[first] = anchors[0].soc;
+  // Beyond the anchors the charge is integrated only where the trend covers it:
+  // past its ends "no sample" is not 0 A, so the line stops (NaN carries on).
   for (let i = first - 1; i >= 0; i--)
-    soc[i] = clamp(soc[i + 1] - step(i + 1, loadBefore), 0, 100);
+    soc[i] = isCovered(nodes[i])
+      ? clamp(soc[i + 1] - step(i + 1, loadBefore), 0, 100)
+      : NaN;
 
   for (let k = 0; k < anchors.length - 1; k++) {
     const ia = indexOf.get(anchors[k].t)!;
@@ -411,7 +455,12 @@ export function estimateSoc(opts: {
     const free = new Array<number>(ib - ia + 1);
     free[0] = anchors[k].soc;
     for (let i = 1; i <= ib - ia; i++) {
-      free[i] = clamp(free[i - 1] + step(ia + i, loadA), 0, 100);
+      // An interval the trend does not cover has no charge to integrate: hold
+      // the start and let the drift below draw the straight line between the
+      // two readings instead of a curve on an invented 0 A.
+      free[i] = intervals[k].covered
+        ? clamp(free[i - 1] + step(ia + i, loadA), 0, 100)
+        : free[0];
     }
     // Zero with the interval's own load, unless it was clamped (L < 0 or the
     // integration hit 0 / 100): then the leftover is spread linearly.
@@ -425,7 +474,9 @@ export function estimateSoc(opts: {
 
   const last = indexOf.get(anchors[anchors.length - 1].t)!;
   for (let i = last + 1; i < nodes.length; i++) {
-    soc[i] = clamp(soc[i - 1] + step(i, loadAfter), 0, 100);
+    soc[i] = isCovered(nodes[i])
+      ? clamp(soc[i - 1] + step(i, loadAfter), 0, 100)
+      : NaN;
   }
 
   // A confirmed full pins the stretch it lasts to 100 %.
@@ -434,7 +485,10 @@ export function estimateSoc(opts: {
   });
 
   const estimated: SocPoint[] = nodes.flatMap((t, i) =>
-    t < from || t > to || captures.some((c) => c.t === t)
+    t < from ||
+    t > to ||
+    Number.isNaN(soc[i]) ||
+    captures.some((c) => c.t === t)
       ? []
       : [{ t, soc: soc[i], kind: "estimated" as const }],
   );
