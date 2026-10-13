@@ -139,14 +139,21 @@ export function classifyRead(opts: {
 // `trendsUpdatedAt`: when the cache last got anything from the device — null
 // means no foreground read ever succeeded, i.e. the macOS pairing dialog may
 // still be due, which an unattended run must not trigger.
+// `batteryRead`: the live read got the Ective frame. A closed-lid Mac wakes for
+// ~2 s "SleepService" DarkWakes where only the Victron advert is heard; a
+// top-up started there freezes when the Mac sleeps again (2026-10-12/13: 4 of
+// 6 cut short, each started at the second of "Back to Sleep" in `pmset -g log`).
 export function trendsTopUpDue(opts: {
   state: SamplerState;
   victronHeard: boolean; // the live read saw the charger's advert
+  batteryRead: boolean;
   trendsUpdatedAt: number | null;
   now: number;
 }): boolean {
   const { state, now, trendsUpdatedAt } = opts;
-  if (!opts.victronHeard || trendsUpdatedAt === null) return false;
+  if (!opts.victronHeard || !opts.batteryRead || trendsUpdatedAt === null) {
+    return false;
+  }
   if (now < (state.trendsBackoffUntil ?? 0)) return false;
   if (
     state.lastTrendsAttemptAt !== null &&

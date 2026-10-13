@@ -237,6 +237,7 @@ describe("trendsTopUpDue", () => {
     trendsTopUpDue({
       state: { ...INITIAL_SAMPLER_STATE, ...over },
       victronHeard: true,
+      batteryRead: true,
       trendsUpdatedAt,
       now: NOW,
     });
@@ -251,6 +252,7 @@ describe("trendsTopUpDue", () => {
       trendsTopUpDue({
         state: INITIAL_SAMPLER_STATE,
         victronHeard: false,
+        batteryRead: true,
         trendsUpdatedAt: stale,
         now: NOW,
       }),
@@ -259,7 +261,20 @@ describe("trendsTopUpDue", () => {
       trendsTopUpDue({
         state: INITIAL_SAMPLER_STATE,
         victronHeard: true,
+        batteryRead: true,
         trendsUpdatedAt: null,
+        now: NOW,
+      }),
+    ).toBe(false);
+  });
+
+  it("is not due when the live read missed the battery (a 2 s DarkWake)", () => {
+    expect(
+      trendsTopUpDue({
+        state: INITIAL_SAMPLER_STATE,
+        victronHeard: true,
+        batteryRead: false,
+        trendsUpdatedAt: stale,
         now: NOW,
       }),
     ).toBe(false);

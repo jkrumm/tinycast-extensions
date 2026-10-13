@@ -549,7 +549,9 @@ run make secrets" while still reading the battery.
     only after the charge is ≥ 5 points above it (`alertStep`); a reading that
     jumps through both reports the lower. **Trends top-up**: the charge-current
     trend (what the consumption needs) only grows through the connected GATT
-    session, so after the live read, when the charger's advert was heard and the
+    session, so after the live read, when the charger's advert was heard, the
+    Ective frame was read (a closed-lid Mac's ~2 s DarkWakes hear only the advert
+    and froze 4 of 6 top-ups mid-session) and the
     cache's `updatedAt` is over 3 h old (and was set by a foreground read at
     least once — pairing happens there, never unattended), the run calls the same
     `loadVictronHistory` an open does (`--victron-all --since`, history only if

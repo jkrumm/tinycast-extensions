@@ -36,6 +36,7 @@ async function topUpTrends(opts: {
     !trendsTopUpDue({
       state,
       victronHeard: read?.helper.victron != null,
+      batteryRead: read?.helper.battery != null,
       trendsUpdatedAt: cache?.updatedAt ?? null,
       now,
     })
