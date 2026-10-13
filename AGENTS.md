@@ -437,7 +437,14 @@ run make secrets" while still reading the battery.
   background run after ~60s, so every tick runs under a hard, shortened
   budget (`DEFAULT_WATCHDOG_BUDGET_MS`, see `docs/netgear-m2.md` § Watchdog)
   and persists an in-progress breadcrumb (`onAction`) before any long action,
-  so a kill mid-flight still leaves a trace. State and a
+  so a kill mid-flight still leaves a trace. The whole tick also runs under a
+  50s hard deadline (`DEFAULT_WATCHDOG_HARD_DEADLINE_MS`, `netgear/deadline.ts`)
+  and the Wi-Fi join under 20s (`REJOIN_JOIN_TIMEOUT_MS`): an overrun is a
+  `Timed out.` failure Tinycast backs off exponentially, so a tick that cannot
+  finish resolves with an `error` "Tick cut short" event instead. A closed-lid
+  Mac's dark wakes still freeze runs mid-tick and book them as `Timed out.`
+  (the wall-clock deadline expires asleep — most of the 9 failures that parked
+  the watchdog ~8.5 h on 2026-10-13); no code can prevent that. State and a
   60-event ring buffer live in `LocalStorage` (`netgear-watchdog` key,
   `netgear/watchdog-storage.ts`); `netgear.tsx` reads the same key for a
   status row plus **Pause/Resume Watchdog** and **Watchdog Log** actions. The

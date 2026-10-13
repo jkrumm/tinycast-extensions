@@ -58,6 +58,7 @@
 // timeouts below instead of the interactive (netgear.tsx) defaults.
 
 import { NetgearClient } from "./client";
+import { withDeadline } from "./deadline";
 import { RouterStatus } from "./types";
 import { SimPinStore } from "./pin-store";
 import {
@@ -428,6 +429,22 @@ const defaultNow: Now = () => Date.now();
 // once the router is known reachable.
 export const DEFAULT_WATCHDOG_BUDGET_MS = 45_000;
 
+// The budget above only scales the poll loops; every curl behind them can
+// still overshoot it by its own `-m 8`, and networksetup has no limit at all —
+// a dying router mid data-toggle and an off-air SSID in a rejoin both pushed
+// ticks past the 60s kill, which Tinycast books as a failed run and backs off
+// exponentially (9 failures ≈ 8.5h parked, 2026-10-13). So the whole tick also
+// runs under this hard deadline (real timers, see deadline.ts): when it hits,
+// the tick resolves normally with an `error` event instead of being killed.
+// Leaves ~10s of the 60s for persisting the result.
+export const DEFAULT_WATCHDOG_HARD_DEADLINE_MS = 50_000;
+
+// `networksetup -setairportnetwork` has no timeout of its own; a join that has
+// not finished by now is a failed rejoin (an off-air SSID takes ~30-45s to
+// give up). Worst-case unreachable tick: getStatus 8 + probe 8 + this + the
+// reachable wait below < DEFAULT_WATCHDOG_HARD_DEADLINE_MS.
+export const REJOIN_JOIN_TIMEOUT_MS = 20_000;
+
 // Exported only for watchdog.test.ts's budget-arithmetic assertions.
 export function scaledTimeouts(budgetMs: number): FlowTimeouts {
   const scale = budgetMs / DEFAULT_WATCHDOG_BUDGET_MS;
@@ -502,6 +519,8 @@ export interface RunWatchdogTickOptions {
   // Ceiling for whichever single long action this tick takes — see
   // DEFAULT_WATCHDOG_BUDGET_MS.
   budgetMs?: number;
+  // Hard ceiling for the whole tick — see DEFAULT_WATCHDOG_HARD_DEADLINE_MS.
+  hardDeadlineMs?: number;
 }
 
 export interface WatchdogTickResult {
@@ -513,6 +532,10 @@ export interface WatchdogTickResult {
 // tick saw (after login), to judge whether a reboot is allowed.
 interface TickSeen {
   status?: RouterStatus;
+  // The latest long action started, and whether the hard deadline already
+  // gave up on this tick (the abandoned pass must not act any further).
+  action?: WatchdogActionKind;
+  abandoned?: boolean;
 }
 
 // A tick ending in one of these is "stuck" in the reboot-escalation sense.
@@ -559,11 +582,52 @@ export async function runWatchdogTick(
 ): Promise<WatchdogTickResult> {
   const seen: TickSeen = {};
   const state = migrateWatchdogState(opts.state);
-  const result = await runEscalatingTick({ ...opts, state }, seen);
+  const startedAt = (opts.now ?? defaultNow)();
+  const hardDeadlineMs =
+    opts.hardDeadlineMs ?? DEFAULT_WATCHDOG_HARD_DEADLINE_MS;
+  const trackedOnAction: RunWatchdogTickOptions["onAction"] = async (kind) => {
+    if (seen.abandoned) return;
+    seen.action = kind;
+    await opts.onAction?.(kind);
+  };
+  const result = await withDeadline(
+    runEscalatingTick({ ...opts, state, onAction: trackedOnAction }, seen),
+    hardDeadlineMs,
+    () => {
+      seen.abandoned = true;
+      return cutShortResult(state, startedAt, hardDeadlineMs, seen.action);
+    },
+  );
+  if (seen.abandoned) return result;
   return applyBatteryAwareness(
     applyServiceAwareness(result, seen.status, state.noServiceSince),
     seen.status,
   );
+}
+
+// What a tick that hit the hard deadline reports. The attempt marks of the
+// action it was in keep their effect so the next tick does not repeat a
+// long action that just ate the whole budget (rejoin: 5-min backoff; data
+// toggle: once per stuck episode).
+function cutShortResult(
+  state: WatchdogState,
+  at: number,
+  deadlineMs: number,
+  action: WatchdogActionKind | undefined,
+): WatchdogTickResult {
+  const event = makeEvent(
+    at,
+    "error",
+    `Tick cut short — the router did not answer within ${Math.round(deadlineMs / 1000)} s`,
+  );
+  return {
+    state: {
+      ...state,
+      ...(action === "rejoining" ? { lastRejoinAttemptAt: at } : {}),
+      ...(action === "toggling-data" ? { dataToggledAt: at } : {}),
+    },
+    event: action ? { ...event, detail: breadcrumbMessage(action) } : event,
+  };
 }
 
 async function runEscalatingTick(
@@ -616,6 +680,8 @@ async function runEscalatingTick(
     ? appendDetail(withContext, diagnostics)
     : withContext;
   if (!rebootAllowed || !status) return { state, event };
+  // The hard deadline already reported this tick: no reboot from a ghost.
+  if (seen.abandoned) return { state, event };
 
   // The Mac may lose the router's Wi-Fi in the reboot — make sure its
   // credentials are known before it goes down.
@@ -1310,14 +1376,25 @@ async function rejoinWifi(opts: {
   if (!creds) return null;
   await onAction?.("rejoining");
   const nextState = { ...state, lastRejoinAttemptAt: t };
-  const joined = await wifi.rejoin(creds).catch(() => false);
+  const joined = await withDeadline(
+    wifi.rejoin(creds).catch(() => false),
+    REJOIN_JOIN_TIMEOUT_MS,
+    () => false,
+  );
   if (!joined) {
     return {
       state: nextState,
       event: makeEvent(t, "rejoin-failed", "Wi-Fi rejoin did not succeed"),
     };
   }
-  if (!(await routerReachable({ client, now, sleep }))) {
+  // routerReachable stops by its own clock; this only catches a curl that
+  // hangs past its `-m` inside the last poll.
+  const reachable = await withDeadline(
+    routerReachable({ client, now, sleep }),
+    REJOIN_REACHABLE_WAIT_MS + 1_000,
+    () => false,
+  );
+  if (!reachable) {
     return {
       state: nextState,
       event: makeEvent(

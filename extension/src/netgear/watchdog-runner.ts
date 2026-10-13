@@ -16,6 +16,7 @@ import {
   wifiCredsStore,
   wifiRejoiner,
 } from "./session";
+import { withDeadline } from "./deadline";
 import { describeErrorDetail, describeNetgearError } from "./errors";
 import { probeInternet } from "./internet-probe";
 import { runWatchdogTick, breadcrumbMessage, WatchdogEvent } from "./watchdog";
@@ -25,6 +26,11 @@ import {
   loadWatchdogStorage,
   saveWatchdogStorage,
 } from "./watchdog-storage";
+
+// The password comes from Keychain, then 1Password (`op read` blocks on a
+// biometric prompt nobody can answer in a background run). Past this, a tick
+// carries on as if none were configured instead of hanging until the kill.
+const PASSWORD_DEADLINE_MS = 5_000;
 
 export type WatchdogSource = "background" | "view";
 
@@ -82,7 +88,11 @@ async function run(source: WatchdogSource): Promise<WatchdogEvent | null> {
 
 async function tick(source: WatchdogSource): Promise<WatchdogEvent> {
   const client = await getClient();
-  const password = await getPassword({ toast: false });
+  const password = await withDeadline(
+    getPassword({ toast: false }),
+    PASSWORD_DEADLINE_MS,
+    () => null,
+  );
   // Re-read under the lock: a UI action that finished just before this tick
   // took it may have recorded a reboot marker after the first load.
   let storage = await loadWatchdogStorage();

@@ -227,6 +227,36 @@ interleaved with `probe-failed` and raw `reconnect-failed: curl exited
   ≤27s at the default budget), so every path finishes well under the 60s
   kill, verified in `watchdog.test.ts` with `fakeClock` against a
   never-succeeds script for each branch.
+- **Hard deadline** (2026-10-13: the same `Timed out.` x9 parked the watchdog
+  for ~8.5h while the router was off — Tinycast backs failed runs off
+  exponentially, so one overrun while the router is unreachable defeats the
+  watchdog). The budget above only scales poll loops: each curl behind them can
+  overshoot it by its own `-m 8`, a router dying mid data-toggle stacks several
+  of those, and `networksetup -setairportnetwork` (the rejoin) has no limit at
+  all (~45s to give up on an off-air SSID; 8 getStatus + 8 probe + 45 > 60).
+  Now: the rejoin join is bounded by `REJOIN_JOIN_TIMEOUT_MS` (20s, a timeout =
+  `rejoin-failed`) and the reachability poll by `REJOIN_REACHABLE_WAIT_MS` +
+  1s, so an unreachable-router tick is at most 8 + 8 + 20 + 11 s; and the
+  whole tick (`runWatchdogTick`) runs under `DEFAULT_WATCHDOG_HARD_DEADLINE_MS`
+  (50s, real timers, `deadline.ts`). On expiry it resolves normally with an
+  `error` event "Tick cut short" (detail = the action it was in), keeps the
+  rejoin / data-toggle attempt marks so the next tick does not repeat the
+  action, and the abandoned pass can no longer reboot. A killed tick used to
+  write nothing; this one is always recorded. The runner also caps the
+  password lookup at 5s (a missing Keychain entry would otherwise block on a
+  1Password biometric prompt nobody can answer).
+- **Sleep also produces `Timed out.`** (`pmset -g log`, 2026-10-12/13, Mac on
+  battery with the lid closed): it dark-wakes about every 15 min for either a
+  ~2 s "Sleep Service" window or a ~45 s "Maintenance" window, then sleeps again.
+  Tinycast's 60s timeout is wall-clock, so a tick that is still running when the
+  Mac goes back to sleep is frozen and booked as `Timed out.` at the next wake.
+  No code can prevent that: a tick started in a 2 s window can never finish,
+  and each such failure doubles the backoff. Replaying the backoff
+  (interval x 2^failures, a failure recorded at the first wake after the 60s)
+  against the dark-wake log from the 17:19 tick on gives exactly 9 runs, the
+  last at 05:08:15, parked until ~13:49 — the observed `consecutiveFailures: 9`,
+  `lastRun` 05:08. Five of those 9 runs started in 2 s windows (hopeless), four in
+  ~45 s windows. The watchdog is only reliable while the Mac is awake.
 - **In-tick internet confirm** (2026-10-05 evidence: "Connected but no
   internet" outages at 15:17 and 18:59, each detected only on the 2nd tick
   ~75s after the 1st failed probe, then fixed by one reconnect). When the probe

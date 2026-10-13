@@ -1,6 +1,6 @@
-import { describe, it, expect } from "vitest";
+import { afterEach, beforeEach, describe, it, expect, vi } from "vitest";
 import { NetgearClient } from "./client";
-import { RouterModel } from "./types";
+import { NetgearHttp, NetgearHttpResponse, RouterModel } from "./types";
 import {
   ICCID,
   buildModel,
@@ -33,6 +33,9 @@ import {
   RebootMarker,
   WatchdogState,
   DEFAULT_WATCHDOG_BUDGET_MS,
+  DEFAULT_WATCHDOG_HARD_DEADLINE_MS,
+  REJOIN_JOIN_TIMEOUT_MS,
+  REJOIN_REACHABLE_WAIT_MS,
   WatchdogActionKind,
   WatchdogEvent,
 } from "./watchdog";
@@ -3000,3 +3003,144 @@ describe("runWatchdogTick — no mobile network (limited service)", () => {
     ).toMatch(/^Mobile network back \(Fakecom, LTE B7\) · \d{2}:\d{2}$/);
   });
 });
+
+// A transport that answers the first `answers` GETs from the script and then
+// never settles — a router that died mid-action, or a curl that outlives `-m`.
+class GoesSilentHttp implements NetgearHttp {
+  private gets = 0;
+  constructor(
+    private readonly model: RouterModel,
+    private readonly answers: number,
+  ) {}
+  get(): Promise<NetgearHttpResponse> {
+    if (this.gets++ >= this.answers) return new Promise(() => {});
+    return Promise.resolve({ status: 200, body: JSON.stringify(this.model) });
+  }
+  postForm(): Promise<NetgearHttpResponse> {
+    return Promise.resolve({ status: 200, body: SUCCESS_BODY });
+  }
+}
+
+describe("runWatchdogTick — hard deadline (hanging router)", () => {
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => vi.useRealTimers());
+
+  const hangingClient = (answers: number, model = buildModel({})) =>
+    new NetgearClient({
+      host: "http://192.168.1.1",
+      transport: new GoesSilentHttp(model, answers),
+    });
+
+  it("a router that never answers resolves as a cut-short tick within the deadline", async () => {
+    const tick = runWatchdogTick({
+      client: hangingClient(0),
+      password: null,
+      pinStore: new FakePinStore(),
+      state: INITIAL_WATCHDOG_STATE,
+      probeInternet: async () => true,
+    });
+    await vi.advanceTimersByTimeAsync(DEFAULT_WATCHDOG_HARD_DEADLINE_MS);
+    const result = await tick;
+    expect(result.event.kind).toBe("error");
+    expect(result.event.message).toMatch(/cut short/);
+    expect(DEFAULT_WATCHDOG_HARD_DEADLINE_MS).toBeLessThan(60_000);
+  });
+
+  it("a hanging Wi-Fi join counts as a failed rejoin after REJOIN_JOIN_TIMEOUT_MS, not an overrun", async () => {
+    const hangingWifi = {
+      rejoinCalls: 0,
+      rejoin() {
+        this.rejoinCalls++;
+        return new Promise<boolean>(() => {});
+      },
+    };
+    const tick = runWatchdogTick({
+      client: client([new Error("curl exited 28")]),
+      password: null,
+      pinStore: new FakePinStore(),
+      state: INITIAL_WATCHDOG_STATE,
+      probeInternet: async () => false,
+      wifi: hangingWifi,
+      credsStore: new FakeWifiCredsStore({ ssid: "FakeNet", passphrase: "x" }),
+    });
+    await vi.advanceTimersByTimeAsync(REJOIN_JOIN_TIMEOUT_MS);
+    const result = await tick;
+    expect(hangingWifi.rejoinCalls).toBe(1);
+    expect(result.event.kind).toBe("rejoin-failed");
+    expect(result.state.lastRejoinAttemptAt).not.toBeNull();
+    expect(REJOIN_JOIN_TIMEOUT_MS + 2 * PROBE_TIMEOUT_MS + 11_000).toBeLessThan(
+      DEFAULT_WATCHDOG_HARD_DEADLINE_MS,
+    );
+  });
+
+  it("a join that succeeds but a reachability poll that hangs ends as rejoin-failed after the reachable wait", async () => {
+    const tick = runWatchdogTick({
+      client: new NetgearClient({
+        host: "http://192.168.1.1",
+        transport: new HangAfterErrorHttp(),
+      }),
+      password: null,
+      pinStore: new FakePinStore(),
+      state: INITIAL_WATCHDOG_STATE,
+      probeInternet: async () => false,
+      wifi: new FakeWifiRejoiner(true),
+      credsStore: new FakeWifiCredsStore({ ssid: "FakeNet", passphrase: "x" }),
+    });
+    await vi.advanceTimersByTimeAsync(REJOIN_REACHABLE_WAIT_MS + 1_000);
+    const result = await tick;
+    expect(result.event.kind).toBe("rejoin-failed");
+  });
+
+  it("a router dying mid-reconnect ends as a cut-short tick that remembers nothing it must not repeat", async () => {
+    const onAction = vi.fn();
+    const tick = runWatchdogTick({
+      client: hangingClient(2), // getStatus + login read, then silence
+      password: "s3cr3t",
+      pinStore: new FakePinStore(),
+      state: { ...INITIAL_WATCHDOG_STATE, internetFailures: 1 },
+      probeInternet: async () => false,
+      sleep: async () => {},
+      onAction,
+    });
+    await vi.advanceTimersByTimeAsync(DEFAULT_WATCHDOG_HARD_DEADLINE_MS);
+    const result = await tick;
+    expect(result.event.kind).toBe("error");
+    expect(result.event.detail).toBe(breadcrumbMessage("reconnecting"));
+    expect(onAction).toHaveBeenCalledWith("reconnecting");
+  });
+
+  it("a cut-short rejoin keeps its attempt mark so the next tick backs off", async () => {
+    // The join succeeds, the reachability poll hangs, and the hard deadline
+    // (shortened here) fires before the poll's own limit.
+    const wifi = { rejoin: () => Promise.resolve(true) };
+    const tick = runWatchdogTick({
+      client: new NetgearClient({
+        host: "http://192.168.1.1",
+        transport: new HangAfterErrorHttp(),
+      }),
+      password: null,
+      pinStore: new FakePinStore(),
+      state: INITIAL_WATCHDOG_STATE,
+      probeInternet: async () => false,
+      wifi,
+      credsStore: new FakeWifiCredsStore({ ssid: "FakeNet", passphrase: "x" }),
+      hardDeadlineMs: 5_000,
+    });
+    await vi.advanceTimersByTimeAsync(5_000);
+    const result = await tick;
+    expect(result.event.kind).toBe("error");
+    expect(result.state.lastRejoinAttemptAt).not.toBeNull();
+  });
+});
+
+// First GET fails like an unreachable router, every later one hangs.
+class HangAfterErrorHttp implements NetgearHttp {
+  private gets = 0;
+  get(): Promise<NetgearHttpResponse> {
+    if (this.gets++ === 0) return Promise.reject(new Error("curl exited 7"));
+    return new Promise(() => {});
+  }
+  postForm(): Promise<NetgearHttpResponse> {
+    return Promise.resolve({ status: 200, body: SUCCESS_BODY });
+  }
+}
