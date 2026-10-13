@@ -7,7 +7,12 @@ import { UsageQuota } from "./types";
 const execFileAsync = promisify(execFile);
 
 const USAGE_FILE = "/tmp/claude_sl/usage_api.json";
-const REFETCH_AFTER_SECONDS = 300;
+// Below the menu bar's 2m interval, so every scheduled run refetches; the
+// fetcher's own 429 handling keeps the last file when rate-limited.
+const REFETCH_AFTER_SECONDS = 100;
+// fetch_usage.py's HTTP timeout is 10 s; never let a hung `uv` hold a menu-bar
+// run past Tinycast's 60 s deadline (a timed-out run keeps the old title).
+const FETCH_TIMEOUT_MS = 20_000;
 export const STALE_HINT_SECONDS = 15 * 60;
 
 const FETCH_BIN = "/opt/homebrew/bin/uv";
@@ -34,7 +39,7 @@ export async function getQuota(): Promise<UsageQuota> {
   let quota = await readQuotaFile();
   if (isStale(quota)) {
     try {
-      await execFileAsync(FETCH_BIN, FETCH_ARGS);
+      await execFileAsync(FETCH_BIN, FETCH_ARGS, { timeout: FETCH_TIMEOUT_MS });
     } catch {
       // Ignore — fall back to whatever is already on disk.
     }

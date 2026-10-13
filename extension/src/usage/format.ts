@@ -57,15 +57,15 @@ export function formatPace(pace: WeeklyPace): string {
   return `${label} — ~${Math.round(pace.projected)}% at reset`;
 }
 
-// Menu-bar title: the weekly percent, labelled — a bare number was read as the
-// weekly while it was the 5h session (12 % shown, weekly really 14 %). The 5h
-// session is appended only when it is the one about to bite.
+// Menu-bar title: the bare weekly percent (the ring icon beside it is the
+// weekly too). The 5h session is appended, labelled, only when it is the one
+// about to bite.
 export const SESSION_TITLE_THRESHOLD = 80;
 
 export function menuBarTitle(quota: UsageQuota): string {
   if (isQuotaError(quota)) return "Claude: error";
   const { weekly, session } = quotaLimits(quota);
-  const title = `${formatPercent(weekly.percent)}/wk`;
+  const title = formatPercent(weekly.percent);
   return (session.percent ?? 0) >= SESSION_TITLE_THRESHOLD
     ? `${title} · 5h ${formatPercent(session.percent)}`
     : title;

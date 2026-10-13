@@ -43,7 +43,7 @@
       "title": "Claude Usage",
       "description": "Claude quota and spend summary in the menu bar",
       "mode": "menu-bar",
-      "interval": "5m",
+      "interval": "2m",
       "icon": "usage.png"
     },
     {

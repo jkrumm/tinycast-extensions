@@ -29,7 +29,7 @@ extension/
     quick-add.tsx        command — TickTick quick add
     ticktick-menu-bar.tsx command — TickTick menu bar
     claude-usage.tsx      command — Claude weekly/5h/model limits, weekly pace + spend charts, Detail view
-    claude-usage-menu-bar.tsx command — Claude quota + spend, menu bar (5m interval)
+    claude-usage-menu-bar.tsx command — Claude quota + spend, menu bar (2m interval)
     netgear.tsx           command — Netgear MR2100 status + actions + sub-views
     netgear-watchdog.tsx    command — no-view background: keeps the mobile connection up
     battery.tsx            command — MacBook charge/health + charge-limit control
@@ -287,8 +287,12 @@ run make secrets" while still reading the battery.
   "weekly_scoped"`, labelled by the API — Fable as of 2026-10; never hardcode
   a model, the legacy `seven_day_sonnet` is only a fallback for old files),
   plus the weekly pace (linear projection to the reset, `runsOutAt` when
-  ahead). The menu-bar title is the weekly, **labelled** (`14%/wk`) — a bare
-  number was once read as the weekly while it was the 5h session.
+  ahead). The menu-bar title is the bare weekly percent (`14%`, same as the
+  ring; ` · 5h 85%` appended only at ≥ 80 %), refreshed every 2 min (the
+  file is refetched when > 100 s old, `uv` capped at 20 s, spend capped at
+  15 s — Tinycast keeps the old title if a run is still loading at its 60 s
+  deadline); the dropdown says when the quota was fetched (`(stale)` past
+  15 min).
 - **Claude usage (spend)** — argo proxy (`{baseUrl}/usage/timeseries`,
   `{baseUrl}/usage/summary`), bearer token from the secrets chain.
 - **Netgear** — the router's own HTTP API at `netgearHost` (default
@@ -916,7 +920,7 @@ so both commands are invisible there.** This repo's target channel is
 already beta (`com.tinycast.app.beta`) for exactly this reason — see the
 top of this file. `claude-usage-menu-bar` uses `lib/svg.ts`'s
 `menuBarRing()` for a live, no-text ring icon (18×18pt, nothing reads at
-that size, the weekly quota) and keeps its status-item `title` to the labelled weekly percent, since
+that size, the weekly quota) and keeps its status-item `title` to the bare weekly percent, since
 a native title now costs real menu-bar space next to every other app's.
 
 ## Adding a command

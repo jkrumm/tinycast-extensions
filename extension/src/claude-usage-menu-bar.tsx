@@ -7,7 +7,7 @@ import {
 } from "@raycast/api";
 import { useCachedPromise } from "@raycast/utils";
 import { useMemo, useRef } from "react";
-import { getQuota } from "./usage/quota";
+import { getQuota, isStaleHint } from "./usage/quota";
 import {
   getTimeseries,
   aggregateSpend,
@@ -35,6 +35,30 @@ import { menuBarRing, toDataUri } from "./lib/svg";
 // almost all zero on a given day.
 const SPEND_LANE_LIMIT = 5;
 
+// Tinycast only stores a menu-bar render once nothing is loading, and kills a
+// run after 60 s — a hanging argo request (flaky mobile internet) would
+// otherwise keep the quota title from ever updating.
+const SPEND_TIMEOUT_MS = 15_000;
+
+function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(
+      () => reject(new Error(`timed out after ${ms / 1000}s`)),
+      ms,
+    );
+    promise.then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (error) => {
+        clearTimeout(timer);
+        reject(error);
+      },
+    );
+  });
+}
+
 // Same split as claude-usage.tsx: getQuota() never rejects, getTimeseries()
 // can — spend keeps its last-good value + a spendError flag so a failing
 // spend fetch doesn't blank out a working quota reading.
@@ -45,7 +69,7 @@ function useUsage() {
     async () => {
       const [quotaResult, spendResult] = await Promise.allSettled([
         getQuota(),
-        getTimeseries(),
+        withTimeout(getTimeseries(), SPEND_TIMEOUT_MS),
       ]);
       const quota: UsageQuota =
         quotaResult.status === "fulfilled"
@@ -87,6 +111,13 @@ function windowItem(label: string, window: QuotaWindow, reset: string) {
   );
 }
 
+function formatClock(epochSeconds: number): string {
+  return new Date(epochSeconds * 1000).toLocaleTimeString("en-GB", {
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
 function resetText(window: QuotaWindow): string {
   return `resets in ${formatRelativeReset(window.resetsAt)}`;
 }
@@ -113,9 +144,8 @@ export default function ClaudeUsageMenuBar() {
   return (
     <MenuBarExtra
       icon={icon}
-      // Compact: the weekly percent, labelled ("14%/wk") — a bare number was
-      // misread as the weekly while it was the 5h session. The dropdown
-      // spells out every limit.
+      // Compact: the bare weekly percent ("14%"), matching the ring. The
+      // dropdown spells out every limit.
       title={
         data && !isQuotaError(data.quota)
           ? `${menuBarTitle(data.quota)}${offline ? " (offline)" : ""}`
@@ -192,6 +222,9 @@ function QuotaSection({ quota }: { quota: UsageQuotaOk }) {
       {models.map((model) =>
         windowItem(modelLimitLabel(model), model, resetText(model)),
       )}
+      <MenuBarExtra.Item
+        title={`Updated ${formatClock(quota.fetched_at)}${isStaleHint(quota.fetched_at) ? " (stale)" : ""}`}
+      />
     </MenuBarExtra.Section>
   );
 }

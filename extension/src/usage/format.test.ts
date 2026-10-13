@@ -84,8 +84,8 @@ const BUG_REPORT_FILE: UsageQuota = {
 };
 
 describe("menuBarTitle", () => {
-  it("shows the weekly, labelled, never the bare 5h number", () => {
-    expect(menuBarTitle(BUG_REPORT_FILE)).toBe("14%/wk");
+  it("shows the bare weekly percent, never the 5h number", () => {
+    expect(menuBarTitle(BUG_REPORT_FILE)).toBe("14%");
   });
 
   it("appends the 5h session only once it is about to bite", () => {
@@ -93,7 +93,7 @@ describe("menuBarTitle", () => {
       ...BUG_REPORT_FILE,
       five_hour: { utilization: 85, resets_at_epoch: 1 },
     } as UsageQuota;
-    expect(menuBarTitle(quota)).toBe("14%/wk · 5h 85%");
+    expect(menuBarTitle(quota)).toBe("14% · 5h 85%");
   });
 
   it("renders an error title on the error shape", () => {
