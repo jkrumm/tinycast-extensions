@@ -591,11 +591,25 @@ export async function runWatchdogTick(
     await opts.onAction?.(kind);
   };
   const result = await withDeadline(
-    runEscalatingTick({ ...opts, state, onAction: trackedOnAction }, seen),
+    runEscalatingTick(
+      {
+        ...opts,
+        client: abandonable(opts.client, seen),
+        state,
+        onAction: trackedOnAction,
+      },
+      seen,
+    ),
     hardDeadlineMs,
     () => {
       seen.abandoned = true;
-      return cutShortResult(state, startedAt, hardDeadlineMs, seen.action);
+      return cutShortResult({
+        state,
+        at: startedAt,
+        deadlineMs: hardDeadlineMs,
+        action: seen.action,
+        routerSeen: seen.status !== undefined,
+      });
     },
   );
   if (seen.abandoned) return result;
@@ -609,12 +623,16 @@ export async function runWatchdogTick(
 // action it was in keep their effect so the next tick does not repeat a
 // long action that just ate the whole budget (rejoin: 5-min backoff; data
 // toggle: once per stuck episode).
-function cutShortResult(
-  state: WatchdogState,
-  at: number,
-  deadlineMs: number,
-  action: WatchdogActionKind | undefined,
-): WatchdogTickResult {
+// A hang on a router that did answer this tick counts as stuck, so a router
+// that wedges every tick still climbs the escalation ladder.
+function cutShortResult(opts: {
+  state: WatchdogState;
+  at: number;
+  deadlineMs: number;
+  action: WatchdogActionKind | undefined;
+  routerSeen: boolean;
+}): WatchdogTickResult {
+  const { state, at, deadlineMs, action, routerSeen } = opts;
   const event = makeEvent(
     at,
     "error",
@@ -623,11 +641,35 @@ function cutShortResult(
   return {
     state: {
       ...state,
+      ...(routerSeen ? { stuckStreak: state.stuckStreak + 1 } : {}),
       ...(action === "rejoining" ? { lastRejoinAttemptAt: at } : {}),
       ...(action === "toggling-data" ? { dataToggledAt: at } : {}),
     },
     event: action ? { ...event, detail: breadcrumbMessage(action) } : event,
   };
+}
+
+// The pass the hard deadline gave up on keeps running in the background; once
+// abandoned, every further router call fails at once, so it cannot mutate the
+// router after the runner has released the action lock. Methods run with the
+// proxy as `this` and object members (the client's transport) are guarded
+// too, so a client method whose read was in flight cannot follow up with its
+// post; only a request already sent still finishes.
+function abandonable<T extends object>(target: T, seen: TickSeen): T {
+  const proxy: T = new Proxy(target, {
+    get(obj, prop, receiver) {
+      const value = Reflect.get(obj, prop, receiver);
+      if (value !== null && typeof value === "object") {
+        return abandonable(value, seen);
+      }
+      if (typeof value !== "function") return value;
+      return (...args: unknown[]) =>
+        seen.abandoned
+          ? Promise.reject(new Error("Watchdog tick abandoned"))
+          : value.apply(proxy, args);
+    },
+  });
+  return proxy;
 }
 
 async function runEscalatingTick(

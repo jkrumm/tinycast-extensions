@@ -3021,6 +3021,29 @@ class GoesSilentHttp implements NetgearHttp {
   }
 }
 
+// Answers `answers` GETs at once, stalls the next one for `stallMs`, then
+// answers again — a router that comes back after the hard deadline gave up.
+class StallsOnceHttp implements NetgearHttp {
+  private gets = 0;
+  posts = 0;
+  constructor(
+    private readonly model: RouterModel,
+    private readonly answers: number,
+    private readonly stallMs: number,
+  ) {}
+  get(): Promise<NetgearHttpResponse> {
+    const response = { status: 200, body: JSON.stringify(this.model) };
+    if (this.gets++ !== this.answers) return Promise.resolve(response);
+    return new Promise((resolve) =>
+      setTimeout(() => resolve(response), this.stallMs),
+    );
+  }
+  postForm(): Promise<NetgearHttpResponse> {
+    this.posts++;
+    return Promise.resolve({ status: 200, body: SUCCESS_BODY });
+  }
+}
+
 describe("runWatchdogTick — hard deadline (hanging router)", () => {
   beforeEach(() => vi.useFakeTimers());
   afterEach(() => vi.useRealTimers());
@@ -3107,6 +3130,41 @@ describe("runWatchdogTick — hard deadline (hanging router)", () => {
     expect(result.event.kind).toBe("error");
     expect(result.event.detail).toBe(breadcrumbMessage("reconnecting"));
     expect(onAction).toHaveBeenCalledWith("reconnecting");
+    // The router answered this tick, so the hang counts toward the ladder.
+    expect(result.state.stuckStreak).toBe(1);
+  });
+
+  it("a router that never answered does not count as stuck", async () => {
+    const tick = runWatchdogTick({
+      client: hangingClient(0),
+      password: null,
+      pinStore: new FakePinStore(),
+      state: INITIAL_WATCHDOG_STATE,
+      probeInternet: async () => true,
+    });
+    await vi.advanceTimersByTimeAsync(DEFAULT_WATCHDOG_HARD_DEADLINE_MS);
+    expect((await tick).state.stuckStreak).toBe(0);
+  });
+
+  it("the abandoned pass never writes to the router once the deadline gave up", async () => {
+    const http = new StallsOnceHttp(buildModel({}), 2, 70_000);
+    const tick = runWatchdogTick({
+      client: new NetgearClient({
+        host: "http://192.168.1.1",
+        transport: http,
+      }),
+      password: "s3cr3t",
+      pinStore: new FakePinStore(),
+      state: { ...INITIAL_WATCHDOG_STATE, internetFailures: 1 },
+      probeInternet: async () => false,
+      sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+      now: () => Date.now(),
+    });
+    await vi.advanceTimersByTimeAsync(DEFAULT_WATCHDOG_HARD_DEADLINE_MS);
+    expect((await tick).event.kind).toBe("error");
+    const postsAtDeadline = http.posts;
+    await vi.advanceTimersByTimeAsync(120_000);
+    expect(http.posts).toBe(postsAtDeadline);
   });
 
   it("a cut-short rejoin keeps its attempt mark so the next tick backs off", async () => {
