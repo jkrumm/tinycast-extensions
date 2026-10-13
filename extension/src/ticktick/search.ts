@@ -13,13 +13,7 @@ export interface SearchQuery {
   projectFilter: string | null;
   priorityFilter: number | null;
   dateFilter:
-    | "today"
-    | "tomorrow"
-    | "weekend"
-    | "overdue"
-    | "no-date"
-    | "week"
-    | null;
+    "today" | "tomorrow" | "weekend" | "overdue" | "no-date" | "week" | null;
 }
 
 export function parseSearch(raw: string): SearchQuery {

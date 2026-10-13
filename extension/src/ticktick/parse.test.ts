@@ -55,7 +55,7 @@ const PROJECTS: TickTickProject[] = [
 function parseAt(input: string, refDate = REF_DATE) {
   // Monkey-patch Date to control "now"
   const OrigDate = globalThis.Date;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
   const MockDate = class extends OrigDate {
     constructor(...args: unknown[]) {
       if (args.length === 0) {

@@ -97,12 +97,7 @@ export function priorityColor(p: number): Color {
 // ─── Grouping ─────────────────────────────────────────────────────────────────
 
 export type DueBucket =
-  | "overdue"
-  | "today"
-  | "tomorrow"
-  | "this-week"
-  | "later"
-  | "no-date";
+  "overdue" | "today" | "tomorrow" | "this-week" | "later" | "no-date";
 
 export function dueBucket(due: string | null): DueBucket {
   if (!due) return "no-date";

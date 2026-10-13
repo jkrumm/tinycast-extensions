@@ -371,7 +371,7 @@ export const __poppedToRoot = { count: 0 };
 // package.json's `preferences[]` — same shape getPreferenceValues() reads in
 // the real extension, minus anything secret (never hardcode a real secret
 // here; tests override what they need per-case).
-// eslint-disable-next-line @typescript-eslint/no-var-requires -- JSON import keeps this file resolvable without a bundler-specific import assertion
+// eslint-disable-next-line @typescript-eslint/no-require-imports -- JSON import keeps this file resolvable without a bundler-specific import assertion
 const pkg = require("../../package.json") as {
   preferences: { name: string; default?: string }[];
 };

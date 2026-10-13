@@ -411,7 +411,6 @@ export default function Netgear() {
     if (current.simStatus === "Locked") {
       return (
         <Action
-          // eslint-disable-next-line @raycast/prefer-title-case
           title="Enter SIM PIN"
           icon={Icon.Lock}
           onAction={() => push(<EnterPinForm onDone={revalidate} />)}
@@ -421,7 +420,6 @@ export default function Netgear() {
     if (current.simStatus === "Blocked") {
       return (
         <Action
-          // eslint-disable-next-line @raycast/prefer-title-case
           title="Unblock SIM with PUK"
           icon={Icon.LockUnlocked}
           onAction={() => push(<UnblockPukForm onDone={revalidate} />)}
@@ -431,7 +429,6 @@ export default function Netgear() {
     if (unreachable) {
       return (
         <Action
-          // eslint-disable-next-line @raycast/prefer-title-case
           title="Rejoin Router Wi-Fi"
           icon={Icon.Wifi}
           onAction={handleRejoinWifi}
@@ -443,7 +440,6 @@ export default function Netgear() {
     if (restartIsPrimary) {
       return (
         <Action
-          // eslint-disable-next-line @raycast/prefer-title-case
           title="Restart & Reconnect"
           icon={Icon.Power}
           style={Action.Style.Destructive}
@@ -525,7 +521,6 @@ export default function Netgear() {
               primaryAction(status)
             ) : (
               <Action
-                // eslint-disable-next-line @raycast/prefer-title-case
                 title="Rejoin Router Wi-Fi"
                 icon={Icon.Wifi}
                 onAction={handleRejoinWifi}
@@ -550,7 +545,6 @@ export default function Netgear() {
               )}
               {unreachable && (
                 <Action
-                  // eslint-disable-next-line @raycast/prefer-title-case
                   title="Rejoin Router Wi-Fi"
                   icon={Icon.Wifi}
                   onAction={handleRejoinWifi}
@@ -570,7 +564,6 @@ export default function Netgear() {
             <ActionPanel.Section title="SIM & APN">
               {hasSavedPin && (
                 <Action
-                  // eslint-disable-next-line @raycast/prefer-title-case
                   title="Forget Saved PIN"
                   icon={Icon.Trash}
                   onAction={async () => {
@@ -584,7 +577,6 @@ export default function Netgear() {
                 />
               )}
               <Action
-                // eslint-disable-next-line @raycast/prefer-title-case
                 title="Change SIM PIN"
                 icon={Icon.Key}
                 onAction={() =>
@@ -598,7 +590,6 @@ export default function Netgear() {
               />
               {status.simPinMode === "Enabled" ? (
                 <Action
-                  // eslint-disable-next-line @raycast/prefer-title-case
                   title="Disable SIM PIN Lock"
                   icon={Icon.LockUnlocked}
                   style={Action.Style.Destructive}
@@ -606,7 +597,6 @@ export default function Netgear() {
                 />
               ) : (
                 <Action
-                  // eslint-disable-next-line @raycast/prefer-title-case
                   title="Enable SIM PIN Lock"
                   icon={Icon.Lock}
                   onAction={() =>
@@ -615,7 +605,6 @@ export default function Netgear() {
                 />
               )}
               <Action
-                // eslint-disable-next-line @raycast/prefer-title-case
                 title="APN Profiles"
                 icon={Icon.CreditCard}
                 onAction={() =>
@@ -624,7 +613,6 @@ export default function Netgear() {
               />
               {!status.roamingAllowed && (
                 <Action
-                  // eslint-disable-next-line @raycast/prefer-title-case
                   title="Enable Data Roaming"
                   icon={Icon.Globe}
                   onAction={handleEnableRoaming}
@@ -638,7 +626,6 @@ export default function Netgear() {
                 status.userRole === "Admin" &&
                 status.smsReady && (
                   <Action
-                    // eslint-disable-next-line @raycast/prefer-title-case
                     title="SMS"
                     icon={Icon.SpeechBubble}
                     onAction={() =>
@@ -689,7 +676,6 @@ export default function Netgear() {
           )}
           <ActionPanel.Section>
             <Action.OpenInBrowser
-              // eslint-disable-next-line @raycast/prefer-title-case
               title="Open Web UI"
               shortcut={{ modifiers: ["cmd"], key: "o" }}
               url={prefs().netgearHost || DEFAULT_HOST}

@@ -117,7 +117,10 @@ only for the very first install: it copies `package.json`, the built command
 `~/Library/Application Support/com.tinycast.app.beta/extensions/jkrumm/`, and
 **re-adding the folder does not replace that copy** (verified 2026-09-27: the
 installed `hub.js` stayed stale). `make deploy` rsyncs `extension/build/` there
-itself; Tinycast reads a command's JS on every run, so the next open shows the
+itself — including `build/node_modules/`: since `@raycast/api` 2.x, `ray build`
+moves dependencies shared by several commands (`@raycast/utils`, `d3-*`,
+`chrono-node`, …) there and the command files `require()` them; Tinycast loads
+them from 0.11.19-beta.117 (`126c998`), so that is the floor; Tinycast reads a command's JS on every run, so the next open shows the
 change. The **command list** is different: Tinycast scans manifests only at
 launch (`ExtensionManager.refresh()`), so a new/renamed command stays invisible
 until a restart — `make deploy` restarts Tinycast Beta itself whenever the

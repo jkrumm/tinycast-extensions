@@ -33,7 +33,11 @@ flagged; check them again before relying on them for anything load-bearing.
 Settings → Extensions → Install → **Add from folder** — points at an
 already-built `ray build` output directory, never source. Tinycast does not
 build it: `package.json`, the compiled `<command>.js` files, and `assets/`
-are copied; **`node_modules` and source maps are never copied.**
+are copied; **`node_modules` and source maps are never copied** (as last
+verified 2026-09-27). With `@raycast/api` 2.x `ray build` emits a
+`build/node_modules/` of shared dependencies the command files `require()`;
+this repo's `make deploy` rsyncs it, and Tinycast resolves it inside the
+extension folder since `126c998` (0.11.19-beta.117).
 
 ```
 make build   # ray build -e dist -o extension/build

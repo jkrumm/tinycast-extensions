@@ -146,7 +146,6 @@ export function ApnProfiles({
 
   const addAction = (
     <Action
-      // eslint-disable-next-line @raycast/prefer-title-case
       title="Add APN Profile"
       icon={Icon.Plus}
       onAction={() => openForm({ kind: "add" })}
@@ -176,7 +175,6 @@ export function ApnProfiles({
                 <ActionPanel>
                   <ActionPanel.Section>
                     <Action
-                      // eslint-disable-next-line @raycast/prefer-title-case
                       title="Set as Active APN"
                       icon={Icon.CheckCircle}
                       onAction={() => setActive(p)}

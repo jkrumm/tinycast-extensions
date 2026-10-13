@@ -19,10 +19,7 @@ import { join } from "path";
 import { RouterModel, RouterModelProfile } from "./types";
 
 export type FakeConnection =
-  | "Connected"
-  | "Disconnected"
-  | "Connecting"
-  | "Disconnecting";
+  "Connected" | "Disconnected" | "Connecting" | "Disconnecting";
 
 export interface FakeProfile {
   index: number;

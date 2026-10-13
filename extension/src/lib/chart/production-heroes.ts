@@ -160,18 +160,16 @@ export function productionHeroes(now: number): ProductionHero[] {
 
   const fx = speedFixture({ end: now, count: 14 });
   const history: SpeedTestRecord[] = fx.times
-    .map(
-      (timestamp, i): SpeedTestRecord => ({
-        timestamp,
-        full: fx.upload[i] !== null,
-        dlMbps: fx.download[i],
-        ulMbps: fx.upload[i],
-        latencyMs: 42,
-        responsiveness: 700,
-        dataUsedMB: 40,
-        interfaceName: "en0",
-      }),
-    )
+    .map((timestamp, i): SpeedTestRecord => ({
+      timestamp,
+      full: fx.upload[i] !== null,
+      dlMbps: fx.download[i],
+      ulMbps: fx.upload[i],
+      latencyMs: 42,
+      responsiveness: 700,
+      dataUsedMB: 40,
+      interfaceName: "en0",
+    }))
     .reverse();
   const full = {
     ...history[0],
