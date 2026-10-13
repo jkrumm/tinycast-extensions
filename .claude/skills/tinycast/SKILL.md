@@ -112,7 +112,7 @@ Transforms (compress on flush, not streaming; `ce7535c5`). `WebAssembly.compile`
 | Gap | Detail |
 |-|-|
 | `AI`, `BrowserExtension`, `WindowManagement` | Import works, calling throws |
-| `OAuth` (PKCE client + Raycast's proxy) | **Removed in 0.11.17-beta.115** (`c45da6f`, #1445: `oauth.js`, Keychain/session Swift deleted). Unused here (argo bearer token via `lib/secrets.ts`) |
+| `OAuth` (PKCE client + Raycast's proxy) | Removed in 0.11.17-beta.115 (`c45da6f`), **back in 0.11.20-beta.119** (`001761a`, #1502: `oauth.js`, `ExtensionSignInSession.swift`). Unused here (argo bearer token via `lib/secrets.ts`) |
 | Cancelling an in-flight `fetch` | Caller gets `AbortError`; the request runs to completion server-side anyway |
 | Streaming HTTP (SSE, download progress, backpressure) | Bridge delivers the whole body at once |
 | `net` / `tls` | Resolve, throw on use |
@@ -302,6 +302,15 @@ ExtensionMenuBarImage}.swift`, `Features/Extensions/Model/ExtensionImageSize.swi
   fix (`cf6821e`, `6e86b91`); fs shim gained `utimes`/`opendir`; Raycast Store
   deeplink install fixes (`a5a80f0`). Not in the runtime: AI Chat window,
   Quicklink/window-command work.
+- **0.11.17 → 0.11.20 (checked 2026-10-13, 11 runtime commits, `main` @ `001761a`)**:
+  nothing in our paths broke. OAuth sign-in is back (`001761a`, also touches
+  `ExtensionManager.swift` — its line numbers cited here may have shifted a few
+  lines); `fs.stat` reports real `atime`/`ctime` and mode bits (`b106187`);
+  bundled `node_modules` dependencies load, resolution stops at the extension
+  folder (`126c998`); `createRequire` works (`01ce994`); malformed UTF-8 decodes
+  to U+FFFD instead of throwing (`ad7d5b4`); Docker HTTP over Unix sockets
+  (`e0ee4dd`); URLSearchParams as form body (`035a106`). Not runtime: launcher
+  forms, paste focus fix, Swift test fixtures.
 - **Unchanged** (no commits touching them since 2026-09-27): `ExtensionIconCache`
   (`raycast-*` rewrite), `ExtensionMenuBarImage`, Detail metadata/width rules,
   image sizing, deeplink handling (`ExtensionLink`), background refresh policy.
@@ -313,8 +322,8 @@ ExtensionMenuBarImage}.swift`, `Features/Extensions/Model/ExtensionImageSize.swi
 verification, below) that touch `Features/Extensions`, `Scripts/raycast-runtime`
 or `docs/features/extensions.md`. Then `gh api repos/abue-ammar/tinycast/commits/<sha>
 --jq '.files[].filename'` and read the diff; re-verify only the file:line
-citations whose file shows up. **Last verified: 2026-10-09 against `main`
-`9e6beba` (0.11.17-beta.115); installed 0.11.15-beta.113.** Update that line
+citations whose file shows up. **Last verified: 2026-10-13 against `main`
+`001761a` (0.11.20-beta.119); installed 0.11.19-beta.117.** Update that line
 and the header when you re-check.
 
 ## Fast access: deeplinks, hotkeys, aliases, favorites
