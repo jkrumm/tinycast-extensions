@@ -315,6 +315,10 @@ ExtensionMenuBarImage}.swift`, `Features/Extensions/Model/ExtensionImageSize.swi
   to U+FFFD instead of throwing (`ad7d5b4`); Docker HTTP over Unix sockets
   (`e0ee4dd`); URLSearchParams as form body (`035a106`). Not runtime: launcher
   forms, paste focus fix, Swift test fixtures.
+- **0.11.20 → 0.11.22 (checked 2026-10-16, `main` @ `8d0d6b6`)**: no runtime
+  behaviour change. `57e29b4` (#1566) only deletes comments across ~46
+  `Features/Extensions`/runtime files (−999 lines), so `file:line` citations in
+  this skill may be off by some lines; `6d036ae` is an emoji-icon Light-mode fix.
 - **Unchanged** (no commits touching them since 2026-09-27): `ExtensionIconCache`
   (`raycast-*` rewrite), `ExtensionMenuBarImage`, Detail metadata/width rules,
   image sizing, deeplink handling (`ExtensionLink`), background refresh policy.
@@ -326,8 +330,8 @@ ExtensionMenuBarImage}.swift`, `Features/Extensions/Model/ExtensionImageSize.swi
 verification, below) that touch `Features/Extensions`, `Scripts/raycast-runtime`
 or `docs/features/extensions.md`. Then `gh api repos/abue-ammar/tinycast/commits/<sha>
 --jq '.files[].filename'` and read the diff; re-verify only the file:line
-citations whose file shows up. **Last verified: 2026-10-13 against `main`
-`001761a` (0.11.20-beta.119); installed 0.11.19-beta.117.** Update that line
+citations whose file shows up. **Last verified: 2026-10-16 against `main`
+`8d0d6b6` (0.11.22-beta.121); installed 0.11.21-beta.120.** Update that line
 and the header when you re-check.
 
 ## Fast access: deeplinks, hotkeys, aliases, favorites
