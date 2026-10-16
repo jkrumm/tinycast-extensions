@@ -173,6 +173,20 @@ export const Toast = {
   Style: { Success: "success", Failure: "failure", Animated: "animated" },
 } as const;
 
+// The subset of Tinycast's Keyboard.Shortcut.Common
+// (Scripts/raycast-runtime/src/api/index.js) the commands use.
+export const Keyboard = {
+  Shortcut: {
+    Common: {
+      Edit: { modifiers: ["cmd"], key: "e" },
+      New: { modifiers: ["cmd"], key: "n" },
+      Open: { modifiers: ["cmd"], key: "o" },
+      Refresh: { modifiers: ["cmd"], key: "r" },
+      Save: { modifiers: ["cmd"], key: "s" },
+    },
+  },
+} as const;
+
 export const LaunchType = {
   UserInitiated: "userInitiated",
   Background: "background",

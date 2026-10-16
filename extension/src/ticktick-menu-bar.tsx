@@ -5,6 +5,7 @@ import {
   open,
   showToast,
   Toast,
+  Keyboard,
 } from "@raycast/api";
 import { useCachedPromise } from "@raycast/utils";
 import { useMemo } from "react";
@@ -151,13 +152,13 @@ export default function MenuBar() {
         <MenuBarExtra.Item
           title="Open TickTick"
           icon={Icon.Globe}
-          shortcut={{ modifiers: ["cmd"], key: "o" }}
+          shortcut={Keyboard.Shortcut.Common.Open}
           onAction={() => open(TICKTICK_URL)}
         />
         <MenuBarExtra.Item
           title="Refresh"
           icon={Icon.ArrowClockwise}
-          shortcut={{ modifiers: ["cmd"], key: "r" }}
+          shortcut={Keyboard.Shortcut.Common.Refresh}
           onAction={revalidate}
         />
       </MenuBarExtra.Section>

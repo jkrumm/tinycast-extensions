@@ -6,6 +6,7 @@ import {
   Icon,
   Toast,
   showToast,
+  Keyboard,
 } from "@raycast/api";
 import { useCachedPromise } from "@raycast/utils";
 import {
@@ -278,7 +279,7 @@ export default function VanPower() {
           <Action
             title="Refresh"
             icon={Icon.ArrowClockwise}
-            shortcut={{ modifiers: ["cmd"], key: "r" }}
+            shortcut={Keyboard.Shortcut.Common.Refresh}
             onAction={refresh}
           />
           <Action

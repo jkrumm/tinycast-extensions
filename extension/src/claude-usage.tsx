@@ -1,4 +1,4 @@
-import { Detail, ActionPanel, Action, Icon } from "@raycast/api";
+import { Detail, ActionPanel, Action, Icon, Keyboard } from "@raycast/api";
 import { useCachedPromise } from "@raycast/utils";
 import { useMemo, useRef } from "react";
 import { getQuota, isStaleHint } from "./usage/quota";
@@ -83,7 +83,7 @@ export default function ClaudeUsage() {
           <Action
             title="Refresh"
             icon={Icon.ArrowClockwise}
-            shortcut={{ modifiers: ["cmd"], key: "r" }}
+            shortcut={Keyboard.Shortcut.Common.Refresh}
             onAction={revalidate}
           />
           <Action.OpenInBrowser

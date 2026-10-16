@@ -9,6 +9,7 @@ import {
   Icon,
   List,
   useNavigation,
+  Keyboard,
 } from "@raycast/api";
 import { reconnect as reconnectFlow } from "./flows";
 import { withAdmin, AdminFn } from "./session";
@@ -183,7 +184,7 @@ export function ApnProfiles({
                       <Action
                         title="Edit"
                         icon={Icon.Pencil}
-                        shortcut={{ modifiers: ["cmd"], key: "e" }}
+                        shortcut={Keyboard.Shortcut.Common.Edit}
                         onAction={() => openForm({ kind: "edit", profile: p })}
                       />
                     )}

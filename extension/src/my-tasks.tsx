@@ -11,6 +11,7 @@ import {
   showToast,
   Toast,
   useNavigation,
+  Keyboard,
 } from "@raycast/api";
 import { useCachedPromise } from "@raycast/utils";
 import { useEffect, useMemo, useState } from "react";
@@ -268,10 +269,12 @@ function TaskActions({
         <Action
           title="Aufgabe Bearbeiten"
           icon={Icon.Pencil}
-          shortcut={{ modifiers: ["cmd"], key: "e" }}
+          shortcut={Keyboard.Shortcut.Common.Edit}
           onAction={() => push(<CreateTask task={task} onDone={onRefresh} />)}
         />
         <Action.OpenInBrowser
+          // prefer-title-case splits words at umlauts ("ÖFfnen").
+          // eslint-disable-next-line @raycast/prefer-title-case
           title="In Ticktick Öffnen"
           url={`https://ticktick.com/webapp/#q/today/tasks/${task.id}`}
           shortcut={{ modifiers: ["cmd"], key: "return" }}
@@ -287,10 +290,11 @@ function TaskActions({
         <Action
           title="Nächste Woche"
           icon={Icon.Clock}
-          shortcut={{ modifiers: ["cmd"], key: "s" }}
+          shortcut={Keyboard.Shortcut.Common.Save}
           onAction={() => quickSetDue(daysFromNow(7))}
         />
         <ActionPanel.Submenu
+          // eslint-disable-next-line @raycast/prefer-title-case
           title="Fälligkeit Ändern"
           icon={Icon.Calendar}
           shortcut={{ modifiers: ["cmd"], key: "d" }}
@@ -301,7 +305,7 @@ function TaskActions({
             onAction={() => quickSetDue(today())}
           />
           <Action
-            title="Wochenende (sa)"
+            title="Wochenende (Sa)"
             icon={Icon.Calendar}
             onAction={() => quickSetDue(nextSaturday())}
           />
@@ -314,6 +318,7 @@ function TaskActions({
       </ActionPanel.Section>
       <ActionPanel.Section>
         <ActionPanel.Submenu
+          // eslint-disable-next-line @raycast/prefer-title-case
           title="Priorität Ändern"
           icon={Icon.Flag}
           shortcut={{ modifiers: ["cmd"], key: "u" }}
@@ -359,13 +364,13 @@ function TaskActions({
         <Action
           title="Neue Aufgabe"
           icon={Icon.Plus}
-          shortcut={{ modifiers: ["cmd"], key: "n" }}
+          shortcut={Keyboard.Shortcut.Common.New}
           onAction={() => push(<QuickAdd />)}
         />
         <Action
           title="Aktualisieren"
           icon={Icon.ArrowClockwise}
-          shortcut={{ modifiers: ["cmd"], key: "r" }}
+          shortcut={Keyboard.Shortcut.Common.Refresh}
           onAction={onRefresh}
         />
         <Action
@@ -706,7 +711,7 @@ export default function MyTasks() {
               <Action
                 title="Neue Aufgabe"
                 icon={Icon.Plus}
-                shortcut={{ modifiers: ["cmd"], key: "n" }}
+                shortcut={Keyboard.Shortcut.Common.New}
                 onAction={() => push(<QuickAdd />)}
               />
             </ActionPanel>

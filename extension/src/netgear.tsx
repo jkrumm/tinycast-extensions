@@ -9,6 +9,7 @@ import {
   showToast,
   Toast,
   useNavigation,
+  Keyboard,
 } from "@raycast/api";
 import { usePromise, useCachedPromise } from "@raycast/utils";
 import { prefs } from "./lib/argo";
@@ -529,7 +530,7 @@ export default function Netgear() {
             <Action
               title="Refresh"
               icon={Icon.ArrowClockwise}
-              shortcut={{ modifiers: ["cmd"], key: "r" }}
+              shortcut={Keyboard.Shortcut.Common.Refresh}
               onAction={revalidate}
             />
           </ActionPanel.Section>
@@ -644,6 +645,9 @@ export default function Netgear() {
               <Action
                 title="Signal Meter"
                 icon={Icon.LevelMeter}
+                // Not a duplicate action, and Tinycast maps Common.Duplicate to
+                // cmd+D (Raycast: cmd+shift+S) — keep the literal.
+                // eslint-disable-next-line @raycast/prefer-common-shortcut
                 shortcut={{ modifiers: ["cmd", "shift"], key: "s" }}
                 onAction={() => push(<SignalMeter />)}
               />
@@ -677,7 +681,7 @@ export default function Netgear() {
           <ActionPanel.Section>
             <Action.OpenInBrowser
               title="Open Web UI"
-              shortcut={{ modifiers: ["cmd"], key: "o" }}
+              shortcut={Keyboard.Shortcut.Common.Open}
               url={prefs().netgearHost || DEFAULT_HOST}
             />
           </ActionPanel.Section>
