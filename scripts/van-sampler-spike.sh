@@ -19,6 +19,7 @@ label="com.jkrumm.van-sampler-spike"
 plist="$HOME/Library/LaunchAgents/$label.plist"
 log="$HOME/Library/Logs/van-sampler-spike.log"
 result="$HOME/Library/Logs/van-sampler-spike.result"
+notify_result="$HOME/Library/Logs/van-sampler-notify.result"  # its own file: setup greps $result for PASS
 domain="gui/$(id -u)"
 exitfile="$(mktemp)"
 tinycast_was_running=0
@@ -27,13 +28,15 @@ say() { printf '%s\n' "$*" | tee -a "$result"; }
 fail() { say "VAN-SAMPLER SPIKE: FAIL ($*)"; exit 1; }  # the EXIT trap cleans up
 
 cleanup() {
+  rm -f "$exitfile"
   launchctl bootout "$domain/$label" 2>/dev/null || true
   rm -f "$plist"
   if [ "$tinycast_was_running" = 1 ]; then open -a "Tinycast Beta" 2>/dev/null || true; fi
 }
 trap cleanup EXIT
 
-# run_job <wait-seconds> <program> [args...] -> prints the job's log; the exit code lands in $exitfile
+# run_job <wait-seconds> <program> [args...] -> runs it as a throwaway launchd job; the job's output is in $log,
+# its exit code/signal in $exitfile. Runs in the main shell, so its own failures abort the spike with the real cause.
 run_job() {
   local wait_s="$1"; shift
   : > "$log"
@@ -41,7 +44,8 @@ run_job() {
     printf '<?xml version="1.0" encoding="UTF-8"?>\n<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">\n'
     printf '<plist version="1.0"><dict><key>Label</key><string>%s</string><key>ProgramArguments</key><array>' "$label"
     for a in "$@"; do printf '<string>%s</string>' "$(printf '%s' "$a" | sed 's/&/\&amp;/g; s/</\&lt;/g; s/>/\&gt;/g')"; done
-    printf '</array><key>RunAtLoad</key><true/><key>StandardOutPath</key><string>%s</string><key>StandardErrorPath</key><string>%s</string></dict></plist>\n' "$log" "$log"
+    printf '</array><key>EnvironmentVariables</key><dict><key>PATH</key><string>%s</string><key>VAN_BLE_BIN</key><string>%s</string></dict>' "$HOME/.bun/bin:$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin" "$bin"
+    printf '<key>RunAtLoad</key><true/><key>StandardOutPath</key><string>%s</string><key>StandardErrorPath</key><string>%s</string></dict></plist>\n' "$log" "$log"
   } > "$plist"
   plutil -lint "$plist" >/dev/null || fail "could not render the spike plist"
   launchctl bootout "$domain/$label" 2>/dev/null || true
@@ -54,10 +58,9 @@ run_job() {
     if printf '%s' "$info" | grep -Eq 'last exit code = [0-9]|last terminating signal'; then break; fi
     sleep 1; i=$((i + 1))
   done
-  # run_job's output is captured with $(...), so the exit code travels through a file
+  # the exit code/signal travels through a file (read back by the caller)
   launchctl print "$domain/$label" 2>/dev/null | sed -n -e 's/.*last exit code = //p' -e 's/.*last terminating signal = /signal: /p' | paste -sd' ' - > "$exitfile"
   launchctl bootout "$domain/$label" 2>/dev/null || true
-  cat "$log"
 }
 
 field() { printf '%s' "$1" | /usr/bin/python3 -c 'import json,sys
@@ -74,12 +77,13 @@ check_probe() { # <name> <output> <expect-initial>
   fi
 }
 
+if [ "${1:-}" = "--notify" ]; then result="$notify_result"; fi
 : > "$result"
 say "van-sampler spike $(date '+%F %T')  host=$(hostname -s)  macOS=$(sw_vers -productVersion)"
 
 if [ "${1:-}" = "--notify" ]; then
-  out="$(run_job 20 /usr/bin/osascript -e 'display notification "van-sampler notification test" with title "Van battery"')"
-  say "notify job exit: $(cat "$exitfile") ${out}"
+  run_job 20 /usr/bin/osascript -e 'display notification "van-sampler notification test" with title "Van battery"'
+  say "notify job exit: $(cat "$exitfile") $(cat "$log")"
   [ "$(cat "$exitfile")" = 0 ] || fail "osascript failed from launchd"
   say "NOTIFY: posted — confirm a 'Van battery' banner appeared (System Settings → Notifications → Script Editor must allow it)."
   exit 0
@@ -87,6 +91,7 @@ fi
 
 [ -x "$bin" ] || "$root/scripts/van-sampler-build.sh" || fail "build failed"
 say "binary: $bin"
+say "binary-sha256: $(shasum -a 256 "$bin" | cut -d' ' -f1)"
 say "signature: $(codesign -d -r- "$bin" 2>&1 | sed -n 's/^# //p')"
 if codesign -dvv "$bin" 2>&1 | grep -q 'Signature=adhoc'; then
   say "NOTE: ad-hoc signed — the grant is bound to this cdhash; a rebuild with changed bytes re-prompts."
@@ -101,15 +106,15 @@ if pgrep -f "Tinycast Beta" >/dev/null 2>&1; then
 fi
 
 say "A1 launchd program = signed van-ble. If macOS asks for Bluetooth access, click Allow (waits up to 2 min)…"
-out="$(run_job 140 "$bin" --tcc-probe --wait-prompt)"
-check_probe A1 "$out" ""
+run_job 140 "$bin" --tcc-probe --wait-prompt
+check_probe A1 "$(cat "$log")" ""
 
 say "A2 same program again, no prompt allowed (persisted grant)…"
-out="$(run_job 40 "$bin" --tcc-probe)"
-check_probe A2 "$out" allowedAlways
+run_job 40 "$bin" --tcc-probe
+check_probe A2 "$(cat "$log")" allowedAlways
 
-say "B  production chain: van-ble --supervise -> sh -> van-ble (grandchild must share the grant)…"
-out="$(run_job 40 "$bin" --supervise -- /bin/sh -c "\"$bin\" --tcc-probe")"
-check_probe B "$out" allowedAlways
+say "B  production chain shape: van-ble --supervise -> env -> bun -> van-ble (jobrun adds no further exec boundary the grant could miss)…"
+run_job 40 "$bin" --supervise -- /usr/bin/env bun -e 'const r = Bun.spawnSync([process.env.VAN_BLE_BIN, "--tcc-probe"]); process.stdout.write(r.stdout)'
+check_probe B "$(cat "$log")" allowedAlways
 
 say "VAN-SAMPLER SPIKE: PASS"

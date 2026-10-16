@@ -30,13 +30,18 @@ MSG
   exit 1
 fi
 
-status="$(git -C "$repo" status --porcelain)"
-[ -z "$status" ] || { echo "spike PASSED, but $repo has uncommitted changes — commit or stash, then re-run (the spike result stays valid)."; exit 1; }
+[ -z "$(git -C "$repo" status --porcelain)" ] || { echo "spike PASSED, but $repo has uncommitted changes — commit or stash, then re-run (the spike result stays valid)."; exit 1; }
 git -C "$repo" checkout master
-git -C "$repo" merge --no-edit "origin/$branch"
+git -C "$repo" merge --ff-only origin/master || { echo "local master is not a fast-forward of origin/master — reconcile it, then re-run."; exit 1; }
+git -C "$repo" merge --no-edit "origin/$branch" || { git -C "$repo" merge --abort; echo "merge of $branch conflicted and was aborted."; exit 1; }
+# verify the merged tree before it reaches origin/master
+if ! make -C "$repo" install check; then
+  git -C "$repo" reset --hard ORIG_HEAD
+  echo "check failed on the merged tree; master reset, nothing pushed."
+  exit 1
+fi
 git -C "$repo" push origin master
-cd "$repo"
-make install check deploy van-sampler-setup
+make -C "$repo" deploy van-sampler-setup
 
 cat <<'MSG'
 

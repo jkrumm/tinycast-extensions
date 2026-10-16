@@ -43,11 +43,12 @@ runs three throwaway launchd jobs against the real signed binary and ends with e
 |-|-|-|
 | A1 | `van-ble --tcc-probe --wait-prompt` | macOS shows the Bluetooth dialog (click Allow); probe reports `allowedAlways`, `poweredOn`, scan ran |
 | A2 | `van-ble --tcc-probe` | no dialog; `initialAuthorization` is already `allowedAlways` — the grant persisted |
-| B | `van-ble --supervise -- sh -c 'van-ble --tcc-probe'` | grandchild starts `allowedAlways` — the production chain shares the grant |
+| B | `van-ble --supervise -- env bun -e <spawn van-ble --tcc-probe>` | the grandchild behind an interpreter starts `allowedAlways` — the production chain shape shares the grant. `jobrun` itself is not in the chain (it would write a state record); it is another bun process, the same exec boundary |
 
 A job that dies with `signal: Abort trap: 6` fails A1 with the abort named: the embedded usage
-description was not honoured. `make van-sampler-setup` refuses to load the daemon unless the
-result file ends in `PASS` and is newer than the installed binary.
+description was not honoured. `make van-sampler-setup` runs `scripts/van-sampler-gate.sh`, which refuses
+unless the result file ends in `PASS` **and** records the sha256 of the installed binary (a rebuild, or a
+harness run with `VAN_SPIKE_BIN`, invalidates it). `make van-sampler-notify-test` writes its own result file.
 
 The harness mechanics (verdict lines, abort detection, a grandchild that does not share the grant)
 were exercised on the mini against fake binaries; the real BLE outcome was not, because the mini is
@@ -74,3 +75,21 @@ shape for TCC clients:
 State moved from Tinycast `LocalStorage` to files under `~/.local/state/van-sampler/` so the daemon
 and the Van Power view share one store (pause is a UI-owned flag file there). The capture and trend
 logs the SoC estimator and the daily consumption read stay in Tinycast's support dir, unchanged.
+
+## Accepted trade-offs and rollback
+
+- **`--supervise` is a general wrapper.** Any process running as the user can run a command under the
+  signed binary's Bluetooth grant; the binary sits in a user-writable path. Accepted: the same user
+  can already drive Tinycast's grant, and an allowlist would hard-code the jobrun/bun paths into a
+  signed artefact. Revisit if the binary ever gets a broader entitlement.
+- **Two BLE clients.** An open Van Power view and the daemon can scan at the same moment; the BMS takes
+  one connection, so one side can read "Phone app holds the battery" for that tick. The stores are
+  atomic-rename files (last writer wins; the Victron cache re-reads before saving).
+- **Rollback.** `make van-sampler-teardown`, then `git revert` the migration commit and `make deploy`
+  (the Tinycast command returns; enable Background refresh again). The first Van Power open after the
+  move removed the Tinycast LocalStorage keys; the history ring and trends are rebuilt by the next
+  reads, the logs (`van-log.jsonl`, `van-trends.jsonl`) are untouched.
+- **Remove `van/legacy.ts` and the view's `migrated` gate** once the MacBook has opened Van Power on
+  the new build once (its LocalStorage keys are gone).
+- **Signing identity.** Auto-detect takes the first `Apple Development` identity; set `SIGN_IDENTITY`
+  explicitly if there are several, or the designated requirement (and the grant) can change.

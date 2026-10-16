@@ -77,7 +77,6 @@ van-eval: ## SoC estimator tuning loop: replay the estimator leave-one-out over 
 VANS_LABEL := com.jkrumm.van-sampler
 VANS_PLIST := $(HOME)/Library/LaunchAgents/$(VANS_LABEL).plist
 VANS_BIN := $(HOME)/.local/libexec/van-sampler/van-ble
-VANS_RESULT := $(HOME)/Library/Logs/van-sampler-spike.result
 
 # The signed van-ble is the launchd PROGRAM so macOS attributes Bluetooth to it, not to Tinycast
 # (docs/van-sampler-tcc.md). Source and Info.plist unchanged + same identity = same file = same grant.
@@ -90,12 +89,12 @@ van-sampler-spike: van-sampler-build ## MacBook, logged in, Tinycast quits itsel
 van-sampler-notify-test: ## MacBook: post the low-battery-style notification from a launchd job (what the sampler does)
 	@scripts/van-sampler-spike.sh --notify
 
-# Refuses unless the spike passed for THIS binary: a failed or missing spike means the daemon would be
-# killed or refused on its first scan (docs/van-sampler-tcc.md has the .app fallback). VAN_SAMPLER_FORCE=1 skips the gate.
+# scripts/van-sampler-gate.sh refuses unless the spike passed for THIS binary (hash match): otherwise the daemon
+# would be killed or refused on its first scan (docs/van-sampler-tcc.md has the .app fallback).
 van-sampler-setup: van-sampler-build ## MacBook: render + load the 15 min van-sampler LaunchAgent (jobrun, signed van-ble) — only after a passing spike
 	@test -x "$(HOME)/.local/bin/jobrun" || { echo "jobrun missing — run 'make setup' in dotfiles first"; exit 1; }
 	@command -v bun >/dev/null || { echo "bun not on PATH"; exit 1; }
-	@[ "$$VAN_SAMPLER_FORCE" = 1 ] || { tail -1 "$(VANS_RESULT)" 2>/dev/null | grep -q 'VAN-SAMPLER SPIKE: PASS' && [ "$(VANS_RESULT)" -nt "$(VANS_BIN)" ]; } || { echo "No passing spike for the installed binary — run 'make van-sampler-spike' first (VAN_SAMPLER_FORCE=1 to override)"; exit 1; }
+	@scripts/van-sampler-gate.sh
 	@mkdir -p "$(HOME)/Library/LaunchAgents" "$(HOME)/Library/Logs"
 	@sed -e 's|__HOME__|$(HOME)|g' -e 's|__REPO__|$(CURDIR)|g' launchd/$(VANS_LABEL).plist.tmpl > "$(VANS_PLIST).new"
 	@plutil -lint "$(VANS_PLIST).new" >/dev/null
