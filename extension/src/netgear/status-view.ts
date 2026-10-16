@@ -295,8 +295,7 @@ function pinRow(status: RouterStatus, hasSavedPin: boolean): string {
 }
 
 // What the loader learned beyond the router's own model: a real internet
-// probe (the router's `Connected` only proves the radio link is up) and who,
-// if anyone, holds the router action lock.
+// probe (the router's `Connected` only proves the radio link is up).
 export interface LiveState {
   internet: boolean | null; // null: the probe itself failed to run
   // The latest refresh failed, so `status` is a cached one — its battery
