@@ -44,8 +44,6 @@ declare namespace Preferences {
   export type ClaudeUsageMenuBar = ExtensionPreferences & {}
   /** Preferences accessible in the `netgear` command */
   export type Netgear = ExtensionPreferences & {}
-  /** Preferences accessible in the `netgear-watchdog` command */
-  export type NetgearWatchdog = ExtensionPreferences & {}
   /** Preferences accessible in the `battery` command */
   export type Battery = ExtensionPreferences & {}
   /** Preferences accessible in the `speed-test` command */
@@ -71,8 +69,6 @@ declare namespace Arguments {
   export type ClaudeUsageMenuBar = {}
   /** Arguments passed to the `netgear` command */
   export type Netgear = {}
-  /** Arguments passed to the `netgear-watchdog` command */
-  export type NetgearWatchdog = {}
   /** Arguments passed to the `battery` command */
   export type Battery = {}
   /** Arguments passed to the `speed-test` command */
