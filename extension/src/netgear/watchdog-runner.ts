@@ -1,55 +1,55 @@
-// One watchdog tick, run from either surface: the `netgear-watchdog`
-// background command (`source: "background"`) or the open Netgear view
-// (`source: "view"`). Tinycast has ONE JS runtime, so no background tick runs
-// while any foreground command is open — the view drives the same tick itself.
-// Both go through the router action lock, the same storage and the same log;
-// only the netgear.log `source` differs (`watchdog` vs `watchdog-view`).
-// Imports `@raycast/api` via session/storage — glue, not unit-testable here
-// (the pure policy lives in watchdog-schedule.ts and watchdog.ts).
+// One watchdog tick, run by the launchd entry point (scripts/netgear-watchdog.ts,
+// wrapped in `jobrun`). No `@raycast/api`: everything process-specific (paths,
+// the client, the password, the log) is injected, so the whole run is
+// unit-tested against a fake router and a tmp dir.
 
-import {
-  acquireWatchdogTickLock,
-  getClient,
-  getPassword,
-  logNetgear,
-  pinStore,
-  wifiCredsStore,
-  wifiRejoiner,
-} from "./session";
+import type { NetgearClient } from "./client";
 import { withDeadline } from "./deadline";
 import { describeErrorDetail, describeNetgearError } from "./errors";
 import { probeInternet } from "./internet-probe";
+import { pinStore, wifiCredsStore, wifiRejoiner } from "./adapters";
+import type { SimPinStore } from "./pin-store";
+import type { WifiRejoiner } from "./wifi";
+import type { WifiCredsStore } from "./wifi-creds-store";
 import { runWatchdogTick, breadcrumbMessage, WatchdogEvent } from "./watchdog";
 import { shouldLogWatchdogEvent } from "./watchdog-schedule";
 import {
   appendWatchdogEvent,
+  consumeRebootMarker,
   loadWatchdogStorage,
+  readPendingMarker,
   saveWatchdogStorage,
 } from "./watchdog-storage";
+import type { LogEntry } from "../lib/action-log";
 
-// The password comes from Keychain, then 1Password (`op read` blocks on a
-// biometric prompt nobody can answer in a background run). Past this, a
-// background tick carries on as if none were configured instead of hanging
-// until the kill.
+// The password comes from Keychain only: `op read` blocks on a biometric
+// prompt nobody can answer unattended. Past this a tick carries on as if none
+// were configured instead of hanging until jobrun's deadline.
 const PASSWORD_DEADLINE_MS = 5_000;
 
-export type WatchdogSource = "background" | "view";
-
-function logSource(source: WatchdogSource): string {
-  return source === "view" ? "watchdog-view" : "watchdog";
+export interface WatchdogRunDeps {
+  dir: string;
+  getClient: () => Promise<NetgearClient>;
+  getPassword: () => Promise<string | null>;
+  log: (entry: LogEntry) => void;
+  // Production defaults; tests inject fakes so nothing touches Keychain or curl.
+  pinStore?: SimPinStore;
+  credsStore?: WifiCredsStore;
+  wifi?: WifiRejoiner;
+  probeInternet?: () => Promise<boolean>;
 }
 
 // The event the tick produced, or null when the watchdog is paused (nothing
-// ran). A tick crash outside runWatchdogTick (which never throws) is logged,
-// then rethrown so a background run's own `lastError` still shows it.
-export async function runWatchdogOnce(opts: {
-  source: WatchdogSource;
-}): Promise<WatchdogEvent | null> {
+// ran). A crash outside runWatchdogTick (which never throws) is logged, then
+// rethrown so jobrun records the run red.
+export async function runWatchdogOnce(
+  deps: WatchdogRunDeps,
+): Promise<WatchdogEvent | null> {
   try {
-    return await run(opts.source);
+    return await tick(deps);
   } catch (e) {
-    logNetgear({
-      source: logSource(opts.source),
+    deps.log({
+      source: "watchdog",
       action: "tick",
       outcome: "crashed",
       message: describeNetgearError(e),
@@ -59,76 +59,49 @@ export async function runWatchdogOnce(opts: {
   }
 }
 
-async function run(source: WatchdogSource): Promise<WatchdogEvent | null> {
-  const initial = await loadWatchdogStorage();
-  if (!initial.enabled) return null;
+async function tick(deps: WatchdogRunDeps): Promise<WatchdogEvent | null> {
+  const { dir } = deps;
+  if (!loadWatchdogStorage(dir).enabled) return null;
 
-  // Never mutate the router while a manual UI action is running — the two
-  // fighting over connect/disconnect is what made "Reconnect" fail.
-  const acquired = await acquireWatchdogTickLock();
-  if ("heldBy" in acquired) {
-    const deferred: WatchdogEvent = {
-      at: Date.now(),
-      kind: "deferred",
-      message: "Manual action in progress — skipped",
-    };
-    // Re-read: the manual action holding the lock may be recording a reboot
-    // marker right now, and saving the pre-lock `initial` would clobber it.
-    await saveWatchdogStorage(
-      appendWatchdogEvent(await loadWatchdogStorage(), deferred),
-    );
-    return deferred;
-  }
-
-  try {
-    return await tick(source);
-  } finally {
-    await acquired.lock.release();
-  }
-}
-
-async function tick(source: WatchdogSource): Promise<WatchdogEvent> {
-  const client = await getClient();
-  // Only unattended: in the open view a 1Password prompt can be answered.
-  const password =
-    source === "background"
-      ? await withDeadline(
-          getPassword({ toast: false }),
-          PASSWORD_DEADLINE_MS,
-          () => null,
-        )
-      : await getPassword({ toast: false });
-  // Re-read under the lock: a UI action that finished just before this tick
-  // took it may have recorded a reboot marker after the first load.
-  let storage = await loadWatchdogStorage();
+  const client = await deps.getClient();
+  const password = await withDeadline(
+    deps.getPassword(),
+    PASSWORD_DEADLINE_MS,
+    () => null,
+  );
+  // Read the marker first, then the state: loadWatchdogStorage folds it in, and
+  // consumption below only drops the file this exact marker came from.
+  const marker = readPendingMarker(dir);
+  let storage = loadWatchdogStorage(dir);
 
   const { state, event } = await runWatchdogTick({
     client,
     password,
-    pinStore,
+    pinStore: deps.pinStore ?? pinStore,
     state: storage.state,
-    probeInternet,
-    wifi: wifiRejoiner,
-    credsStore: wifiCredsStore,
-    onAction: async (kind) => {
+    probeInternet: deps.probeInternet ?? probeInternet,
+    wifi: deps.wifi ?? wifiRejoiner,
+    credsStore: deps.credsStore ?? wifiCredsStore,
+    onAction: (kind) => {
       storage = appendWatchdogEvent(storage, {
         at: Date.now(),
         kind: "in-progress",
         message: breadcrumbMessage(kind),
       });
-      await saveWatchdogStorage(storage);
+      saveWatchdogStorage(storage, dir);
     },
   });
 
   if (shouldLogWatchdogEvent(event, storage.events)) {
-    logNetgear({
-      source: logSource(source),
+    deps.log({
+      source: "watchdog",
       action: event.kind,
       outcome: /failed|error/.test(event.kind) ? "failed" : "event",
       message: event.message,
       detail: event.detail,
     });
   }
-  await saveWatchdogStorage(appendWatchdogEvent({ ...storage, state }, event));
+  saveWatchdogStorage(appendWatchdogEvent({ ...storage, state }, event), dir);
+  if (marker) consumeRebootMarker(marker, dir);
   return event;
 }

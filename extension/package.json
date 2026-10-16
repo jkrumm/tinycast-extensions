@@ -54,14 +54,6 @@
       "icon": "netgear.png"
     },
     {
-      "name": "netgear-watchdog",
-      "title": "Netgear Watchdog",
-      "description": "Keeps the Netgear mobile connection up: unlocks the SIM, reconnects",
-      "mode": "no-view",
-      "interval": "1m",
-      "icon": "netgear.png"
-    },
-    {
       "name": "battery",
       "title": "Battery",
       "description": "MacBook charge, health, and charge-limit control",

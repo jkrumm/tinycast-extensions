@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>com.jkrumm.netgear-watchdog</string>
+  <!-- One tick of the Netgear watchdog (extension/scripts/netgear-watchdog.ts) every
+       60 s, recorded and graded by jobrun (dotfiles). Replaces the Tinycast
+       no-view background command, which never ran while any Tinycast view was
+       open. State lives in ~/.local/state/netgear-watchdog/; the Tinycast
+       `netgear` view only reads it. -->
+  <key>ProgramArguments</key>
+  <array>
+    <string>__HOME__/.local/bin/jobrun</string>
+    <string>com.jkrumm.netgear-watchdog</string>
+    <string>--owner</string><string>tinycast-extensions</string>
+    <string>--every</string><string>60</string>
+    <string>--timeout</string><string>90</string>
+    <string>--</string>
+    <string>bun</string>
+    <string>__REPO__/extension/scripts/netgear-watchdog.ts</string>
+  </array>
+  <!-- jobrun and the entry are bun scripts and launchd hands agents a minimal PATH. -->
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key><string>__HOME__/.local/bin:__HOME__/.bun/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+  </dict>
+  <key>StartInterval</key><integer>60</integer>
+  <key>RunAtLoad</key><true/>
+  <key>StandardOutPath</key><string>__HOME__/Library/Logs/netgear-watchdog.log</string>
+  <key>StandardErrorPath</key><string>__HOME__/Library/Logs/netgear-watchdog.log</string>
+</dict>
+</plist>

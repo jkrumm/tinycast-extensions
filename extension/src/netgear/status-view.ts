@@ -7,7 +7,6 @@ import { statCards, statusPanel, thresholdColor, toDataUri } from "../lib/svg";
 import type { PanelColumn, StatCard } from "../lib/svg";
 import { RouterStatus } from "./types";
 import { signalRow } from "./signal-view";
-import type { ActionLockHolder } from "./action-lock";
 import {
   activeRebootMarker,
   formatSubtitle,
@@ -243,20 +242,15 @@ export function countDrops(
 }
 
 // What the watchdog is doing right now, for a "🔄 Watchdog: …" line — its
-// newest event is a fresh `in-progress` breadcrumb, or it holds the router
-// action lock. Null when it is idle.
+// newest event is a fresh `in-progress` breadcrumb. Null when it is idle.
 export function watchdogActivity(opts: {
   watchdog: WatchdogStorage | undefined;
-  lockHolder?: ActionLockHolder | null;
   now?: number;
 }): string | null {
-  const { watchdog, lockHolder, now = Date.now() } = opts;
+  const { watchdog, now = Date.now() } = opts;
   const last = watchdog?.events[0];
   if (last?.kind === "in-progress" && now - last.at < IN_PROGRESS_FRESH_MS) {
     return last.message.replace(/^In progress:\s*/, "");
-  }
-  if (lockHolder?.owner === "watchdog" && now <= lockHolder.expiresAt) {
-    return "running a check…";
   }
   return null;
 }
@@ -305,7 +299,6 @@ function pinRow(status: RouterStatus, hasSavedPin: boolean): string {
 // if anyone, holds the router action lock.
 export interface LiveState {
   internet: boolean | null; // null: the probe itself failed to run
-  lockHolder?: ActionLockHolder | null;
   // The latest refresh failed, so `status` is a cached one — its battery
   // reading is old news and gets no warning line.
   stale?: boolean;
@@ -405,7 +398,6 @@ export function statusMarkdown(
 ): string {
   const {
     internet,
-    lockHolder,
     stale = false,
     watchdogInView = false,
     now = Date.now(),
@@ -415,7 +407,7 @@ export function statusMarkdown(
   const lowBattery = stale ? null : batteryWarning(status);
   if (lowBattery) lines.push("", lowBattery);
   if (noService(status)) lines.push("", NO_SERVICE_WARNING);
-  const activity = watchdogActivity({ watchdog, lockHolder, now });
+  const activity = watchdogActivity({ watchdog, now });
   if (activity) lines.push("", `> 🔄 Watchdog: ${activity}`);
   if (status.connection === "Connected" && internet === false) {
     const next = watchdogNextStep(watchdog);

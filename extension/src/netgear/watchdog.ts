@@ -1,4 +1,4 @@
-// Pure orchestration for the `netgear-watchdog` no-view background command —
+// Pure orchestration for the launchd netgear watchdog (scripts/netgear-watchdog.ts) —
 // no `@raycast/api` import, so this runs under vitest with the same fake
 // transport / FakePinStore / fakeClock patterns as flows.test.ts (see
 // test-helpers.ts) instead of a real device or a real `curl` probe.

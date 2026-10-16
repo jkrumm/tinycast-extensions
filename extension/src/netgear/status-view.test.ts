@@ -229,36 +229,6 @@ describe("watchdogActivity", () => {
     ]);
     expect(watchdogActivity({ watchdog: wd, now: NOW })).toBeNull();
   });
-
-  it("shows a running check when the watchdog holds the lock", () => {
-    const lockHolder = {
-      owner: "watchdog" as const,
-      label: "tick",
-      at: NOW - 5000,
-      expiresAt: NOW + 85_000,
-    };
-    expect(
-      watchdogActivity({ watchdog: storage([]), lockHolder, now: NOW }),
-    ).toBe("running a check…");
-  });
-
-  it("ignores a UI-held or expired lock", () => {
-    const base = { label: "x", at: NOW - 5000 };
-    expect(
-      watchdogActivity({
-        watchdog: storage([]),
-        lockHolder: { ...base, owner: "ui", expiresAt: NOW + 1000 },
-        now: NOW,
-      }),
-    ).toBeNull();
-    expect(
-      watchdogActivity({
-        watchdog: storage([]),
-        lockHolder: { ...base, owner: "watchdog", expiresAt: NOW - 1 },
-        now: NOW,
-      }),
-    ).toBeNull();
-  });
 });
 
 describe("statusMarkdown — live internet state", () => {

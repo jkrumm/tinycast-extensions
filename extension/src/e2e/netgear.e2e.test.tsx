@@ -65,19 +65,8 @@ vi.mock("../netgear/session", async () => {
     getPassword: async () => null,
     pinStore: fakePinStore,
     withAdmin: async () => {},
-    // A path that never exists: no lock holder, ever, in a fixture render.
-    actionLockPath: () => "/tmp/tinycast-e2e/netgear-action.lock.absent",
-    withUiActionLock: async (_opts: unknown, fn: () => Promise<unknown>) =>
-      fn(),
-    waitMessage: () => "",
   };
 });
-
-// The view drives watchdog ticks while mounted — a fixture render must never
-// run one (it would take locks and write storage), so the runner is inert.
-vi.mock("../netgear/watchdog-runner", () => ({
-  runWatchdogOnce: async () => null,
-}));
 
 import Netgear from "../netgear";
 

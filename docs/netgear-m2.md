@@ -150,8 +150,8 @@ used by `live-actions.ts`) needs the view's JS alive for minutes, and
 Tinycast kills it on close — 2026-10-03 15:32 a Restart & Reconnect logged
 "Rebooting router…" and never an outcome, leaving the UI action lock held
 until its TTL. **Restart & Reconnect** now only sends the reboot and records a
-**reboot marker** `{ at, source, iccid }` in the watchdog's `LocalStorage`
-state (`WatchdogState.reboot`), releases the lock and toasts "Router
+**reboot marker** `{ at, source, iccid }` (`recordReboot` writes
+`reboot-marker.json`; the next tick folds it into `WatchdogState.reboot`) and toasts "Router
 restarting — reconnects automatically (~2 min)". The watchdog recovers from
 the marker (see § Watchdog: reboot marker and last-resort reboot) and the
 open view renders the restart banner from it.
@@ -204,7 +204,12 @@ explanation. Two fixes:
   the command). The friendly text is what the toast shows; the log is where to
   find out what actually happened.
 
-## Watchdog: Tinycast's 60s kill, the tick budget, and the Wi-Fi rejoin rule
+## Watchdog: the tick budget and the Wi-Fi rejoin rule
+
+> **2026-10-16:** the watchdog moved from a Tinycast no-view background command
+> to the launchd job `com.jkrumm.netgear-watchdog` (jobrun-wrapped). Tinycast's
+> ~60 s kill and "no background run while a view is open" below are history and
+> why the budget exists; they no longer bind it.
 
 Live evidence (`make status`'s watchdog log, 2 days, 2026-09):
 `extension-commands.json` showed `consecutiveFailures: 9, lastError: "Timed
@@ -286,9 +291,9 @@ interleaved with `probe-failed` and raw `reconnect-failed: curl exited
   with radio conditions.
 - **Breadcrumb before every long action**: `onAction(kind)` (kinds:
   `"unlocking" | "connecting" | "reconnecting" | "rejoining"`) is awaited
-  right before the tick starts one of those calls. `netgear-watchdog.tsx`
+  right before the tick starts one of those calls. `netgear/watchdog-runner.ts`
   wires it to persist an `in-progress` event (`breadcrumbMessage(kind)`) to
-  `LocalStorage` immediately, so a kill mid-flight still leaves a trace in
+  `state.json` immediately, so a kill mid-flight still leaves a trace in
   the log instead of silence, ahead of the final outcome event the tick
   itself returns.
 - **Wi-Fi rejoin rule**: on the tick's initial `getStatus()` failure (router
@@ -353,19 +358,11 @@ interleaved with `probe-failed` and raw `reconnect-failed: curl exited
   streak to 0 (a fresh outage then only needs the usual 2 failed probes).
   Persisted state from before the field existed loads with streak 0
   (`watchdog-storage.ts`).
-- **Action lock** (`netgear/action-lock.ts`): live evidence (2026-10) was a
-  manual Reconnect failing with "Router rejected the request" because the
-  watchdog was mid-connect at the same moment (and `reconnect()` used to
-  disconnect unconditionally). `netgear-action.lock` in `supportPath` is a
-  JSON `{owner, label, at, expiresAt}` file created with `open(path, "wx")`;
-  an expired or unparseable lock counts as free. The watchdog tick holds it
-  (`owner: "watchdog"`, TTL 90s); if a `ui` lock is held the tick does not run
-  and logs a `deferred` event ("Manual action in progress — skipped",
-  collapsed like `ok`/`idle`). A watchdog-owned lock found by a tick is a
-  previous tick Tinycast killed, so it is taken over. UI actions
-  (`withAdmin`, auto-unlock, Rejoin Wi-Fi) hold it as `ui` (TTL 2 min — no UI
-  action runs long since Restart & Reconnect detached), wait up to 60s for a foreign lock ("Waiting for the watchdog
-  to finish…"), then take over — an explicit user action wins.
+- **No action lock** (removed when the watchdog moved to launchd): a manual
+  Reconnect once failed with "Router rejected the request" because the
+  watchdog was mid-connect (2026-10); `reconnect()` is state-aware and
+  tolerates a rejected call when the router is already moving the right way,
+  and the tick re-reads every minute, so the two no longer serialize.
 - **Data-roaming rule**: roaming is meant to be always on. As Admin, when
   `wwan.autoconnect` is readable (non-empty) and not `Always`, and the last
   attempt was ≥10 minutes ago (`WatchdogState.lastRoamingAttemptAt`, set on

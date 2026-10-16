@@ -21,24 +21,15 @@ import {
 } from "./lib/freshness";
 import { RouterStatus } from "./netgear/types";
 import {
-  actionLockPath,
   DEFAULT_HOST,
   getClient,
   getPassword,
   logNetgear,
   pinStore,
-  waitMessage,
   wifiCredsStore,
   wifiRejoiner,
   withAdmin,
-  withUiActionLock,
 } from "./netgear/session";
-import { readActionLock } from "./netgear/action-lock";
-import {
-  shouldRunViewTick,
-  startViewTicker,
-} from "./netgear/watchdog-schedule";
-import { runWatchdogOnce } from "./netgear/watchdog-runner";
 import { probeInternet } from "./netgear/internet-probe";
 import {
   reconnect as reconnectFlow,
@@ -52,7 +43,7 @@ import {
   WatchdogStorage,
   loadWatchdogStorage,
   recordReboot,
-  saveWatchdogStorage,
+  setWatchdogEnabled,
 } from "./netgear/watchdog-storage";
 import {
   noService,
@@ -122,10 +113,7 @@ async function handleToggleWatchdog(
   storage: WatchdogStorage,
   revalidate: () => void,
 ) {
-  // Re-read rather than saving the view's snapshot: the watchdog (or a
-  // Restart's reboot marker) may have written state since it was loaded.
-  const current = await loadWatchdogStorage();
-  await saveWatchdogStorage({ ...current, enabled: !storage.enabled });
+  setWatchdogEnabled(!storage.enabled);
   await showToast({
     style: Toast.Style.Success,
     title: storage.enabled ? "Watchdog paused" : "Watchdog resumed",
@@ -155,47 +143,12 @@ export default function Netgear() {
     [status?.iccid ?? ""],
   );
   const { data: watchdog, revalidate: revalidateWatchdog } = useCachedPromise(
-    loadWatchdogStorage,
+    async () => loadWatchdogStorage(),
     [],
     { keepPreviousData: true },
   );
-  const { data: lockHolder, revalidate: revalidateLock } = usePromise(() =>
-    readActionLock(actionLockPath()),
-  );
   const { push } = useNavigation();
   const autoUnlockRan = useRef(false);
-
-  // Tinycast has ONE JS runtime: while this view is open no background tick
-  // runs, so the view drives the watchdog itself — first tick shortly after
-  // mount, then every minute (see watchdog-schedule.ts). Skipped while a tick
-  // is in flight, the watchdog is paused or a manual action holds the lock;
-  // refs keep the effect to once per mount.
-  const watchdogRef = useRef(watchdog);
-  watchdogRef.current = watchdog;
-  const afterTickRef = useRef(() => {});
-  afterTickRef.current = () => {
-    revalidate();
-    revalidateWatchdog();
-    revalidateLock();
-  };
-  useEffect(
-    () =>
-      startViewTicker({
-        shouldRun: async () =>
-          shouldRunViewTick({
-            enabled: watchdogRef.current?.enabled,
-            lockHolder: await readActionLock(actionLockPath()),
-          }),
-        run: async () => {
-          try {
-            await runWatchdogOnce({ source: "view" });
-          } finally {
-            afterTickRef.current();
-          }
-        },
-      }),
-    [],
-  );
 
   // Live view: re-read everything every POLL_INTERVAL_MS while mounted,
   // skipping a tick while the previous load is still in flight. A ref holds
@@ -205,7 +158,6 @@ export default function Netgear() {
     if (isLoading) return;
     revalidate();
     revalidateWatchdog();
-    revalidateLock();
   };
   useEffect(() => {
     const id = setInterval(() => pollRef.current(), POLL_INTERVAL_MS);
@@ -246,38 +198,28 @@ export default function Netgear() {
         });
       logAuto("start", "");
       try {
-        await withUiActionLock(
-          {
-            label: "Auto-unlock",
-            onWait: (holder) => {
-              toast.message = waitMessage(holder);
-            },
-          },
-          async () => {
-            const client = await getClient();
-            await client.login(password);
-            const onProgress = (m: string) => {
-              toast.message = m;
-              logAuto("step", m);
-            };
-            const unlocked = await autoUnlockIfPossible({
-              client,
-              pinStore,
-              status: await client.getStatus(),
-              onProgress,
-            });
-            if (!unlocked) {
-              toast.hide();
-              logAuto("ok", "Nothing to unlock");
-              return;
-            }
-            await ensureConnected({ client, onProgress });
-            toast.style = Toast.Style.Success;
-            toast.title = "SIM unlocked";
-            logAuto("ok", "SIM unlocked");
-            revalidate();
-          },
-        );
+        const client = await getClient();
+        await client.login(password);
+        const onProgress = (m: string) => {
+          toast.message = m;
+          logAuto("step", m);
+        };
+        const unlocked = await autoUnlockIfPossible({
+          client,
+          pinStore,
+          status: await client.getStatus(),
+          onProgress,
+        });
+        if (!unlocked) {
+          toast.hide();
+          logAuto("ok", "Nothing to unlock");
+          return;
+        }
+        await ensureConnected({ client, onProgress });
+        toast.style = Toast.Style.Success;
+        toast.title = "SIM unlocked";
+        logAuto("ok", "SIM unlocked");
+        revalidate();
       } catch (e) {
         toast.style = Toast.Style.Failure;
         toast.title = "Auto-unlock failed";
@@ -346,26 +288,16 @@ export default function Netgear() {
       });
     logRejoin("start", "");
     try {
-      await withUiActionLock(
-        {
-          label: "Rejoin Wi-Fi",
-          onWait: (holder) => {
-            toast.message = waitMessage(holder);
-          },
+      const client = await getClient();
+      await ensureRouterReachable({
+        client,
+        wifi: wifiRejoiner,
+        credsStore: wifiCredsStore,
+        onProgress: (m) => {
+          toast.message = m;
+          logRejoin("step", m);
         },
-        async () => {
-          const client = await getClient();
-          await ensureRouterReachable({
-            client,
-            wifi: wifiRejoiner,
-            credsStore: wifiCredsStore,
-            onProgress: (m) => {
-              toast.message = m;
-              logRejoin("step", m);
-            },
-          });
-        },
-      );
+      });
       toast.style = Toast.Style.Success;
       toast.title = "Router reachable";
       logRejoin("ok", toast.title);
@@ -486,7 +418,6 @@ export default function Netgear() {
         });
     const base = statusMarkdown(status, hasSavedPin ?? false, watchdog, {
       internet,
-      lockHolder,
       stale: !!error,
       watchdogInView: true,
     });
@@ -500,16 +431,7 @@ export default function Netgear() {
     return [restart?.markdown, banner, base, updating]
       .filter(Boolean)
       .join("\n\n");
-  }, [
-    status,
-    internet,
-    hasSavedPin,
-    watchdog,
-    lockHolder,
-    isLoading,
-    error,
-    fetchedAt,
-  ]);
+  }, [status, internet, hasSavedPin, watchdog, isLoading, error, fetchedAt]);
 
   return (
     <Detail

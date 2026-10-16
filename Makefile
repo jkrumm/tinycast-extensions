@@ -1,4 +1,4 @@
-.PHONY: help install build helper deploy check test lint typecheck clean secrets secrets-clear icons status e2e e2e-live fake-router previews van-eval tinycast-version van-sampler-check
+.PHONY: help install watchdog-setup watchdog-teardown watchdog-status build helper deploy check test lint typecheck clean secrets secrets-clear icons status e2e e2e-live fake-router previews van-eval tinycast-version van-sampler-check
 
 EXT_DIR := extension
 RAY := node_modules/.bin/ray
@@ -72,6 +72,30 @@ previews: ## Render every production hero + the chart gallery to /tmp/tinycast-p
 
 van-eval: ## SoC estimator tuning loop: replay the estimator leave-one-out over van-log.jsonl / van-trends.jsonl from the support dir (ARGS="<support-dir>" to override)
 	cd $(EXT_DIR) && bun scripts/van-eval.ts $(ARGS)
+
+WATCHDOG_LABEL := com.jkrumm.netgear-watchdog
+WATCHDOG_PLIST := $(HOME)/Library/LaunchAgents/$(WATCHDOG_LABEL).plist
+
+# Not `ray build`/`deploy`: the watchdog is a launchd job, not part of the Tinycast bundle.
+watchdog-setup: ## MacBook: render + load the 60 s netgear-watchdog LaunchAgent (wrapped in jobrun)
+	@test -x "$(HOME)/.local/bin/jobrun" || { echo "jobrun missing — run 'make setup' in dotfiles first"; exit 1; }
+	@command -v bun >/dev/null || { echo "bun not on PATH"; exit 1; }
+	@mkdir -p "$(HOME)/Library/LaunchAgents" "$(HOME)/Library/Logs"
+	@sed -e 's|__HOME__|$(HOME)|g' -e 's|__REPO__|$(CURDIR)|g' launchd/$(WATCHDOG_LABEL).plist.tmpl > "$(WATCHDOG_PLIST).new"
+	@plutil -lint "$(WATCHDOG_PLIST).new" >/dev/null
+	@mv "$(WATCHDOG_PLIST).new" "$(WATCHDOG_PLIST)"
+	@launchctl bootout gui/$$(id -u)/$(WATCHDOG_LABEL) 2>/dev/null || true
+	@launchctl bootstrap gui/$$(id -u) "$(WATCHDOG_PLIST)"
+	@echo "  ✓ $(WATCHDOG_LABEL) loaded (every 60 s); log: ~/Library/Logs/netgear-watchdog.log"
+
+watchdog-teardown: ## Unload the netgear-watchdog LaunchAgent and drop its jobrun record
+	@launchctl bootout gui/$$(id -u)/$(WATCHDOG_LABEL) 2>/dev/null || true
+	@rm -f "$(WATCHDOG_PLIST)" "$(HOME)/.local/state/jobs/$(WATCHDOG_LABEL).json"
+	@echo "  ✓ $(WATCHDOG_LABEL) torn down (state in ~/.local/state/netgear-watchdog kept)"
+
+watchdog-status: ## Is the watchdog loaded and what does jobrun's record say
+	@launchctl print gui/$$(id -u)/$(WATCHDOG_LABEL) 2>/dev/null | grep -E 'state =|last exit code|runs =' || echo "  ✗ not loaded"
+	@jobs-grade --table 2>/dev/null | grep netgear-watchdog || echo "  no jobrun record yet"
 
 check: helper typecheck lint test e2e ## helper selftest + typecheck + lint + test + e2e
 

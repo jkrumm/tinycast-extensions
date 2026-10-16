@@ -31,7 +31,6 @@ extension/
     claude-usage.tsx      command — Claude weekly/5h/model limits, weekly pace + spend charts, Detail view
     claude-usage-menu-bar.tsx command — Claude quota + spend, menu bar (2m interval)
     netgear.tsx           command — Netgear MR2100 status + actions + sub-views
-    netgear-watchdog.tsx    command — no-view background: keeps the mobile connection up
     battery.tsx            command — MacBook charge/health + charge-limit control
     speed-test.tsx          command — networkQuality speed/latency/data-used + history
     van-power.tsx           command — Van Power: Ective battery + Victron solar over BLE, 72 h charts
@@ -45,10 +44,11 @@ extension/
                            (rejoiner), wifi-creds-store (persisted router Wi-Fi creds), errors
                            (friendly error text), live-actions, session (getClient/getPassword/
                            withAdmin, shared with the watchdog), watchdog (pure tick logic,
-                           budget + Wi-Fi rejoin rule), watchdog-runner (one tick, shared by the
-                           background command and the open view), watchdog-schedule (pure: view
-                           ticker, skip + log policy), watchdog-storage (LocalStorage glue),
-                           action-lock (cross-process router lock), status-view (pure markdown),
+                           budget + Wi-Fi rejoin rule), watchdog-runner (one tick, injected
+                           ports; run by `scripts/netgear-watchdog.ts`), watchdog-schedule (pure: log
+                           policy), watchdog-storage (pure fs: `state.json` + `paused` flag +
+                           `reboot-marker.json` in `~/.local/state/netgear-watchdog/`), adapters
+                           (raycast-free pin/Wi-Fi stores), status-view (pure markdown),
                            internet-probe, log-view (Show Netgear Log), signal (pure: LTE rating +
                            ping summary parser), signal-view (pure: session history + Signal
                            Meter markdown), ping (execFile glue), signal-meter (live Detail),
@@ -108,6 +108,7 @@ make build      # ray build -e dist -o extension/build
 ```
 make helper     # swiftc extension/helpers/van-ble/main.swift → extension/assets/van-ble, then --selftest
 make deploy     # build + copy into Tinycast Beta's installed extension
+make watchdog-setup   # MacBook: render + load the 60 s netgear-watchdog LaunchAgent (jobrun-wrapped); -status / -teardown
 ```
 
 `make build` depends on `make helper` (the compiled `assets/van-ble` is gitignored
@@ -334,21 +335,21 @@ run make secrets" while still reading the battery.
   `flows.ts`'s `reconnect()`
   is state-aware (reads the connection first, only disconnects a Connected /
   stuck-Connecting router, and tolerates a "rejected" connect/disconnect when
-  the router is already moving the right way). **Watchdog and UI never mutate
-  the router concurrently**: both take a file lock
-  (`netgear/action-lock.ts`, `netgear-action.lock` in `supportPath`, TTLed so a
-  killed owner can't wedge it) — `withAdmin` and `netgear.tsx`'s auto-unlock /
-  Rejoin Wi-Fi hold it as `ui` (waits up to 60s for a running tick, then takes
-  over), the watchdog tick as `watchdog` and, if a `ui` lock is held, skips
-  itself with a `deferred` event. The open `netgear.tsx` view is live: it
+  the router is already moving the right way). There is **no cross-process action lock** any more: the
+  watchdog (launchd) and a manual UI action can touch the router in the same
+  second; the tick's own state-aware flows tolerate a "rejected" call and the
+  next tick re-reads. The open `netgear.tsx` view is live: it
   re-reads every 10s, probes real internet in parallel with the router read
   (headline `· No internet` when `Connected` but the probe fails), and shows a
   `🔄 Watchdog:` line while a tick runs; fields sit two pairs per table row,
   followed by a Watchdog section (state, drops in the last hour, 6 newest
   events).
-  **`netgear-watchdog`** is a `no-view`, `interval: "1m"`
-  background command (`netgear-watchdog.tsx` + pure logic in
-  `netgear/watchdog.ts`) that keeps the mobile connection up unattended: it
+  **The watchdog** is a launchd job, `com.jkrumm.netgear-watchdog` (60 s, wrapped
+  in dotfiles' `jobrun` so `jobs-grade` sees a stalled one; `make watchdog-setup`
+  / `-teardown` / `-status`, MacBook only), running `scripts/netgear-watchdog.ts`
+  (one tick, plain bun) with pure logic in `netgear/watchdog.ts`. It is no
+  longer a Tinycast background command, so it keeps ticking with a view open
+  and is not subject to Tinycast's kill. It keeps the mobile connection up unattended: it
   auto-unlocks a Locked SIM only with an already-saved PIN (the same
   one-automatic-attempt rule `flows.ts`'s `autoUnlockIfPossible` enforces —
   never loosened for the watchdog), connects when Ready but disconnected,
@@ -444,21 +445,19 @@ run make secrets" while still reading the battery.
   with a 📵 warning (Restart & Reconnect becomes the primary action), and
   `reconnect()`/`ensureConnected()` fail fast with "No mobile network … try
   Restart & Reconnect" instead of polling. The Signal Meter headlines "Not
-  registered (limited service)". Tinycast kills a
-  background run after ~60s, so every tick runs under a hard, shortened
-  budget (`DEFAULT_WATCHDOG_BUDGET_MS`, see `docs/netgear-m2.md` § Watchdog)
-  and persists an in-progress breadcrumb (`onAction`) before any long action,
-  so a kill mid-flight still leaves a trace. The whole tick also runs under a
-  50s hard deadline (`DEFAULT_WATCHDOG_HARD_DEADLINE_MS`, `netgear/deadline.ts`)
-  and the Wi-Fi join under 20s (`REJOIN_JOIN_TIMEOUT_MS`): an overrun is a
-  `Timed out.` failure Tinycast backs off exponentially, so a tick that cannot
-  finish resolves with an `error` "Tick cut short" event instead. A closed-lid
-  Mac's dark wakes still freeze runs mid-tick and book them as `Timed out.`
-  (the wall-clock deadline expires asleep — most of the 9 failures that parked
-  the watchdog ~8.5 h on 2026-10-13); no code can prevent that. State and a
-  60-event ring buffer live in `LocalStorage` (`netgear-watchdog` key,
-  `netgear/watchdog-storage.ts`); `netgear.tsx` reads the same key for a
-  status row plus **Pause/Resume Watchdog** and **Watchdog Log** actions. The
+  registered (limited service)". Every tick still runs under a hard, shortened
+  budget (`DEFAULT_WATCHDOG_BUDGET_MS`, see `docs/netgear-m2.md` § Watchdog; jobrun
+  adds a 90 s deadline) and persists an in-progress breadcrumb (`onAction`) before
+  any long action. A closed-lid Mac's dark wakes can still freeze a run
+  mid-tick; no code can prevent that. State and a 60-event ring buffer live in
+  `~/.local/state/netgear-watchdog/state.json` (daemon-owned) beside the UI-owned
+  `paused` flag and `reboot-marker.json` (a Restart the UI sent; the next tick
+  applies and deletes it), so the two processes never write the same file;
+  `netgear/watchdog-storage.ts` is pure fs. `netgear.tsx` reads it for a status
+  row plus **Pause/Resume Watchdog** and **Watchdog Log** actions. The watchdog's
+  admin password is Keychain only (`make secrets`; the preference override
+  does not reach launchd). The log is the same `netgear.log` (source `watchdog`). The
+The
   **Signal Meter** action (cmd+shift+S, `netgear/signal-meter.tsx`) is a live
   Detail for finding the router's best physical spot: every 2 s it reads the
   model (a guest GET, no login — skipped while the previous tick still runs) and
@@ -467,26 +466,6 @@ run make secrets" while still reading the battery.
   SINR/RSRP/RSRQ panel, a SINR trend of the last 60 samples, a table (band,
   cell id, CA secondary cells, tx power, ping, best SINR this session). State is
   session-only; the main view's pair table carries a compact `Signal` row.
-  **One JS runtime (verified against Tinycast `main`, 2026-10-07):** while any
-  foreground command is open, **no background command runs**
-  (`ExtensionManager.swift:639-640,655,662,681` — `running == nil` guards), and
-  launching one aborts a tick in flight (`:430`, `abortBackgroundRun` at `:764`).
-  A foreground session ends only on Esc (`ExtensionCoordinator.swift:219,228`)
-  or a palette mode switch — hiding the window does not. So the open Netgear
-  view **drives the watchdog itself**: `netgear/watchdog-runner.ts`'s
-  `runWatchdogOnce({ source })` is the whole tick (lock, storage, breadcrumbs,
-  logging) shared by `netgear-watchdog.tsx` (`"background"`, also sets the
-  launcher subtitle) and `netgear.tsx` (`"view"`, log source `watchdog-view`,
-  never touches `updateCommandMetadata`). The view's ticker
-  (`netgear/watchdog-schedule.ts`'s `startViewTicker`: first run 5 s after
-  mount, then every 60 s, never overlapping, skipped while paused or while a
-  `ui` action holds the lock) revalidates status/storage after each tick; the
-  Watchdog heading says "running here while this view is open" and a one-line
-  tip says to press Esc to close. No
-  toasts/HUD are possible in a background run — `updateCommandMetadata`'s
-  launcher subtitle is the only surface, and background refresh must be
-  enabled once per Tinycast's own rule (Settings → Extensions → Netgear
-  Watchdog) before the interval ever fires.
 - **Battery** — `$(brew --prefix)/opt/batt/bin/batt status --json` (charge,
   limit, rate) + `ioreg -rn AppleSmartBattery` parsed with a targeted regex,
   not `plutil -convert json` — a couple of unrelated huge-integer fields in

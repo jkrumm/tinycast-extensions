@@ -97,17 +97,22 @@ def print_command_metadata():
         print(f"    lastError:           {meta.get('lastError') or '—'}")
 
 
-def print_watchdog_events(local_storage: dict):
+WATCHDOG_DIR = Path.home() / ".local/state/netgear-watchdog"
+
+
+def print_watchdog_events(_local_storage: dict):
     print()
     print("== netgear-watchdog log (newest first, routine ticks collapsed) ==")
-    raw = local_storage.get("netgear-watchdog")
-    if raw is None:
-        print("  no netgear-watchdog entry yet")
+    state_file = WATCHDOG_DIR / "state.json"
+    if not state_file.exists():
+        print(f"  no {state_file} yet — `make watchdog-setup`, then `make watchdog-status`")
         return
-    storage = unwrap_local_storage_value(raw)
-    if not isinstance(storage, dict):
-        print("  unexpected shape, skipping")
+    try:
+        storage = json.loads(state_file.read_text())
+    except (OSError, ValueError):
+        print("  unreadable state.json, skipping")
         return
+    storage["enabled"] = not (WATCHDOG_DIR / "paused").exists()
     print(f"  enabled: {storage.get('enabled')}")
     print(f"  state:   {json.dumps(storage.get('state', {}))}")
     counts = storage.get("counts") or {}
