@@ -1,22 +1,24 @@
 #!/usr/bin/env python3
-"""Health check for the `van-sampler` background command.
+"""Health check for the launchd van sampler (`extension/scripts/van-sampler.ts`).
 
-Reads what Tinycast Beta persisted — the command metadata (last run, failures,
-subtitle), the sampler's LocalStorage state (`van-sampler`) and the
-`source: "background"` lines in van-log.jsonl — and judges each run:
+Reads what the sampler persisted — its state file (`sampler.json` in
+~/.local/state/van-sampler/, VAN_SAMPLER_DIR overrides), the `paused` flag file
+the Van Power view owns, and the `source: "background"` lines in van-log.jsonl
+(VAN_SUPPORT_DIR overrides the Tinycast support dir) — and judges the latest run:
 
   ok        a background reading landed (Ective SoC, Victron advert or not)
   idle      ran, but the van was not in range / Bluetooth off (not a failure)
-  FAIL      consecutiveFailures > 0, lastError set, or an `error` result
+  paused    the flag file exists; a paused run returns at once (not a failure)
+  FAIL      no state file, an `error` result, a `sampled` result without its
+            log line, or no run for interval + 10 min
 
 Each report also prints the last Victron trends top-up from the sampler state
 (time + ok/failed/pairing); that line is informational, it never fails a run.
 
 `--wait N` blocks until N more runs happened after the current one (polls the
-metadata's lastRun), checking each, then exits 0 if all were ok/idle, 1 if any
-failed, 2 on timeout. A run is overdue when no run lands within interval +
-10 min: Tinycast never runs a background command while any foreground command
-is open (tinycast skill § background), so close Tinycast's window with Esc.
+state's lastRunAt), checking each, then exits 0 if all were ok/idle, 1 if any
+failed, 2 on timeout. A run is overdue when none lands within interval + 10 min
+(is the launchd job loaded? `launchctl print gui/$UID/com.jkrumm.van-sampler`).
 
 stdlib only, run via `make van-sampler-check` (ARGS="--wait 2").
 """
@@ -26,22 +28,24 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 import time
 from datetime import datetime
 from pathlib import Path
 
-EXTENSION_NAME = "jkrumm"
-COMMAND = "van-sampler"
 INTERVAL_S = 15 * 60
 OVERDUE_GRACE_S = 10 * 60
 POLL_S = 30
-APPLE_EPOCH_OFFSET_SECONDS = 978307200
 
-APP_SUPPORT = Path.home() / "Library" / "Application Support" / "com.tinycast.app.beta"
-COMMANDS_FILE = APP_SUPPORT / "extension-commands.json"
-DATA_FILE = APP_SUPPORT / "extension-data" / f"{EXTENSION_NAME}.json"
-VAN_LOG = APP_SUPPORT / "extension-support" / EXTENSION_NAME / "van-log.jsonl"
+STATE_DIR = Path(os.environ.get("VAN_SAMPLER_DIR") or Path.home() / ".local" / "state" / "van-sampler")
+STATE_FILE = STATE_DIR / "sampler.json"
+PAUSED_FILE = STATE_DIR / "paused"
+SUPPORT_DIR = Path(
+    os.environ.get("VAN_SUPPORT_DIR")
+    or Path.home() / "Library" / "Application Support" / "com.tinycast.app.beta" / "extension-support" / "jkrumm"
+)
+VAN_LOG = SUPPORT_DIR / "van-log.jsonl"
 
 
 def local(unix_s: float) -> str:
@@ -55,25 +59,14 @@ def load_json(path: Path):
         return None
 
 
-def metadata() -> dict:
-    data = load_json(COMMANDS_FILE) or {}
-    return data.get(EXTENSION_NAME, {}).get(COMMAND, {})
-
-
-def last_run_unix(meta: dict) -> float | None:
-    raw = meta.get("lastRun")
-    return raw + APPLE_EPOCH_OFFSET_SECONDS if raw is not None else None
-
-
 def sampler_state() -> dict | None:
-    data = load_json(DATA_FILE) or {}
-    raw = data.get("localStorage", {}).get(COMMAND)
-    if isinstance(raw, dict) and "string" in raw:
-        raw = raw["string"].get("_0")
-    try:
-        return json.loads(raw) if isinstance(raw, str) else raw
-    except json.JSONDecodeError:
-        return None
+    state = load_json(STATE_FILE)
+    return state if isinstance(state, dict) else None
+
+
+def last_run_unix(state: dict | None) -> float | None:
+    raw = (state or {}).get("lastRunAt")
+    return raw / 1000 if isinstance(raw, (int, float)) else None
 
 
 def background_lines(since_unix: float) -> list[dict]:
@@ -90,19 +83,17 @@ def background_lines(since_unix: float) -> list[dict]:
     return out
 
 
-def judge(meta: dict, state: dict | None, run_unix: float | None) -> tuple[bool, str]:
+def judge(state: dict | None, run_unix: float | None) -> tuple[bool, str]:
     """(ok, one-line verdict) for the most recent run."""
-    if not meta.get("backgroundEnabled"):
-        return False, "background refresh is OFF (Tinycast → Settings → Extensions → Van Sampler)"
+    if PAUSED_FILE.exists():
+        return True, "paused (the flag file exists; runs return at once)"
+    if state is None:
+        return False, f"FAIL — no readable {STATE_FILE} (has the job run? `launchctl print gui/$UID/com.jkrumm.van-sampler`)"
     if run_unix is None:
         return False, "never ran"
-    failures = meta.get("consecutiveFailures", 0)
-    if failures or meta.get("lastError"):
-        return False, f"FAIL — consecutiveFailures={failures} lastError={meta.get('lastError')!r}"
-    if state is None:
-        return False, "FAIL — no van-sampler LocalStorage state"
-    if state.get("paused"):
-        return True, "paused (run returned at once)"
+    age = time.time() - run_unix
+    if age > INTERVAL_S + OVERDUE_GRACE_S:
+        return False, f"FAIL — last run {int(age // 60)} min ago (overdue: the job should run every {INTERVAL_S // 60} min)"
     result = state.get("lastResult") or {}
     kind = result.get("kind")
     if kind == "error":
@@ -131,12 +122,11 @@ def trends_line(state: dict | None) -> str:
 
 
 def report() -> tuple[bool, float | None]:
-    meta = metadata()
     state = sampler_state()
-    run_unix = last_run_unix(meta)
-    ok, verdict = judge(meta, state, run_unix)
+    run_unix = last_run_unix(state)
+    ok, verdict = judge(state, run_unix)
     when = local(run_unix) if run_unix else "—"
-    print(f"{when}  {verdict}   [subtitle: {meta.get('subtitle', '—')}]")
+    print(f"{when}  {verdict}")
     print(f"  {trends_line(state)}")
     return ok, run_unix
 
@@ -152,12 +142,12 @@ def main() -> int:
     while seen < args.wait:
         deadline = (last or time.time()) + INTERVAL_S + OVERDUE_GRACE_S
         while True:
-            run_unix = last_run_unix(metadata())
+            run_unix = last_run_unix(sampler_state())
             if run_unix and (last is None or run_unix > last):
                 break
             if time.time() > deadline:
                 print(f"OVERDUE — no run since {local(last) if last else 'ever'}; "
-                      "is a Tinycast command window open (Esc closes it) or the Mac asleep?")
+                      "is the launchd job loaded, or the Mac asleep?")
                 return 2
             time.sleep(POLL_S)
         time.sleep(5)  # let the run finish writing state + log

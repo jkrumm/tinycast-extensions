@@ -1,5 +1,5 @@
 // Pure ring logic for the 72 h sample history — no @raycast/api import (the
-// LocalStorage glue is storage.ts).
+// file glue is storage.ts).
 
 import { Sample } from "./types";
 import { VictronHistory } from "./victron-history";
@@ -56,7 +56,7 @@ export function timeToFullOrEmpty(opts: {
 }
 
 // The Victron's on-device data needs a connected GATT session (the charger's
-// advert is blocked meanwhile), so it is cached in LocalStorage: the 72 h
+// advert is blocked meanwhile), so it is cached in the store (`victron-history.json`): the 72 h
 // trends are topped up incrementally on every open (cheap: only samples newer
 // than the cache), the 30-day daily history only when it is from a previous
 // day or over an hour old.
@@ -68,7 +68,7 @@ const BATTERY_A_VREG = 0xed8f;
 const PV_V_VREG = 0xedbb;
 // What the charts and the SoC estimate read: PV power, battery V and A, and PV
 // voltage (the charger-asleep signal). Everything else the helper returns is
-// dropped before it reaches LocalStorage.
+// dropped before it reaches the store.
 const CACHED_VREGS = [PV_POWER_VREG, BATTERY_V_VREG, BATTERY_A_VREG, PV_V_VREG];
 // A cache is only usable for an incremental read when it holds these three (PV
 // voltage is a bonus the device does not always push).
@@ -102,7 +102,7 @@ export function hasRequiredTrends(trends: VictronTrends | null): boolean {
   );
 }
 
-// Keeps what the chart draws and rounds it — small enough for LocalStorage.
+// Keeps what the chart draws and rounds it — small enough for the store.
 export function compactTrends(
   trends: VictronTrends | null,
 ): VictronTrends | null {

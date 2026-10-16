@@ -55,7 +55,7 @@ export interface VanReading {
   readAt: number; // epoch ms
 }
 
-// One persisted point of history (LocalStorage `van-history`, 72 h).
+// One persisted point of history (`van-history.json`, 72 h).
 export interface Sample {
   t: number; // epoch ms
   soc: number | null;

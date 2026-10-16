@@ -1,10 +1,12 @@
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   Action,
   ActionPanel,
   Detail,
   Icon,
   Toast,
+  environment,
+  getPreferenceValues,
   showToast,
   Keyboard,
 } from "@raycast/api";
@@ -29,6 +31,9 @@ import { defaultLocation } from "./van/sun";
 import { DayConsumption, hasPendingDays } from "./van/consumption";
 import { SamplerState, samplerStatusLine } from "./van/sampler";
 import { loadSamplerState, setSamplerPaused } from "./van/sampler-storage";
+import { migrateLegacyVanStorage } from "./van/legacy";
+import { configureVanRuntime } from "./van/runtime";
+import { Preferences } from "./lib/preferences";
 import { Sample, VanView } from "./van/types";
 import {
   Stamped,
@@ -184,17 +189,51 @@ function renderMarkdown(
   return lines.join("\n");
 }
 
+// The van code takes its paths and preferences from the host (van/runtime.ts)
+// so the launchd sampler can run it without `@raycast/api`.
+configureVanRuntime(() => ({
+  supportDir: environment.supportPath,
+  assetsDir: environment.assetsPath,
+  preferences: getPreferenceValues<Preferences>(),
+}));
+
+// The state used to live in LocalStorage; the first open moves it into the
+// files the launchd sampler shares (van/legacy.ts) before anything reads them.
+// Every loader below takes `migrated` as an argument, so it runs (again) once
+// the move is done.
+function useLegacyMigrated(): boolean {
+  const [done, setDone] = useState(false);
+  useEffect(() => {
+    migrateLegacyVanStorage()
+      .catch(() => {})
+      .finally(() => setDone(true));
+  }, []);
+  return done;
+}
+
+// The hooks' `execute` already holds the loaders back; this keeps one from
+// ever reading the files before the move has finished.
+function whenMigrated<T>(ready: boolean, load: () => Promise<T>): Promise<T> {
+  return ready
+    ? load()
+    : Promise.reject(new Error("migrating Van Power state"));
+}
+
 export default function VanPower() {
+  const migrated = useLegacyMigrated();
   const { data, isLoading, error, revalidate } = useCachedPromise(
-    () => stamped(loadVan),
-    [],
-    { keepPreviousData: true, onError: () => {} },
+    (ready: boolean) => whenMigrated(ready, () => stamped(loadVan)),
+    [migrated],
+    { keepPreviousData: true, execute: migrated, onError: () => {} },
   );
   // The history read opens a connected session that blocks the charger's
   // advert, so it starts only once the live read has finished (and the cache
   // inside loadVictronHistory keeps it to once an hour). `liveDone` is an
   // argument so a finished live read re-triggers the load.
-  const liveDone = !isLoading;
+  // `isLoading` is false before the first load has even started, so a landed
+  // result (or error) is required too.
+  const liveDone =
+    migrated && !isLoading && (data !== undefined || error !== undefined);
   const history = useCachedPromise(
     (ready: boolean) =>
       ready ? loadVictronHistory() : Promise.resolve(NO_HISTORY),
@@ -205,22 +244,36 @@ export default function VanPower() {
       onError: () => {},
     },
   );
-  // What LocalStorage holds paints on the first frame; a landed read replaces it.
-  const cached = useCachedPromise(loadVictronCache, [], { onError: () => {} });
+  // What the store holds paints on the first frame; a landed read replaces it.
+  const cached = useCachedPromise(
+    (ready: boolean) => whenMigrated(ready, loadVictronCache),
+    [migrated],
+    {
+      execute: migrated,
+      onError: () => {},
+    },
+  );
   const victron = history.data ?? cached.data;
   // The two weeks of consumption come from the logs plus what the stores hold:
   // computed from the cache on the first frame, again when the live reading
   // lands and when the Victron read has merged the day's charger current in.
   const consumption = useCachedPromise(
-    (liveAt: number, victronAt: number) =>
-      loadConsumption(Math.max(Date.now(), liveAt, victronAt)),
-    [data?.fetchedAt ?? 0, victron?.updatedAt ?? 0],
-    { keepPreviousData: true, onError: () => {} },
+    (liveAt: number, victronAt: number, ready: boolean) =>
+      whenMigrated(ready, () =>
+        loadConsumption(Math.max(Date.now(), liveAt, victronAt)),
+      ),
+    [data?.fetchedAt ?? 0, victron?.updatedAt ?? 0, migrated],
+    { keepPreviousData: true, execute: migrated, onError: () => {} },
   );
-  const sampler = useCachedPromise(loadSamplerState, [], {
-    keepPreviousData: true,
-    onError: () => {},
-  });
+  const sampler = useCachedPromise(
+    (ready: boolean) => whenMigrated(ready, loadSamplerState),
+    [migrated],
+    {
+      keepPreviousData: true,
+      execute: migrated,
+      onError: () => {},
+    },
+  );
   const markdown = useMemo(
     () =>
       renderMarkdown(
@@ -244,7 +297,7 @@ export default function VanPower() {
   );
   const samplerPaused = sampler.data?.paused ?? false;
 
-  // Written through to the stored state the background command reads, so it
+  // Written through to the `paused` flag file the launchd sampler reads, so it
   // takes effect at its next run (a paused run returns at once).
   async function toggleSampler() {
     const paused = !samplerPaused;
@@ -272,7 +325,7 @@ export default function VanPower() {
 
   return (
     <Detail
-      isLoading={isLoading || history.isLoading}
+      isLoading={!migrated || isLoading || history.isLoading}
       markdown={markdown}
       actions={
         <ActionPanel>

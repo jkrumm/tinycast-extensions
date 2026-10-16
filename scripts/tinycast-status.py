@@ -2,9 +2,9 @@
 """Debug readout for the `jkrumm` Tinycast extension.
 
 Reads Tinycast Beta's own persisted state — background command metadata,
-the netgear-watchdog LocalStorage event log, the tail of the extension's
-own netgear.log, LocalStorage key sizes, and a
-deployed-vs-built sha1 check — since `console.log` is compiled out of the
+the netgear-watchdog event log, the van sampler's state files and background
+readings, the tail of the extension's own netgear.log, LocalStorage key sizes,
+and a deployed-vs-built sha1 check — since `console.log` is compiled out of the
 release app (see .claude/skills/tinycast/SKILL.md § Debugging). Never prints
 `preferences` (may contain secrets).
 
@@ -13,6 +13,7 @@ stdlib only, run via `make status`.
 
 import hashlib
 import json
+import os
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -27,6 +28,12 @@ COMMANDS_FILE = APP_SUPPORT / "extension-commands.json"
 DATA_FILE = APP_SUPPORT / "extension-data" / f"{EXTENSION_NAME}.json"
 NETGEAR_LOG = APP_SUPPORT / "extension-support" / EXTENSION_NAME / "netgear.log"
 NETGEAR_LOG_TAIL = 25
+VAN_DIR = Path(os.environ.get("VAN_SAMPLER_DIR") or Path.home() / ".local/state/van-sampler")
+VAN_LOG = (
+    Path(os.environ.get("VAN_SUPPORT_DIR") or APP_SUPPORT / "extension-support" / EXTENSION_NAME)
+    / "van-log.jsonl"
+)
+VAN_LOG_TAIL = 5
 INSTALLED_EXT_DIR = APP_SUPPORT / "extensions" / EXTENSION_NAME
 REPO_ROOT = Path(__file__).resolve().parent.parent
 BUILD_DIR = REPO_ROOT / "extension" / "build"
@@ -136,6 +143,47 @@ def print_watchdog_events():
         print(f"  {when}  {kind:<15} {event.get('message', '')}")
 
 
+def print_van_sampler():
+    print()
+    print("== van-sampler (launchd; state files in ~/.local/state/van-sampler) ==")
+    state_file = VAN_DIR / "sampler.json"
+    if not state_file.exists():
+        print(f"  no {state_file} yet — the launchd job has not run")
+        return
+    try:
+        state = json.loads(state_file.read_text())
+    except (OSError, ValueError):
+        print("  unreadable sampler.json, skipping")
+        return
+    if not isinstance(state, dict):
+        print("  unexpected shape, skipping")
+        return
+    print(f"  paused:        {(VAN_DIR / 'paused').exists()}")
+    last_run = state.get("lastRunAt")
+    print(f"  last run:      {unix_ms_to_local(last_run) if last_run else 'never'}")
+    print(f"  last result:   {json.dumps(state.get('lastResult'))}")
+    print(f"  last trends:   {json.dumps(state.get('lastTrends'))}")
+    print(f"  state mtime:   {unix_ms_to_local(state_file.stat().st_mtime * 1000)}")
+    for name in ("van-history.json", "victron-history.json"):
+        path = VAN_DIR / name
+        size = f"{path.stat().st_size} bytes" if path.exists() else "missing"
+        print(f"  {name}: {size}")
+    if not VAN_LOG.exists():
+        return
+    lines = []
+    for line in VAN_LOG.read_text(encoding="utf-8", errors="replace").splitlines():
+        try:
+            entry = json.loads(line)
+        except ValueError:
+            continue
+        if entry.get("source") == "background":
+            lines.append(entry)
+    print(f"  background readings (last {VAN_LOG_TAIL} of {len(lines)}, newest last):")
+    for entry in lines[-VAN_LOG_TAIL:]:
+        ective = entry.get("ective") or {}
+        print(f"    {unix_ms_to_local(entry['t'])}  SoC {ective.get('soc')} %  {ective.get('currentA')} A")
+
+
 def print_netgear_log():
     print()
     print(f"== netgear.log (last {NETGEAR_LOG_TAIL} lines, newest last) ==")
@@ -215,6 +263,7 @@ def main() -> int:
     data = load_json(DATA_FILE) or {}
     local_storage = data.get("localStorage", {})
     print_watchdog_events()
+    print_van_sampler()
     print_netgear_log()
     print_local_storage_sizes(local_storage)
     print_speed_test_history_count(local_storage)

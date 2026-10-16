@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>com.jkrumm.van-sampler</string>
+  <!-- The camper-van sampler: a BLE read every 15 min (extension/scripts/van-sampler.ts),
+       recorded and graded by jobrun (dotfiles). The PROGRAM is the signed van-ble
+       (scripts/van-sampler-build.sh): macOS attributes the Bluetooth permission to the agent's
+       own program and its children, and van-ble's embedded Info.plist carries the usage
+       description — so no Tinycast process is needed. `--supervise` spawns the job as a child
+       and waits (never exec: that would swap the attributed binary for jobrun/bun). Proof of the
+       attribution: `make van-sampler-spike` (docs/van-sampler-tcc.md). State lives in
+       ~/.local/state/van-sampler/; the Tinycast `van-power` view reads and writes the same files. -->
+  <key>ProgramArguments</key>
+  <array>
+    <string>__HOME__/.local/libexec/van-sampler/van-ble</string>
+    <string>--supervise</string>
+    <string>--</string>
+    <string>jobrun</string>
+    <string>com.jkrumm.van-sampler</string>
+    <string>--owner</string><string>tinycast-extensions</string>
+    <string>--every</string><string>900</string>
+    <string>--timeout</string><string>420</string>
+    <string>--</string>
+    <string>bun</string>
+    <string>__REPO__/extension/scripts/van-sampler.ts</string>
+  </array>
+  <!-- launchd hands agents a minimal PATH; jobrun and bun are found through it (van-ble --supervise
+       resolves the command with /usr/bin/env). VAN_BLE_BIN points the entry at the SAME signed binary. -->
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key><string>__HOME__/.local/bin:__HOME__/.bun/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+    <key>VAN_BLE_BIN</key><string>__HOME__/.local/libexec/van-sampler/van-ble</string>
+  </dict>
+  <key>StartInterval</key><integer>900</integer>
+  <key>RunAtLoad</key><true/>
+  <key>StandardOutPath</key><string>__HOME__/Library/Logs/van-sampler.log</string>
+  <key>StandardErrorPath</key><string>__HOME__/Library/Logs/van-sampler.log</string>
+</dict>
+</plist>

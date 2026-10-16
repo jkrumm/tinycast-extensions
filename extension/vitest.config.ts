@@ -15,5 +15,6 @@ export default defineConfig({
   },
   test: {
     exclude: ["**/node_modules/**", "src/e2e/**/*.e2e.test.tsx"],
+    setupFiles: ["src/van/test-env.ts"],
   },
 });

@@ -1,6 +1,7 @@
 // Opening Van Power reads live and appends one sample to the 72 h history; the
-// background sampler (van-sampler.tsx, sampler-runner.ts) takes the same live
-// read through `readAndPersist`. Never from the hub.
+// background sampler (scripts/van-sampler.ts → sampler-runner.ts) takes the same
+// live read through `readAndPersist`. Never from the hub. No `@raycast/api`
+// import: the launchd sampler loads this module too (runtime.ts).
 
 import {
   VictronHistoryCache,
@@ -12,6 +13,7 @@ import {
 } from "./history";
 import { toReading, toSample } from "./parse";
 import { readVan, runVictronAll } from "./run";
+import { vanRuntime } from "./runtime";
 import {
   loadVanHistory,
   loadVictronHistoryCache,
@@ -19,7 +21,6 @@ import {
   saveVictronHistoryCache,
 } from "./storage";
 import { HelperResult, Sample, VanReading, VanView } from "./types";
-import { environment } from "@raycast/api";
 import { join } from "path";
 import {
   CAPTURE_LOG_FILE,
@@ -79,7 +80,7 @@ export async function loadVan(): Promise<VanView> {
 }
 
 const supportFile = (name: string): string =>
-  join(environment.supportPath, name);
+  join(vanRuntime().supportDir, name);
 
 // The reading of this open whose live prediction is still to be logged.
 let pendingCapture: {
@@ -169,7 +170,7 @@ const viewOf = (
   reason,
 });
 
-// No BLE: what LocalStorage holds, to paint on the first frame while the live
+// No BLE: what the store holds, to paint on the first frame while the live
 // read (and then the Victron read) are still running.
 export async function loadVictronCache(): Promise<VictronHistoryView> {
   return viewOf(await loadVictronHistoryCache(), null);
@@ -272,9 +273,9 @@ export async function loadVictronHistory(
 }
 
 // The last two weeks' consumption per local day (consumption.ts): 14 days need
-// more than the 72 h LocalStorage cache, so the readings come from the capture
+// more than the 72 h cache, so the readings come from the capture
 // log (60 days) and the Victron trends from the trends log (30 days), with what
-// LocalStorage holds laid over them so today is fresh the moment a read lands.
+// the store holds laid over them so today is fresh the moment a read lands.
 // Plain JSON; never a rejection — a broken log must not break the view.
 export async function loadConsumption(
   now: number = Date.now(),

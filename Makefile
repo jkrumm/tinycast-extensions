@@ -1,4 +1,4 @@
-.PHONY: help install watchdog-setup watchdog-teardown watchdog-status build helper deploy check test lint typecheck clean secrets secrets-clear icons status e2e e2e-live fake-router previews van-eval tinycast-version van-sampler-check
+.PHONY: help install van-sampler-build van-sampler-spike van-sampler-notify-test van-sampler-setup van-sampler-teardown van-sampler-status watchdog-setup watchdog-teardown watchdog-status build helper deploy check test lint typecheck clean secrets secrets-clear icons status e2e e2e-live fake-router previews van-eval tinycast-version van-sampler-check
 
 EXT_DIR := extension
 RAY := node_modules/.bin/ray
@@ -73,6 +73,46 @@ previews: ## Render every production hero + the chart gallery to /tmp/tinycast-p
 
 van-eval: ## SoC estimator tuning loop: replay the estimator leave-one-out over van-log.jsonl / van-trends.jsonl from the support dir (ARGS="<support-dir>" to override)
 	cd $(EXT_DIR) && bun scripts/van-eval.ts $(ARGS)
+
+VANS_LABEL := com.jkrumm.van-sampler
+VANS_PLIST := $(HOME)/Library/LaunchAgents/$(VANS_LABEL).plist
+VANS_BIN := $(HOME)/.local/libexec/van-sampler/van-ble
+VANS_RESULT := $(HOME)/Library/Logs/van-sampler-spike.result
+
+# The signed van-ble is the launchd PROGRAM so macOS attributes Bluetooth to it, not to Tinycast
+# (docs/van-sampler-tcc.md). Source and Info.plist unchanged + same identity = same file = same grant.
+van-sampler-build: ## MacBook: build + sign the launchd van-ble (embedded Info.plist) into ~/.local/libexec/van-sampler
+	@scripts/van-sampler-build.sh
+
+van-sampler-spike: van-sampler-build ## MacBook, logged in, Tinycast quits itself: the Bluetooth TCC spike — prints `VAN-SAMPLER SPIKE: PASS|FAIL`, exit 0|1
+	@scripts/van-sampler-spike.sh
+
+van-sampler-notify-test: ## MacBook: post the low-battery-style notification from a launchd job (what the sampler does)
+	@scripts/van-sampler-spike.sh --notify
+
+# Refuses unless the spike passed for THIS binary: a failed or missing spike means the daemon would be
+# killed or refused on its first scan (docs/van-sampler-tcc.md has the .app fallback). VAN_SAMPLER_FORCE=1 skips the gate.
+van-sampler-setup: van-sampler-build ## MacBook: render + load the 15 min van-sampler LaunchAgent (jobrun, signed van-ble) — only after a passing spike
+	@test -x "$(HOME)/.local/bin/jobrun" || { echo "jobrun missing — run 'make setup' in dotfiles first"; exit 1; }
+	@command -v bun >/dev/null || { echo "bun not on PATH"; exit 1; }
+	@[ "$$VAN_SAMPLER_FORCE" = 1 ] || { tail -1 "$(VANS_RESULT)" 2>/dev/null | grep -q 'VAN-SAMPLER SPIKE: PASS' && [ "$(VANS_RESULT)" -nt "$(VANS_BIN)" ]; } || { echo "No passing spike for the installed binary — run 'make van-sampler-spike' first (VAN_SAMPLER_FORCE=1 to override)"; exit 1; }
+	@mkdir -p "$(HOME)/Library/LaunchAgents" "$(HOME)/Library/Logs"
+	@sed -e 's|__HOME__|$(HOME)|g' -e 's|__REPO__|$(CURDIR)|g' launchd/$(VANS_LABEL).plist.tmpl > "$(VANS_PLIST).new"
+	@plutil -lint "$(VANS_PLIST).new" >/dev/null
+	@mv "$(VANS_PLIST).new" "$(VANS_PLIST)"
+	@launchctl bootout gui/$$(id -u)/$(VANS_LABEL) 2>/dev/null || true
+	@launchctl bootstrap gui/$$(id -u) "$(VANS_PLIST)"
+	@echo "  ✓ $(VANS_LABEL) loaded (every 15 min); log: ~/Library/Logs/van-sampler.log"
+
+van-sampler-teardown: ## Unload the van-sampler LaunchAgent and drop its jobrun record (state + grant kept)
+	@launchctl bootout gui/$$(id -u)/$(VANS_LABEL) 2>/dev/null || true
+	@rm -f "$(VANS_PLIST)" "$(HOME)/.local/state/jobs/$(VANS_LABEL).json"
+	@echo "  ✓ $(VANS_LABEL) torn down (~/.local/state/van-sampler kept)"
+
+van-sampler-status: ## Is the van-sampler loaded, what does jobrun's record say, how old is its state
+	@launchctl print gui/$$(id -u)/$(VANS_LABEL) 2>/dev/null | grep -E 'state =|last exit code|runs =' || echo "  ✗ not loaded"
+	@jobs-grade --table 2>/dev/null | grep van-sampler || echo "  no jobrun record yet"
+	@ls -l "$(HOME)/.local/state/van-sampler/" 2>/dev/null || echo "  no state dir yet"
 
 WATCHDOG_LABEL := com.jkrumm.netgear-watchdog
 WATCHDOG_PLIST := $(HOME)/Library/LaunchAgents/$(WATCHDOG_LABEL).plist

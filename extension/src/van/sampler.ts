@@ -1,5 +1,6 @@
-// Pure logic of the `van-sampler` background command — no `@raycast/api` (the
-// LocalStorage glue is sampler-storage.ts, the run itself sampler-runner.ts).
+// Pure logic of the launchd van sampler (scripts/van-sampler.ts) — no
+// `@raycast/api` (the file glue is sampler-storage.ts, the run itself
+// sampler-runner.ts).
 //
 // Every 15 minutes the sampler takes the same live read an open of Van Power
 // does and persists it the same way, so the charts, the SoC estimate and the

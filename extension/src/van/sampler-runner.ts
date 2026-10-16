@@ -1,4 +1,4 @@
-// One run of the `van-sampler` background command. Paused: nothing happens.
+// One run of the launchd van sampler (scripts/van-sampler.ts). Paused: nothing happens.
 // Otherwise the same live read an open of Van Power does (`readAndPersist` —
 // Ective frame + Victron Instant Readout advert, appended to the 72 h samples
 // and the capture log), then the state is saved and a low-battery alert posted
@@ -43,7 +43,7 @@ async function topUpTrends(opts: {
   ) {
     return state;
   }
-  // Saved before the read: a run Tinycast kills mid-session still counts as an
+  // Saved before the read: a run killed mid-session still counts as an
   // attempt and is not repeated at the next 15-minute tick.
   const attempting = { ...state, lastTrendsAttemptAt: now };
   await saveSamplerState(attempting);

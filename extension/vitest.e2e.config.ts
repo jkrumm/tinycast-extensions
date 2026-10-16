@@ -17,7 +17,7 @@ export default defineConfig({
   test: {
     include: ["src/e2e/**/*.e2e.test.tsx"],
     environment: "node",
-    setupFiles: ["src/e2e/setup.ts"],
+    setupFiles: ["src/e2e/setup.ts", "src/van/test-env.ts"],
     testTimeout: 20_000,
   },
 });

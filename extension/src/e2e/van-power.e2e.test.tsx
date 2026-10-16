@@ -27,6 +27,8 @@ import {
   simulateVan,
 } from "../van/fixtures";
 import { saveVanHistory } from "../van/storage";
+import { PAUSED_FILE, HISTORY_FILE } from "../van/store";
+import { clearVanState, vanStatePath } from "../van/test-env";
 import {
   appendCaptureLog,
   appendTrendsLog,
@@ -81,6 +83,7 @@ describe("van power command", () => {
     readMock.mockReset();
     historyMock.mockReset();
     historyMock.mockResolvedValue(fixtureVictronAll(Date.now()));
+    clearVanState();
     await LocalStorage.clear();
     for (const file of ["van-log.jsonl", "van-trends.jsonl"]) {
       rmSync(join(environment.supportPath, file), { force: true });
@@ -270,11 +273,25 @@ describe("van power command", () => {
   it("appends a sample to the stored history on every open", async () => {
     readMock.mockResolvedValue({ helper: HELPER_FULL, keyMissing: false });
     await open();
-    const stored = JSON.parse(
-      (await LocalStorage.getItem<string>("van-history"))!,
-    );
+    const stored = JSON.parse(readFileSync(vanStatePath(HISTORY_FILE), "utf8"));
     expect(stored).toHaveLength(1);
     expect(stored[0]).toMatchObject({ soc: 98, pvW: 19 });
+  });
+
+  it("the first open moves the old LocalStorage state into the files and keeps a paused sampler paused", async () => {
+    const samples = fixtureSamples(Date.now() - 3_600_000, 3);
+    await LocalStorage.setItem("van-history", JSON.stringify(samples));
+    await LocalStorage.setItem(
+      "van-sampler",
+      JSON.stringify({ paused: true, lastRunAt: 1 }),
+    );
+    readMock.mockResolvedValue({ helper: HELPER_FULL, keyMissing: false });
+    const renderer = await open();
+    const stored = JSON.parse(readFileSync(vanStatePath(HISTORY_FILE), "utf8"));
+    expect(stored).toHaveLength(4); // the migrated ring + this open's reading
+    expect(existsSync(vanStatePath(PAUSED_FILE))).toBe(true);
+    expect(markdownOf(renderer)).toContain("_Background sampling paused_");
+    expect(await LocalStorage.allItems()).toEqual({});
   });
 
   it("anchors the estimate to many stored readings", async () => {
@@ -365,7 +382,7 @@ describe("van power command", () => {
     expect(markdown).toContain("![Yield");
     expect(markdown).not.toContain("![Charge"); // 1 own reading, no solar
 
-    await LocalStorage.clear();
+    clearVanState();
     historyMock.mockResolvedValue({
       ...fixtureVictronAll(Date.now()),
       history: { total: null, days: [], errors: [] },
@@ -391,9 +408,7 @@ describe("van power command", () => {
       markdownOf(renderer).includes("_Background sampling paused_"),
     );
     expect(action("Resume Background Sampling")).toBeDefined();
-    expect(
-      JSON.parse((await LocalStorage.getItem<string>("van-sampler"))!).paused,
-    ).toBe(true);
+    expect(existsSync(vanStatePath(PAUSED_FILE))).toBe(true);
 
     await act(async () => {
       await action("Resume Background Sampling")!.props.onAction();
@@ -402,6 +417,7 @@ describe("van power command", () => {
       markdownOf(renderer).includes("_Background sampling every 15 min_"),
     );
     expect(action("Pause Background Sampling")).toBeDefined();
+    expect(existsSync(vanStatePath(PAUSED_FILE))).toBe(false);
     assertClean(markdownOf(renderer), "van sampler status");
   });
 

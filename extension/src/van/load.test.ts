@@ -1,11 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { LocalStorage, environment } from "@raycast/api";
-import { readFileSync, rmSync } from "fs";
+import { environment } from "@raycast/api";
+import { readFileSync, rmSync, writeFileSync, mkdirSync } from "fs";
 import { join } from "path";
 import { parseVictronReadLog, summariseVictronReads } from "./capture-log";
 import { VictronAllResult, VictronTrends } from "./victron-trends";
 import { fixtureVictronAll } from "./fixtures";
 import { VICTRON_HISTORY_TTL_MS, compactTrends } from "./history";
+import { VICTRON_HISTORY_FILE, vanDir } from "./store";
+import { clearVanState, vanStatePath } from "./test-env";
 
 const runMock =
   vi.fn<
@@ -23,6 +25,11 @@ vi.mock("./run", () => ({
 import { loadVictronCache, loadVictronHistory } from "./load";
 
 const NOW = new Date(2026, 9, 5, 12, 0).getTime();
+
+function seedCacheFile(content: string): void {
+  mkdirSync(vanDir(), { recursive: true });
+  writeFileSync(vanStatePath(VICTRON_HISTORY_FILE), content);
+}
 const MIN = 60_000;
 
 const lastT = (trends: VictronTrends | null, vreg: number) =>
@@ -51,7 +58,7 @@ function incremental(base: VictronAllResult, later: number): VictronAllResult {
 describe("loadVictronHistory", () => {
   beforeEach(async () => {
     runMock.mockReset();
-    await LocalStorage.clear();
+    clearVanState();
     rmSync(join(environment.supportPath, "van-log.jsonl"), { force: true });
   });
 
@@ -62,7 +69,7 @@ describe("loadVictronHistory", () => {
       ),
     );
 
-  it("first open: reads everything, caches it compactly under one key", async () => {
+  it("first open: reads everything, caches it compactly in one file", async () => {
     const all = fixtureVictronAll(NOW);
     runMock.mockResolvedValue(all);
     const first = await loadVictronHistory(NOW);
@@ -73,8 +80,8 @@ describe("loadVictronHistory", () => {
       0xec8a, 0xed8d, 0xed8f,
     ]);
     expect(first.updatedAt).toBe(NOW);
-    const raw = await LocalStorage.getItem<string>("van-victron-history");
-    expect(raw!.length).toBeLessThan(110_000);
+    const raw = readFileSync(vanStatePath(VICTRON_HISTORY_FILE), "utf8");
+    expect(raw.length).toBeLessThan(110_000);
   });
 
   it("paints from the cache at once, without any BLE", async () => {
@@ -141,7 +148,7 @@ describe("loadVictronHistory", () => {
     expect(noTrends.trends).toBeNull();
     expect(noTrends.error).toBeNull();
 
-    await LocalStorage.clear();
+    clearVanState();
     runMock.mockResolvedValueOnce({
       ...all,
       history: { total: null, days: [], errors: ["victron-total-unreadable"] },
@@ -188,12 +195,12 @@ describe("loadVictronHistory", () => {
     runMock.mockResolvedValueOnce(all);
     await loadVictronHistory(NOW);
     const raw = JSON.parse(
-      (await LocalStorage.getItem<string>("van-victron-history"))!,
+      readFileSync(vanStatePath(VICTRON_HISTORY_FILE), "utf8"),
     );
     raw.trends.trends = raw.trends.trends.filter(
       (t: { vreg: number }) => t.vreg !== 0xed8f,
     );
-    await LocalStorage.setItem("van-victron-history", JSON.stringify(raw));
+    seedCacheFile(JSON.stringify(raw));
     runMock.mockResolvedValueOnce(all);
     await loadVictronHistory(NOW + 5 * MIN);
     expect(runMock).toHaveBeenLastCalledWith({
@@ -249,8 +256,7 @@ describe("loadVictronHistory", () => {
   });
 
   it("ignores a legacy or corrupt cache entry and reads everything", async () => {
-    await LocalStorage.setItem(
-      "van-victron-history",
+    seedCacheFile(
       JSON.stringify({
         attemptedAt: NOW - 60_000,
         ok: true,
@@ -265,7 +271,7 @@ describe("loadVictronHistory", () => {
       history: true,
     });
 
-    await LocalStorage.setItem("van-victron-history", "{not json");
+    seedCacheFile("{not json");
     await loadVictronHistory(NOW + 1);
     expect(runMock).toHaveBeenLastCalledWith({
       sinceMs: undefined,

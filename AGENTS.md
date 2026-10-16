@@ -34,7 +34,6 @@ extension/
     battery.tsx            command — MacBook charge/health + charge-limit control
     speed-test.tsx          command — networkQuality speed/latency/data-used + history
     van-power.tsx           command — Van Power: Ective battery + Victron solar over BLE, 72 h charts
-    van-sampler.tsx         command — no-view background: a live read every 15 min + low-battery alert
     shortcuts.tsx           command — List of every global hotkey, launcher alias and favorite (Enter launches it), read live from Tinycast's defaults
     hub.tsx                 command — Grid dashboard, one tile per command
     ticktick/             feature code: client, types, format, parse, search, create-task
@@ -66,14 +65,14 @@ extension/
     van/                  feature code: run (spawns the BLE helper, the only impure bit), load
                            (read → sample → history), parse (pure: Ective frame, Victron readout),
                            history (pure 72 h ring, ETA, history throttle), sun (pure NOAA sunrise/sunset,
-                           location parsing), format (pure, incl. battery warnings), storage (LocalStorage
+                           location parsing), format (pure, incl. battery warnings), storage (file store
                            `van-history`), victron-history (pure: the Victron's on-device 30-day
                            history registers → days/total; `runVictronHistory()` is in run.ts),
                            victron-trends (pure: stored-trend replies → 72 h series;
                            `runVictronTrends()` is in run.ts), consumption (pure: Ah consumed /
                            charged per local day + quality), sampler (pure: pause state, result
                            classification, low-battery alert state machine, subtitle/status words),
-                           sampler-runner (one run), sampler-storage (LocalStorage `van-sampler`),
+                           sampler-runner (one run), sampler-storage (file-backed `sampler.json` + `paused` flag, via `store.ts`),
                            notify (osascript notification), types, fixtures
     lib/                  shared: argo.ts (fetch client), secrets.ts (Keychain/1Password chain),
                            action-log.ts (persistent log file), svg.ts + chart/ (hero/chart library, see svg-charts skill), preferences.ts (Preferences type),
@@ -135,7 +134,7 @@ run `make status` — it prints that same deployed-vs-built check alongside
 background command metadata and the netgear-watchdog log (see § Debugging in
 the tinycast skill). There is no hot reload or dev mode.
 
-`make van-sampler-check` judges the latest `van-sampler` background run (metadata + LocalStorage state + the `background` lines in `van-log.jsonl`); `ARGS="--wait 2"` blocks for the next two runs and exits non-zero on a failure or an overdue run.
+`make van-sampler-check` judges the latest `van-sampler` run (the store's `sampler.json` + `paused` flag + the `background` lines in `van-log.jsonl`); `ARGS="--wait 2"` blocks for the next two runs and exits non-zero on a failure or an overdue run.
 
 `make tinycast-version` prints the installed Tinycast Beta vs the latest upstream release and the runtime commits since the skill was last verified (recipe: tinycast skill § Checking upstream).
 
@@ -507,10 +506,16 @@ The
   `extension/helpers/van-ble/main.swift` (Foundation + CoreBluetooth +
   CommonCrypto, built by `make helper` into the gitignored
   `extension/assets/van-ble`) and spawned by `van/run.ts` via
-  `child_process.spawn(path.join(environment.assetsPath, "van-ble"))`. **Tinycast
-  Beta is the TCC-responsible process** — it carries
-  `NSBluetoothAlwaysUsageDescription` and the user's Bluetooth grant — so the
-  helper is a bare binary: no `.app` bundle, no LaunchAgent. It is transport +
+  `child_process.spawn(path.join(environment.assetsPath, "van-ble"))`. **In the
+  Van Power view, Tinycast Beta is the TCC-responsible process** — it carries
+  `NSBluetoothAlwaysUsageDescription` and the user's Bluetooth grant — so that
+  helper is a bare binary. The **launchd sampler** (below) runs a *separately
+  signed* copy with the usage description embedded (`helpers/van-ble/Info.plist`,
+  `-sectcreate __TEXT __info_plist`) as the launchd *program*, so the grant is
+  attributed to it and Tinycast need not run — **unproven until
+  `make van-sampler-spike` passes on the MacBook**; research, spike and the
+  `.app` fallback: `docs/van-sampler-tcc.md`. `--supervise -- <cmd>` (spawn as a
+  child, never `exec`) and `--tcc-probe` exist only for that. It is transport +
   AES decrypt only; all field parsing is pure TS in `van/parse.ts`. Contract:
   optional Victron key (32 hex chars) on **stdin** (never argv), scans ≤10 s,
   exits as soon as it has both, prints ONE JSON line
@@ -532,13 +537,26 @@ The
     little-endian counter block from the IV, key-check byte = key[0]. Needs the
     per-device Instant Readout key (`victronKey`).
   - **Readings** come from opening Van Power and from the pausable background
-    sampler (below); each appends one sample to `LocalStorage` `van-history`
+    sampler (below); each appends one sample to the file store's `van-history.json`
     (72 h, samples closer than 2 min dedupe) through the one shared
     `readAndPersist(source)` in `van/load.ts`. Charts (SoC; solar W vs battery
     A) draw only with ≥6 samples in the window, otherwise they are omitted
     silently. The hub tile shows the last stored sample and never runs BLE.
-  - **Background sampler** (`van-sampler`, `no-view`, `interval: "15m"`, the
-    van-power icon; `van-sampler.tsx` → `van/sampler-runner.ts`): each run is
+  - **Background sampler** (launchd `com.jkrumm.van-sampler`, 15 min, wrapped
+    in `jobrun`; `extension/scripts/van-sampler.ts` → `van/sampler-runner.ts`;
+    `launchd/com.jkrumm.van-sampler.plist.tmpl`; program = signed `van-ble
+    --supervise`, built by `make van-sampler-build`; **gated**: `make
+    van-sampler-setup` refuses until `make van-sampler-spike` has passed for the
+    installed binary). It moved out of Tinycast (where it ran only with no view
+    open and died with the app) and deleted: the `van-sampler` command, its
+    manifest entry and the LocalStorage state. State is files in
+    `~/.local/state/van-sampler/` (`VAN_SAMPLER_DIR`) shared with the view
+    (`van/store.ts`, atomic tmp+rename): `sampler.json` (daemon), `paused`
+    (view's flag), `van-history.json` (72 h ring, both append),
+    `victron-history.json` (cache, both); the view migrates the old LocalStorage
+    keys once on open (`van/legacy.ts`). The capture/trend logs stay in
+    Tinycast's support dir (`VAN_SUPPORT_DIR`). The helper path is
+    `VAN_BLE_BIN` (set by the plist). Each run is
     the same **live read only** as an open (Ective frame + Victron Instant
     Readout advert via `readVan`; the live read itself never opens the connected
     Victron GATT session — the trends top-up below is a separate step after it),
@@ -551,11 +569,11 @@ The
     answer. Nothing found is an outcome, not an error: no sample, no log line,
     launcher subtitle "Van not in range" / "Phone app holds the battery"
     (BMS `battery-connect-failed`) / "Bluetooth off" / "83 % · 12:40" /
-    "Paused" (`updateCommandMetadata`; a failed read is "Read failed", the run
-    still succeeds so Tinycast's failure backoff never parks it). **Pause /
-    Resume**: LocalStorage `van-sampler` `{ paused, lastRunAt, lastResult,
-    lastAlert }` (default active; `van/sampler.ts` pure, `sampler-storage.ts`
-    glue); Van Power's **Pause / Resume Background Sampling** action flips it and
+    "Paused" (printed on stdout and kept in `sampler.json`; a failed read is
+    "Read failed", the run still exits 0 — only a crash is red to `jobrun`).
+    **Pause / Resume**: the `paused` flag file plus `sampler.json` `{ lastRunAt,
+    lastResult, lastAlert }` (default active; `van/sampler.ts` pure,
+    `sampler-storage.ts` glue); Van Power's **Pause / Resume Background Sampling** action flips it and
     one quiet line says "Background sampling every 15 min · last 12:40" or
     "paused" — a paused run returns at once, so pausing for a month costs
     nothing. **Low-battery alert**: a reading at or below 30 % or 15 % posts one
@@ -574,19 +592,19 @@ The
     `victronHistoryDue`; merge, cache, `van-trends.jsonl` and the `victronRead`
     start/done/failed lines all come with it; ~9–25 s, no new BLE write, the
     helper allowlist untouched). Sampler state adds `lastTrendsAttemptAt` (saved
-    *before* the read, so a run Tinycast kills mid-session still counts: one
+    *before* the read, so a run killed mid-session still counts: one
     attempt per 3 h, a failure included), `lastTrends { at, outcome: ok | failed
     | pairing, detail }` and `trendsBackoffUntil` (a `victron-pairing-timeout` /
     `-failed` backs off 24 h so the macOS pairing dialog never appears
     unattended). `make van-sampler-check` prints `lastTrends`. The first
     notification may need
     allowing under System Settings → Notifications → Script Editor. Constraints:
-    one JS runtime — no background run while any view is open (the Van Power
-    open samples itself); the run is killed after `min(max(interval, 15), 120)`
-    s = 120 s, the helper's own 15 s deadline fits. **Enable once**: Tinycast
-    Settings → Extensions → Van Sampler → Background refresh (off until then, as
-    for the Netgear watchdog); `make deploy` restarts Tinycast when the manifest
-    changed so the command appears. The charge chart draws a dot per reading
+    `jobrun --timeout 420` bounds a run (the helper's own 15 s read deadline
+    fits; the top-up's guard is 200 s); a view open and the daemon may scan at
+    the same time (two writers on the store, last rename wins; the connected
+    Victron session is exclusive, so a clash costs one top-up). **Install** (the
+    MacBook, logged in): `make van-sampler-spike`, then `make van-sampler-setup`;
+    `make van-sampler-status` / `van-sampler-teardown`. The charge chart draws a dot per reading
     only up to 30 readings, then one per 2 h plus the latest.
   - **Victron on-device history** (`van-ble --victron-history`, no stdin/key;
     TS API `runVictronHistory()` in `van/run.ts` → `van/victron-history.ts`,
@@ -669,7 +687,7 @@ The
     the last 72 h (live: 404 samples, 92 × 1800 s + 312 × 300 s, one 5-minute
     hole at the 3→2 seam). Live-verified 2026-10-05.
   - **How Van Power uses it** (`van-power.tsx`, `van/load.ts`): the cache is
-    painted **first**. `loadVictronCache()` reads LocalStorage (`van-victron-history`,
+    painted **first**. `loadVictronCache()` reads the file store (`victron-history.json`,
     one key: `{attemptedAt, ok, updatedAt, historyAt, history, trends}`) on the
     first frame — charts and bars appear at once, with one quiet line
     ("Victron data updated 12 min ago · reading Victron…") — and a second

@@ -1,7 +1,9 @@
 // The only impure part of the Van Power feature: resolve the Victron key and
-// spawn the van-ble helper. Tinycast Beta is the TCC-responsible process for
+// spawn the van-ble helper. In Tinycast Beta, the TCC-responsible process for
 // Bluetooth (it carries NSBluetoothAlwaysUsageDescription and the user's
-// grant), so the helper is a bare binary shipped in assets/ — no .app bundle.
+// grant), the helper is a bare binary shipped in assets/ — no .app bundle. The
+// launchd sampler runs a separately signed copy of the same binary, injected
+// through VAN_BLE_BIN.
 //
 // `spawn`, not `execFile`: the key goes in via stdin (never argv), and
 // Tinycast's child_process shim exposes `stdin` only on a spawned child
@@ -9,14 +11,13 @@
 
 import { spawn } from "child_process";
 import { join } from "path";
-import { environment, getPreferenceValues } from "@raycast/api";
-import { Preferences } from "../lib/preferences";
 import {
   KeychainOnlyRunner,
   SecretUnavailableError,
   getSecret,
 } from "../lib/secrets";
 import { parseHelperOutput } from "./parse";
+import { vanRuntime } from "./runtime";
 import { HelperResult } from "./types";
 import { VictronHistory, parseHistoryOutput } from "./victron-history";
 import {
@@ -26,13 +27,18 @@ import {
   parseTrendsOutput,
 } from "./victron-trends";
 
+// VAN_BLE_BIN (absolute path) wins over the copy bundled in the extension.
+export function helperPath(): string {
+  return process.env?.VAN_BLE_BIN || join(vanRuntime().assetsDir, "van-ble");
+}
+
 // A missing key must never break the battery read — the view says so instead.
 // `unattended` (the background sampler): Keychain only, never a 1Password prompt.
 async function resolveVictronKey(unattended: boolean): Promise<string | null> {
   try {
     return await getSecret(
       "victronKey",
-      getPreferenceValues<Preferences>(),
+      vanRuntime().preferences,
       unattended ? new KeychainOnlyRunner() : undefined,
     );
   } catch (e) {
@@ -56,7 +62,7 @@ function spawnHelper<T>({
   killAfterMs?: number;
 }): Promise<T> {
   return new Promise((resolve, reject) => {
-    const child = spawn(join(environment.assetsPath, "van-ble"), args);
+    const child = spawn(helperPath(), args);
     let stdout = "";
     let stderr = "";
     let settled = false;

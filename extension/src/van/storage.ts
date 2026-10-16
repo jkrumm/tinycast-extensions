@@ -1,13 +1,15 @@
-// LocalStorage glue for the Van Power history — imports `@raycast/api`, so
-// (like netgear/watchdog-storage.ts) this is glue, not pure logic; the ring
-// behaviour lives in history.ts.
+// File-backed Van Power history (store.ts): the 72 h sample ring and the
+// Victron cache, shared by the view and the launchd sampler. Pure fs, no
+// `@raycast/api`; the ring behaviour lives in history.ts.
 
-import { LocalStorage } from "@raycast/api";
 import { VictronHistoryCache } from "./history";
+import {
+  HISTORY_FILE,
+  VICTRON_HISTORY_FILE,
+  readStoreJson,
+  writeStoreJson,
+} from "./store";
 import { Sample } from "./types";
-
-export const VAN_HISTORY_KEY = "van-history";
-export const VICTRON_HISTORY_KEY = "van-victron-history";
 
 function isSample(value: unknown): value is Sample {
   return (
@@ -17,19 +19,16 @@ function isSample(value: unknown): value is Sample {
   );
 }
 
+export function parseVanHistory(value: unknown): Sample[] {
+  return Array.isArray(value) ? value.filter(isSample) : [];
+}
+
 export async function loadVanHistory(): Promise<Sample[]> {
-  const raw = await LocalStorage.getItem<string>(VAN_HISTORY_KEY);
-  if (!raw) return [];
-  try {
-    const parsed: unknown = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed.filter(isSample) : [];
-  } catch {
-    return [];
-  }
+  return parseVanHistory(readStoreJson(HISTORY_FILE));
 }
 
 export async function saveVanHistory(history: Sample[]): Promise<void> {
-  await LocalStorage.setItem(VAN_HISTORY_KEY, JSON.stringify(history));
+  writeStoreJson(HISTORY_FILE, history);
 }
 
 function isHistoryCache(value: unknown): value is VictronHistoryCache {
@@ -46,19 +45,18 @@ function isHistoryCache(value: unknown): value is VictronHistoryCache {
   );
 }
 
+export function parseVictronHistoryCache(
+  value: unknown,
+): VictronHistoryCache | null {
+  return isHistoryCache(value) ? value : null;
+}
+
 export async function loadVictronHistoryCache(): Promise<VictronHistoryCache | null> {
-  const raw = await LocalStorage.getItem<string>(VICTRON_HISTORY_KEY);
-  if (!raw) return null;
-  try {
-    const parsed: unknown = JSON.parse(raw);
-    return isHistoryCache(parsed) ? parsed : null;
-  } catch {
-    return null;
-  }
+  return parseVictronHistoryCache(readStoreJson(VICTRON_HISTORY_FILE));
 }
 
 export async function saveVictronHistoryCache(
   cache: VictronHistoryCache,
 ): Promise<void> {
-  await LocalStorage.setItem(VICTRON_HISTORY_KEY, JSON.stringify(cache));
+  writeStoreJson(VICTRON_HISTORY_FILE, cache);
 }
