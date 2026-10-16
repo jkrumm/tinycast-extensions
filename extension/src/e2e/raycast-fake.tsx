@@ -377,6 +377,11 @@ export async function showHUD(title: string): Promise<void> {
 }
 export const __hudMessages: string[] = [];
 
+export async function closeMainWindow(): Promise<void> {
+  __closedMainWindow.count += 1;
+}
+export const __closedMainWindow = { count: 0 };
+
 export async function popToRoot(): Promise<void> {
   __poppedToRoot.count += 1;
 }

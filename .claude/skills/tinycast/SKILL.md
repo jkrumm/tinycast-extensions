@@ -245,6 +245,16 @@ ExtensionMenuBarImage}.swift`, `Features/Extensions/Model/ExtensionImageSize.swi
 - **`Icon.*` maps to SF Symbols** — a bare SF Symbol string (`"gauge"`) does
   not work as an icon value, only the `Icon` enum. A per-command `icon` in
   `package.json` must be an asset file under `assets/`.
+- **`{ fileIcon: "/Applications/Foo.app" }` is supported** (verified against Tinycast
+  `main` `8d0d6b6`, 2026-10-16: `ExtensionImage.swift` `Source.fileIcon`, resolved
+  from a `{fileIcon}` object, `~` expanded, drawn via `IconCache.loadFittedAsync(forFile:)`
+  → the bundle's real icon). `shortcuts.tsx` uses it with the `.app` path from its
+  Info.plist scan. A string icon that is a plain file name resolves against
+  `assets/`. **`launchCommand({ name, type })` is supported** (`ExtensionHostBridge.swift`
+  `system.launchCommand` → `ExtensionManager.launch`): same extension unless
+  `extensionName` is given, `type: LaunchType.Background` only for non-view
+  commands. List `keywords` are searched next to title/subtitle
+  (`ExtensionScreen.matches`); accessories are not.
 - **`MenuBarExtra` renders natively** on beta (`NSStatusItem`, confirmed via
   `ExtensionMenuBarImage.swift`) — an `icon` fits into an 18×18pt glyph
   (`.aspectRatio(.fit)`, rendered at 2x for Retina internally, so any SVG

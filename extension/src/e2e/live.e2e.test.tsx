@@ -17,7 +17,7 @@ import { describe, it, expect, vi, beforeAll } from "vitest";
 import { mkdirSync, writeFileSync } from "fs";
 import { join } from "path";
 import React from "react";
-import { Detail, Grid } from "@raycast/api";
+import { Detail, Grid, List } from "@raycast/api";
 import { renderCommand, waitFor, assertNoBadSubstrings } from "./render";
 
 const LIVE = process.env.E2E_LIVE === "1";
@@ -112,13 +112,21 @@ describe.skipIf(!LIVE)("live e2e (E2E_LIVE=1, read-only, real sources)", () => {
     const Shortcuts = (await import("../shortcuts")).default;
     const renderer = await renderCommand(<Shortcuts />);
     await waitFor(
-      () => renderer.root.findByType(Detail).props.isLoading === false,
+      () => renderer.root.findByType(List).props.isLoading === false,
       { timeoutMs: 15_000 },
     );
-    const markdown = renderer.root.findByType(Detail).props.markdown as string;
-    writeOutput("shortcuts", markdown);
-    assertNoBadSubstrings(markdown, "live shortcuts");
-    expect(markdown).toContain("Free Hyper letters:");
+    const rows = renderer.root
+      .findAllByType(List.Item)
+      .map(
+        (item) =>
+          `${item.props.title}\t${(item.props.accessories as { tag: string }[])[0]?.tag ?? ""}`,
+      )
+      .join("\n");
+    writeOutput("shortcuts", rows);
+    assertNoBadSubstrings(rows, "live shortcuts");
+    expect(
+      renderer.root.findAllByType(List.Section)[0].props.subtitle,
+    ).toContain("free:");
   }, 30_000);
 
   it("claude-usage: real quota fetcher + real argo spend", async () => {

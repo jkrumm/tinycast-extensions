@@ -36,7 +36,7 @@ extension/
     speed-test.tsx          command — networkQuality speed/latency/data-used + history
     van-power.tsx           command — Van Power: Ective battery + Victron solar over BLE, 72 h charts
     van-sampler.tsx         command — no-view background: a live read every 15 min + low-battery alert
-    shortcuts.tsx           command — every global hotkey, launcher alias and favorite, read live from Tinycast's defaults
+    shortcuts.tsx           command — List of every global hotkey, launcher alias and favorite (Enter launches it), read live from Tinycast's defaults
     hub.tsx                 command — Grid dashboard, one tile per command
     ticktick/             feature code: client, types, format, parse, search, create-task
     usage/                feature code: quota (fs read), spend (argo), aggregate (pure), format
@@ -59,9 +59,10 @@ extension/
                            flows/watchdog test fakes)
     battery/               feature code: collect (batt + ioreg), parse (pure), types
     speed-test/             feature code: run (networkQuality), parse (pure), types, fixtures
-    shortcuts/              feature code: load (defaults export + app scan + manifest, the impure bit),
-                           parse (pure: plist XML → hotkeys/aliases/favorites, binding JSON),
-                           format (pure: ⇪ glyphs, key labels, free Hyper letters, markdown), fixtures
+    shortcuts/              feature code: load (defaults export + app scan + manifest + keyboard layout +
+                           launch, the impure bit), parse (pure: plist XML → hotkeys/aliases/favorites/
+                           Hyper Key settings, binding JSON), format (pure: Hyper chord, key labels per
+                           layout, free Hyper letters, `shortcutSections` for the List, markdown), fixtures
     van/                  feature code: run (spawns the BLE helper, the only impure bit), load
                            (read → sample → history), parse (pure: Ective frame, Victron readout),
                            history (pure 72 h ring, ETA, history throttle), sun (pure NOAA sunrise/sunset,
@@ -499,16 +500,27 @@ run make secrets" while still reading the battery.
 
 - **Shortcuts** — `/usr/bin/defaults export com.tinycast.app.beta -` (an XML plist;
   `plutil -convert json` fails on its `<data>`/`<date>` values, so `shortcuts/parse.ts`
-  extracts only `hotkey.<action>` strings, `launcherAliases` and `favoriteApps`) →
-  read-only, nothing is written back. Bindings are JSON strings
-  (`{"combo":{"_0":{"carbonModifiers":6656,"carbonKeyCode":17}}}`); exactly ⌃⌥⇧
-  (6656) renders as Hyper `⇪` (Karabiner maps only Caps Lock → ⌃⌥⇧), other kinds
-  (`doubleTap`, `globe`, …) by their kind name. App names come from
+  extracts only `hotkey.<action>` strings, `launcherAliases`, `favoriteApps` and the
+  top-level `hyperKeyPhysicalKey`/`hyperKeyIncludesShift`) → read-only, nothing is
+  written back. The command is a `List` (searchable by name and key; sections
+  Hyper — Apps / Hyper — Commands / Tinycast / Aliases / Favorites, built by the pure
+  `shortcutSections`, the component is thin): icon = `{ fileIcon: <.app path> }` for apps,
+  the command's own `package.json` `icon` asset for this extension's commands, accessory
+  = one tag (`Hyper Y`). Enter launches (`open -b <bundle id>` for apps, `launchCommand`
+  for own commands, `load.ts` `launchTarget`); Copy as Markdown and Refresh follow.
+  Bindings are JSON strings (`{"combo":{"_0":{"carbonModifiers":6656,"carbonKeyCode":17}}}`);
+  **Hyper** is Tinycast's own Hyper Key chord ⌃⌥⌘ (6400, ⌃⌥⇧⌘ with
+  `hyperKeyIncludesShift`) when `hyperKeyPhysicalKey` is set and not `none`, else
+  Karabiner's ⌃⌥⇧ (6656). A binding with exactly that chord renders `Hyper <Key>`, a
+  superset `Hyper ⇧<Key>`; other kinds (`doubleTap`, `globe`, …) by their kind name. Key codes
+  are physical US positions; `load.ts` reads `defaults read com.apple.HIToolbox
+  AppleCurrentKeyboardLayoutInputSourceID` and `format.ts` swaps Y/Z for German/Swiss/Austrian
+  layouts (keycode 6 prints Y, 16 prints Z). App names and paths come from
   one `/bin/sh` scan of every `.app`'s `CFBundleIdentifier` in `/Applications`,
   `/System/Applications` and `~/Applications` (incl. Chrome PWAs) — not `mdfind`,
-  Spotlight is off on this Mac; unknown ids show as the id. Command titles come
-  from the installed `package.json` next to `assets/`. The hub tile shows the
-  hotkey count only (no app scan).
+  Spotlight is off on this Mac; unknown ids show as the id with the `Icon.AppWindow`
+  fallback. Command titles/icons come from the installed `package.json` next to
+  `assets/`. The hub tile shows the hotkey count only (no app scan).
   The fixture holds only hotkey/alias/favorite keys — the real domain also has AI
   connection and MCP server settings that must never enter this public repo.
 

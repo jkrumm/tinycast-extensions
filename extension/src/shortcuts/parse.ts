@@ -12,6 +12,10 @@ export interface TinycastSettings {
   aliases: Record<string, string>;
   // Launcher favorites in order: app bundle ids or `extension:<ext>/<cmd>`.
   favorites: string[];
+  // Tinycast's own Hyper Key: the physical key it remaps (`capsLock`, …), null
+  // when unset or "none" — then Hyper is Karabiner's ⌃⌥⇧ — and whether it adds ⇧.
+  hyperKeyPhysicalKey: string | null;
+  hyperKeyIncludesShift: boolean;
 }
 
 export type Binding =
@@ -149,8 +153,20 @@ export function parseTinycastSettings(xml: string): TinycastSettings {
     hotkeys: {},
     aliases: {},
     favorites: [],
+    hyperKeyPhysicalKey: null,
+    hyperKeyIncludesShift: false,
   };
   if (!isDict(root)) return settings;
+
+  const physicalKey = root.hyperKeyPhysicalKey;
+  if (
+    typeof physicalKey === "string" &&
+    physicalKey &&
+    physicalKey !== "none"
+  ) {
+    settings.hyperKeyPhysicalKey = physicalKey;
+  }
+  settings.hyperKeyIncludesShift = root.hyperKeyIncludesShift === true;
 
   for (const [key, value] of Object.entries(root)) {
     if (key.startsWith(HOTKEY_PREFIX) && typeof value === "string") {
@@ -198,35 +214,49 @@ export function parseBinding(raw: string): Binding {
   return { kind: "combo", modifiers, keyCode };
 }
 
-// This extension's command name → title, from the installed manifest.
-export function parseCommandTitles(
+export interface CommandInfo {
+  title: string;
+  icon?: string; // asset file name from the manifest, e.g. `tasks.png`
+}
+
+// This extension's command name → title and icon, from the installed manifest.
+export function parseCommands(
   manifestJson: string,
-): Record<string, string> {
-  const titles: Record<string, string> = {};
+): Record<string, CommandInfo> {
+  const commands: Record<string, CommandInfo> = {};
   try {
     const manifest = JSON.parse(manifestJson) as {
-      commands?: { name?: unknown; title?: unknown }[];
+      commands?: { name?: unknown; title?: unknown; icon?: unknown }[];
     };
     for (const command of manifest.commands ?? []) {
       if (
         typeof command.name === "string" &&
         typeof command.title === "string"
       ) {
-        titles[command.name] = command.title;
+        commands[command.name] = {
+          title: command.title,
+          ...(typeof command.icon === "string" ? { icon: command.icon } : {}),
+        };
       }
     }
   } catch {
     // an unreadable manifest just means the names are shown raw
   }
-  return titles;
+  return commands;
 }
 
-// `<bundle id>\t<app name>` lines; the first app found for an id wins.
-export function parseAppIndex(stdout: string): Record<string, string> {
-  const names: Record<string, string> = {};
+export interface AppInfo {
+  name: string;
+  path?: string; // the .app bundle, for `{ fileIcon }`
+}
+
+// `<bundle id>\t<app name>\t<.app path>` lines; the first app found for an id wins.
+export function parseAppIndex(stdout: string): Record<string, AppInfo> {
+  const apps: Record<string, AppInfo> = {};
   for (const line of stdout.split("\n")) {
-    const [id, name] = line.split("\t");
-    if (id && name && !(id in names)) names[id] = name;
+    const [id, name, path] = line.split("\t");
+    if (id && name && !(id in apps))
+      apps[id] = path ? { name, path } : { name };
   }
-  return names;
+  return apps;
 }
