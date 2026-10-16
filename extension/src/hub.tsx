@@ -144,7 +144,7 @@ async function batteryStatus(): Promise<TileData> {
 // Last stored sample only — a BLE read takes seconds and belongs to the
 // Van Power command, never to a dashboard glance.
 async function vanStatus(): Promise<TileData> {
-  const history = await loadVanHistory();
+  const history = await loadVanHistory().catch(() => []);
   return {
     status: tileStatus(history[history.length - 1]),
     trend: history.flatMap((s) => (s.soc === null ? [] : [s.soc])),

@@ -266,7 +266,8 @@ export default function VanPower() {
     { keepPreviousData: true, execute: migrated, onError: () => {} },
   );
   const sampler = useCachedPromise(
-    (ready: boolean) => whenMigrated(ready, loadSamplerState),
+    (ready: boolean) =>
+      whenMigrated(ready, () => loadSamplerState().catch(() => undefined)),
     [migrated],
     {
       keepPreviousData: true,

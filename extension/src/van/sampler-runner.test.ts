@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { environment } from "@raycast/api";
-import { existsSync, readFileSync, rmSync } from "fs";
+import { mkdirSync, statSync, existsSync, readFileSync, rmSync } from "fs";
 import { join } from "path";
 import {
   HELPER_BATTERY_BUSY,
@@ -167,6 +167,13 @@ describe("runSamplerOnce: a run against the file store", () => {
     readMock.mockRejectedValue(new Error("van-ble exited 1"));
     expect(await runSamplerOnce(NOW)).toBe("Read failed");
     expect(await loadVanHistory()).toEqual([]);
+  });
+
+  it("an unreadable ring fails the read instead of being overwritten", async () => {
+    mkdirSync(vanStatePath(HISTORY_FILE), { recursive: true });
+    readMock.mockResolvedValue({ helper: HELPER_FULL, keyMissing: false });
+    expect(await runSamplerOnce(NOW)).toBe("Read failed");
+    expect(statSync(vanStatePath(HISTORY_FILE)).isDirectory()).toBe(true);
   });
 
   it("the pause flag returns at once without a read; resuming runs again", async () => {

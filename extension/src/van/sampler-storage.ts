@@ -26,7 +26,9 @@ export async function loadSamplerState(): Promise<SamplerState> {
 
 // `paused` is the flag's, never persisted here.
 export async function saveSamplerState(state: SamplerState): Promise<void> {
-  writeStoreJson(SAMPLER_FILE, { ...state, paused: undefined });
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const { paused: _paused, ...persisted } = state;
+  writeStoreJson(SAMPLER_FILE, persisted);
 }
 
 export async function setSamplerPaused(paused: boolean): Promise<SamplerState> {

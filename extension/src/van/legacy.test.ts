@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import { LocalStorage } from "@raycast/api";
+import { LocalStorage, environment } from "@raycast/api";
+import { mkdirSync, readFileSync } from "fs";
 import { fixtureSamples, fixtureVictronAll } from "./fixtures";
 import {
   LEGACY_HISTORY_KEY,
@@ -16,7 +17,8 @@ import {
   saveVictronHistoryCache,
 } from "./storage";
 import { HISTORY_FILE, PAUSED_FILE, hasStoreFile } from "./store";
-import { clearVanState } from "./test-env";
+import { clearVanState, vanStatePath } from "./test-env";
+import { join } from "path";
 
 const NOW = new Date(2026, 9, 9, 12, 40).getTime();
 const cache = (updatedAt: number) => ({
@@ -53,6 +55,27 @@ describe("migrateLegacyVanStorage", () => {
     await migrateLegacyVanStorage();
     expect(hasStoreFile(PAUSED_FILE)).toBe(true);
     expect((await loadSamplerState()).paused).toBe(true);
+  });
+
+  it("a legacy pause survives an existing sampler.json (the daemon ran first)", async () => {
+    await saveSamplerState({ ...INITIAL_SAMPLER_STATE, lastRunAt: 1 });
+    await put(LEGACY_SAMPLER_KEY, { ...INITIAL_SAMPLER_STATE, paused: true });
+    await migrateLegacyVanStorage();
+    expect(hasStoreFile(PAUSED_FILE)).toBe(true);
+    expect((await loadSamplerState()).lastRunAt).toBe(1);
+    expect(await LocalStorage.allItems()).toEqual({});
+  });
+
+  it("a failed move keeps the key for the next open and leaves a line in the store log", async () => {
+    mkdirSync(vanStatePath(HISTORY_FILE), { recursive: true }); // unreadable ring
+    await put(LEGACY_HISTORY_KEY, fixtureSamples(NOW, 3));
+    await migrateLegacyVanStorage();
+    expect(Object.keys(await LocalStorage.allItems())).toEqual([
+      LEGACY_HISTORY_KEY,
+    ]);
+    expect(
+      readFileSync(join(environment.supportPath, "van-store.log"), "utf8"),
+    ).toMatch(new RegExp(`migrate\\s+failed\\s+${LEGACY_HISTORY_KEY}:`));
   });
 
   it("existing files win; the old ring is merged under the sampler's newer samples", async () => {

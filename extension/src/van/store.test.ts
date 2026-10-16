@@ -1,5 +1,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { mkdirSync, readFileSync, readdirSync, writeFileSync } from "fs";
+import { join } from "path";
+import { environment } from "@raycast/api";
 import { fixtureSamples, fixtureVictronAll } from "./fixtures";
 import { INITIAL_SAMPLER_STATE } from "./sampler";
 import {
@@ -44,10 +46,28 @@ describe("van file store", () => {
     expect(readdirSync(vanDir())).toEqual(["x.json"]);
   });
 
-  it("a missing or corrupt file reads as null", () => {
+  it("a missing file reads as null", () => {
     expect(readStoreJson("nope.json")).toBeNull();
+  });
+
+  it("a file that does not parse is moved aside, logged, and reads as null", () => {
     corrupt("bad.json");
     expect(readStoreJson("bad.json")).toBeNull();
+    const files = readdirSync(vanDir());
+    expect(files).toHaveLength(1);
+    expect(files[0]).toMatch(/^bad\.json\.corrupt-\d+$/);
+    expect(readFileSync(join(vanDir(), files[0]), "utf8")).toBe("{not json");
+    expect(
+      readFileSync(join(environment.supportPath, "van-store.log"), "utf8"),
+    ).toContain("bad.json did not parse");
+  });
+
+  it("any other IO error throws and leaves the file alone, so a read-modify-write never overwrites what it could not read", async () => {
+    mkdirSync(vanStatePath(HISTORY_FILE), { recursive: true }); // EISDIR on read
+    expect(() => readStoreJson(HISTORY_FILE)).toThrow();
+    await expect(loadVanHistory()).rejects.toThrow();
+    await expect(loadSamplerState()).resolves.toBeDefined(); // a different file
+    expect(readdirSync(vanDir())).toEqual([HISTORY_FILE]);
   });
 
   it("the history ring round-trips; a corrupt or wrong-shaped file is empty, bad entries dropped", async () => {
@@ -89,6 +109,9 @@ describe("sampler state file and pause flag", () => {
     expect(await loadSamplerState()).toEqual(INITIAL_SAMPLER_STATE);
     corrupt(SAMPLER_FILE);
     expect(await loadSamplerState()).toEqual(INITIAL_SAMPLER_STATE);
+    expect(readdirSync(vanDir())).toEqual([
+      expect.stringMatching(/^sampler\.json\.corrupt-/),
+    ]);
   });
 
   it("the daemon's state never carries `paused`; the flag file is the only source", async () => {

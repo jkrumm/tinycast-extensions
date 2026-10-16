@@ -28,8 +28,16 @@ import {
 } from "./victron-trends";
 
 // VAN_BLE_BIN (absolute path) wins over the copy bundled in the extension.
+// Never a bare `van-ble` resolved on PATH: with no override and no assets dir
+// (the launchd entry) that would run whatever happens to be installed.
 export function helperPath(): string {
-  return process.env?.VAN_BLE_BIN || join(vanRuntime().assetsDir, "van-ble");
+  const override = process.env?.VAN_BLE_BIN;
+  if (override) return override;
+  const { assetsDir } = vanRuntime();
+  if (!assetsDir) {
+    throw new Error("VAN_BLE_BIN is not set and there is no bundled van-ble");
+  }
+  return join(assetsDir, "van-ble");
 }
 
 // A missing key must never break the battery read — the view says so instead.

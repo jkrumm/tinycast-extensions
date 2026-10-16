@@ -18,8 +18,10 @@ import {
 } from "fs";
 import { homedir } from "os";
 import { join } from "path";
+import { appendLogLine } from "../lib/action-log";
+import { vanRuntime } from "./runtime";
 
-export const DEFAULT_VAN_DIR = join(homedir(), ".local/state/van-sampler");
+const DEFAULT_VAN_DIR = join(homedir(), ".local/state/van-sampler");
 
 export const SAMPLER_FILE = "sampler.json";
 export const HISTORY_FILE = "van-history.json";
@@ -31,12 +33,51 @@ export function vanDir(): string {
   return process.env?.VAN_SAMPLER_DIR || DEFAULT_VAN_DIR;
 }
 
-// null for a missing or unparsable file — callers validate the shape and fall
-// back to their initial value.
-export function readStoreJson(name: string): unknown {
+// One line in `van-store.log` (support dir; `make status` shows it) for what
+// would otherwise vanish: a moved-aside file, a failed migration. Never throws.
+export function logVanEvent(action: string, outcome: string, message: string) {
   try {
-    return JSON.parse(readFileSync(join(vanDir(), name), "utf8"));
+    const dir = vanRuntime().supportDir;
+    mkdirSync(dir, { recursive: true });
+    appendLogLine({
+      path: join(dir, "van-store.log"),
+      source: "van",
+      action,
+      outcome,
+      message,
+    });
   } catch {
+    // see above
+  }
+}
+
+// null for a missing file or one that does not parse — that file is moved
+// aside as `<name>.corrupt-<epoch>` so the next write cannot silently destroy
+// it. Any other IO error (EACCES, EIO) throws: a read-modify-write caller must
+// never overwrite state it could not read. Existence is checked rather than
+// `error.code` because Tinycast's fs shim may not carry codes.
+export function readStoreJson(name: string): unknown {
+  const path = join(vanDir(), name);
+  if (!existsSync(path)) return null;
+  const raw = readFileSync(path, "utf8");
+  try {
+    return JSON.parse(raw);
+  } catch {
+    const aside = `${path}.corrupt-${Date.now()}`;
+    try {
+      renameSync(path, aside);
+      logVanEvent(
+        "store",
+        "corrupt",
+        `${name} did not parse; moved to ${aside}`,
+      );
+    } catch {
+      logVanEvent(
+        "store",
+        "corrupt",
+        `${name} did not parse; could not move it aside`,
+      );
+    }
     return null;
   }
 }
@@ -58,7 +99,7 @@ export function hasStoreFile(name: string): boolean {
   return existsSync(join(vanDir(), name));
 }
 
-export function removeStoreFile(name: string): void {
+function removeStoreFile(name: string): void {
   rmSync(join(vanDir(), name), { force: true });
 }
 

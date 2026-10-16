@@ -5,6 +5,7 @@ import { join } from "path";
 import { environment } from "@raycast/api";
 import { HELPER_FULL } from "./fixtures";
 import { helperPath, readVan } from "./run";
+import { configureVanRuntime, vanRuntime } from "./runtime";
 
 let dir: string;
 beforeAll(() => {
@@ -31,6 +32,17 @@ describe("the helper path", () => {
     expect(helperPath()).toBe(join(environment.assetsPath, "van-ble"));
     process.env.VAN_BLE_BIN = "/opt/signed/van-ble";
     expect(helperPath()).toBe("/opt/signed/van-ble");
+  });
+
+  it("with no override and no bundled copy it throws instead of resolving van-ble on PATH", async () => {
+    const original = vanRuntime();
+    configureVanRuntime(() => ({ ...original, assetsDir: "" }));
+    try {
+      expect(() => helperPath()).toThrow(/VAN_BLE_BIN/);
+      await expect(readVan()).rejects.toThrow(/VAN_BLE_BIN/);
+    } finally {
+      configureVanRuntime(() => original);
+    }
   });
 
   it("readVan spawns the overridden binary and parses its line", async () => {

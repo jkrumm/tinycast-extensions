@@ -173,7 +173,31 @@ const viewOf = (
 // No BLE: what the store holds, to paint on the first frame while the live
 // read (and then the Victron read) are still running.
 export async function loadVictronCache(): Promise<VictronHistoryView> {
-  return viewOf(await loadVictronHistoryCache(), null);
+  try {
+    return viewOf(await loadVictronHistoryCache(), null);
+  } catch {
+    return viewOf(null, null); // unreadable: the view paints without it
+  }
+}
+
+// Two processes top the cache up (the view on open, the launchd sampler every
+// few hours), so a save must not revert what the other saved while this read
+// was running. `snapshot` is what this read started from; the stored cache wins
+// as the base when it moved on since.
+async function currentBase(
+  snapshot: VictronHistoryCache | null,
+): Promise<VictronHistoryCache | null> {
+  let stored: VictronHistoryCache | null;
+  try {
+    stored = await loadVictronHistoryCache();
+  } catch {
+    return snapshot;
+  }
+  if (!stored) return snapshot;
+  const moved =
+    (stored.updatedAt ?? 0) > (snapshot?.updatedAt ?? 0) ||
+    stored.attemptedAt > (snapshot?.attemptedAt ?? 0);
+  return moved ? stored : snapshot;
 }
 
 // One connected session (~10–25 s) tops the cache up. Run only after the live
@@ -185,7 +209,12 @@ export async function loadVictronCache(): Promise<VictronHistoryView> {
 export async function loadVictronHistory(
   now: number = Date.now(),
 ): Promise<VictronHistoryView> {
-  const cache = await loadVictronHistoryCache();
+  let cache: VictronHistoryCache | null;
+  try {
+    cache = await loadVictronHistoryCache();
+  } catch (e) {
+    return viewOf(null, e instanceof Error ? e.message : String(e));
+  }
   const needHistory = victronHistoryDue(cache, now);
   // An older cache that lacks battery current cannot be completed by an
   // incremental read: read the whole 72 h once more instead.
@@ -219,13 +248,17 @@ export async function loadVictronHistory(
     if (!fresh && !freshTrends && !nothingNew) {
       throw new Error(all.errors.join(", ") || "nothing returned");
     }
+    const base = await currentBase(cache);
+    const baseTrends = hasRequiredTrends(base?.trends ?? null)
+      ? (base?.trends ?? null)
+      : null;
     const next: VictronHistoryCache = {
       attemptedAt: now,
       ok: true,
-      updatedAt: now,
-      historyAt: fresh ? now : (cache?.historyAt ?? null),
-      history: fresh ?? cache?.history ?? null,
-      trends: compactTrends(mergeTrends(cachedTrends, freshTrends, now)),
+      updatedAt: Math.max(now, base?.updatedAt ?? 0),
+      historyAt: fresh ? now : (base?.historyAt ?? null),
+      history: fresh ?? base?.history ?? null,
+      trends: compactTrends(mergeTrends(baseTrends, freshTrends, now)),
     };
     await saveVictronHistoryCache(next);
     logLiveEstimate(next.trends);
@@ -251,13 +284,14 @@ export async function loadVictronHistory(
     });
     return viewOf(next, null);
   } catch (e) {
+    const base = await currentBase(cache);
     const failed: VictronHistoryCache = {
       attemptedAt: now,
       ok: false,
-      updatedAt: cache?.updatedAt ?? null,
-      historyAt: cache?.historyAt ?? null,
-      history: cache?.history ?? null,
-      trends: cache?.trends ?? null,
+      updatedAt: base?.updatedAt ?? null,
+      historyAt: base?.historyAt ?? null,
+      history: base?.history ?? null,
+      trends: base?.trends ?? null,
     };
     await saveVictronHistoryCache(failed).catch(() => {});
     const reason = e instanceof Error ? e.message : String(e);

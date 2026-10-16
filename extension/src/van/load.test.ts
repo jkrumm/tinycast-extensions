@@ -7,6 +7,7 @@ import { VictronAllResult, VictronTrends } from "./victron-trends";
 import { fixtureVictronAll } from "./fixtures";
 import { VICTRON_HISTORY_TTL_MS, compactTrends } from "./history";
 import { VICTRON_HISTORY_FILE, vanDir } from "./store";
+import { loadVictronHistoryCache, saveVictronHistoryCache } from "./storage";
 import { clearVanState, vanStatePath } from "./test-env";
 
 const runMock =
@@ -278,5 +279,78 @@ describe("loadVictronHistory", () => {
       history: true,
     });
     expect(compactTrends(null)).toBeNull();
+  });
+});
+
+describe("loadVictronHistory with a second writer (the launchd sampler)", () => {
+  beforeEach(() => {
+    runMock.mockReset();
+    clearVanState();
+    rmSync(join(environment.supportPath, "van-log.jsonl"), { force: true });
+  });
+
+  // What the other process saves between our snapshot and our save.
+  async function daemonSavesFresher() {
+    const later = NOW + 20 * MIN;
+    await saveVictronHistoryCache({
+      attemptedAt: later,
+      ok: true,
+      updatedAt: later,
+      historyAt: later,
+      history: fixtureVictronAll(later).history,
+      trends: compactTrends(fixtureVictronAll(later).trends),
+    });
+    return later;
+  }
+
+  it("a failed read keeps the fresher stored cache and only bumps attemptedAt", async () => {
+    runMock.mockResolvedValueOnce(fixtureVictronAll(NOW));
+    await loadVictronHistory(NOW);
+    let later = 0;
+    runMock.mockImplementationOnce(async () => {
+      later = await daemonSavesFresher();
+      throw new Error("victron-connect-failed");
+    });
+    const result = await loadVictronHistory(NOW + 5 * MIN);
+    expect(result.error).toContain("victron-connect-failed");
+    const stored = (await loadVictronHistoryCache())!;
+    expect(stored).toMatchObject({
+      ok: false,
+      attemptedAt: NOW + 5 * MIN,
+      updatedAt: later,
+      historyAt: later,
+    });
+    expect(stored.trends).toEqual(
+      compactTrends(fixtureVictronAll(later).trends),
+    );
+    expect(result.updatedAt).toBe(later);
+  });
+
+  it("a successful read merges into the fresher stored cache instead of reverting it", async () => {
+    runMock.mockResolvedValueOnce(fixtureVictronAll(NOW));
+    await loadVictronHistory(NOW);
+    let later = 0;
+    runMock.mockImplementationOnce(async () => {
+      later = await daemonSavesFresher();
+      return incremental(fixtureVictronAll(NOW), NOW + 5 * MIN);
+    });
+    const result = await loadVictronHistory(NOW + 5 * MIN);
+    expect(result.error).toBeNull();
+    const stored = (await loadVictronHistoryCache())!;
+    expect(stored.ok).toBe(true);
+    expect(stored.updatedAt).toBe(later);
+    const daemonTrends = compactTrends(fixtureVictronAll(later).trends);
+    expect(lastT(stored.trends, 0xed8f)).toBeGreaterThanOrEqual(
+      lastT(daemonTrends, 0xed8f),
+    );
+    expect(stored.history).toEqual(fixtureVictronAll(later).history);
+  });
+
+  it("an unreadable cache file makes the view's read a quiet reason, never a rejection", async () => {
+    mkdirSync(vanStatePath(VICTRON_HISTORY_FILE), { recursive: true });
+    const view = await loadVictronHistory(NOW);
+    expect(view.error).toContain("Victron history unavailable");
+    expect(runMock).not.toHaveBeenCalled();
+    expect((await loadVictronCache()).updatedAt).toBeNull();
   });
 });

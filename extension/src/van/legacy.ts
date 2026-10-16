@@ -23,6 +23,7 @@ import {
   SAMPLER_FILE,
   VICTRON_HISTORY_FILE,
   hasStoreFile,
+  logVanEvent,
 } from "./store";
 
 export const LEGACY_HISTORY_KEY = "van-history";
@@ -48,8 +49,13 @@ async function moveKey(
     if (value === undefined) return;
     await seed(value);
     await LocalStorage.removeItem(key);
-  } catch {
+  } catch (e) {
     // Kept for the next open; the view must not break on a migration.
+    logVanEvent(
+      "migrate",
+      "failed",
+      `${key}: ${e instanceof Error ? e.message : String(e)}`,
+    );
   }
 }
 
@@ -73,10 +79,13 @@ export async function migrateLegacyVanStorage(): Promise<void> {
     }
   });
   await moveKey(LEGACY_SAMPLER_KEY, async (value) => {
-    if (hasStoreFile(SAMPLER_FILE)) return;
     const state = migrateSamplerState(value);
-    await saveSamplerState(state);
-    if (state.paused && !hasStoreFile(PAUSED_FILE))
+    // The pause outlives an existing sampler.json (launchd's RunAtLoad writes
+    // one before any view opens); the key goes only once the flag is on disk.
+    if (state.paused) {
       await setSamplerPaused(true);
+      if (!hasStoreFile(PAUSED_FILE)) throw new Error("pause flag not written");
+    }
+    if (!hasStoreFile(SAMPLER_FILE)) await saveSamplerState(state);
   });
 }

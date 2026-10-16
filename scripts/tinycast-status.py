@@ -168,6 +168,12 @@ def print_van_sampler():
         path = VAN_DIR / name
         size = f"{path.stat().st_size} bytes" if path.exists() else "missing"
         print(f"  {name}: {size}")
+    store_log = VAN_LOG.parent / "van-store.log"
+    if store_log.exists():
+        tail = store_log.read_text(encoding="utf-8", errors="replace").splitlines()[-VAN_LOG_TAIL:]
+        print("  van-store.log (moved-aside files, failed migrations):")
+        for line in tail:
+            print(f"    {line}")
     if not VAN_LOG.exists():
         return
     lines = []
