@@ -35,6 +35,10 @@ vi.mock("../battery/collect", () => ({
     Promise.reject(new Error("batt: command not found")),
 }));
 
+vi.mock("../shortcuts/load", () => ({
+  loadHotkeyCount: (): Promise<number> => Promise.resolve(16),
+}));
+
 import Hub from "../hub";
 
 describe("hub command", () => {
@@ -44,10 +48,10 @@ describe("hub command", () => {
 
   it("renders one tile per command and shows Offline for a failing loader", async () => {
     const renderer = await renderCommand(<Hub />);
-    await waitFor(() => renderer.root.findAllByType(Grid.Item).length === 7);
+    await waitFor(() => renderer.root.findAllByType(Grid.Item).length === 8);
 
     const tiles = renderer.root.findAllByType(Grid.Item);
-    expect(tiles).toHaveLength(7);
+    expect(tiles).toHaveLength(8);
     // Every tile's content is a data: URI SVG — as long as it doesn't throw
     // building that, the harness has already done its job; netgear/battery
     // fail on purpose here and should still produce a valid tile.

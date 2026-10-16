@@ -108,6 +108,19 @@ describe.skipIf(!LIVE)("live e2e (E2E_LIVE=1, read-only, real sources)", () => {
     expect(markdown.length).toBeGreaterThan(0);
   }, 30_000);
 
+  it("shortcuts: real defaults export + app scan", async () => {
+    const Shortcuts = (await import("../shortcuts")).default;
+    const renderer = await renderCommand(<Shortcuts />);
+    await waitFor(
+      () => renderer.root.findByType(Detail).props.isLoading === false,
+      { timeoutMs: 15_000 },
+    );
+    const markdown = renderer.root.findByType(Detail).props.markdown as string;
+    writeOutput("shortcuts", markdown);
+    assertNoBadSubstrings(markdown, "live shortcuts");
+    expect(markdown).toContain("Free Hyper letters:");
+  }, 30_000);
+
   it("claude-usage: real quota fetcher + real argo spend", async () => {
     const ClaudeUsage = (await import("../claude-usage")).default;
     const renderer = await renderCommand(<ClaudeUsage />);
@@ -124,7 +137,7 @@ describe.skipIf(!LIVE)("live e2e (E2E_LIVE=1, read-only, real sources)", () => {
   it("hub: every tile's real status, tolerating individual failures", async () => {
     const Hub = (await import("../hub")).default;
     const renderer = await renderCommand(<Hub />);
-    await waitFor(() => renderer.root.findAllByType(Grid.Item).length === 7, {
+    await waitFor(() => renderer.root.findAllByType(Grid.Item).length === 8, {
       timeoutMs: 20_000,
     });
     // Tile status text settles asynchronously per-tile after the initial
@@ -136,7 +149,7 @@ describe.skipIf(!LIVE)("live e2e (E2E_LIVE=1, read-only, real sources)", () => {
       .map((t) => JSON.stringify({ content: !!t.props.content }))
       .join("\n");
     writeOutput("hub", summary);
-    expect(renderer.root.findAllByType(Grid.Item)).toHaveLength(7);
+    expect(renderer.root.findAllByType(Grid.Item)).toHaveLength(8);
   }, 30_000);
 
   it("speed-test: history only, never runs networkQuality", async () => {

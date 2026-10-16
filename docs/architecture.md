@@ -19,6 +19,7 @@ usage) and the secrets chain (TickTick, Netgear, Victron) where useful.
 | `speed-test` | view | `src/speed-test.tsx` | `speed-test/{run,parse,heroes,types}.ts`, `lib/svg.ts` | `/usr/bin/networkQuality` + `LocalStorage` history |
 | `van-power` | view | `src/van-power.tsx` | `van/{run,load,parse,history,victron-history,victron-trends,consumption,soc-estimate,capture-log,sampler,sampler-storage,format,heroes,storage,types}.ts`, `lib/svg.ts` | `assets/van-ble` (Swift BLE helper: Ective BMS notify + Victron Instant Readout advert, Victron GATT history/trends) + `LocalStorage` 72 h history + the `van-log.jsonl` / `van-trends.jsonl` logs (14-day consumption) |
 | `van-sampler` | no-view, `interval: 15m` | `src/van-sampler.tsx` | `van/{sampler-runner,sampler,sampler-storage,notify,load,run}.ts` | the same live `assets/van-ble` read as an open (no Victron GATT session) + `LocalStorage` `van-sampler` (pause state) + `osascript` low-battery notification |
+| `shortcuts` | view | `src/shortcuts.tsx` | `shortcuts/{load,parse,format,fixtures}.ts` | `/usr/bin/defaults export com.tinycast.app.beta -` (hotkeys, `launcherAliases`, `favoriteApps`) + an Info.plist scan of the app folders (bundle id → app name) + the installed `package.json` command titles |
 | `hub` | view | `src/hub.tsx` | reads every feature module above, one tile each | all of the above, loaded independently per tile |
 
 Shared: `lib/argo.ts` (bearer-authed fetch client, `prefs()`, `useAuthHeaders()`),
@@ -60,6 +61,14 @@ Speed Test command
   └─ speed-test/run.ts
        └─ execFile /usr/bin/networkQuality -c [-M 4 -u]
             └─ speed-test/parse.ts (pure) → LocalStorage history (last 20)
+
+Shortcuts command
+  └─ shortcuts/load.ts
+       ├─ execFile /usr/bin/defaults export com.tinycast.app.beta - → shortcuts/parse.ts (pure XML plist subset)
+       ├─ execFile /bin/sh: one Info.plist scan of the app folders → app names (fallback: the id)
+       ├─ fs.readFile ../package.json → command titles
+       └─ shortcuts/format.ts (pure) → markdown tables, free Hyper letters
+  (hub tile: hotkey count only)
 
 Van Power command
   └─ van/load.ts → van/run.ts
@@ -155,7 +164,7 @@ hero images). `netgear`'s "Connected Devices" and "SMS" sub-views are plain
 ## Testing boundary
 
 Everything under `ticktick/`, `usage/`, `netgear/`, `battery/`, `speed-test/`,
-`van/`, and `lib/` that doesn't import `@raycast/api` is unit-tested with vitest
+`shortcuts/`, `van/`, and `lib/` that doesn't import `@raycast/api` is unit-tested with vitest
 (`make test`) — parsing, formatting, aggregation, the netgear client against
 a fake transport, the secrets chain against a fake runner, and the SVG
 toolkit's string output. The eleven command entry files (`src/*.tsx`) are the

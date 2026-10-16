@@ -21,6 +21,8 @@ import { collectBatterySnapshot } from "./battery/collect";
 import { loadHistory } from "./speed-test/history";
 import { loadVanHistory } from "./van/storage";
 import { tileStatus } from "./van/format";
+import { hubStatus } from "./shortcuts/format";
+import { loadHotkeyCount } from "./shortcuts/load";
 import { RAYCAST_COLOR, RaycastColor, tile, toDataUri } from "./lib/svg";
 
 interface TileConfig {
@@ -80,6 +82,13 @@ const TILES: TileConfig[] = [
     glyph: "V",
     name: "Van Power",
     color: RAYCAST_COLOR.purple,
+  },
+  {
+    command: "shortcuts",
+    icon: "shortcuts",
+    glyph: "K",
+    name: "Shortcuts",
+    color: RAYCAST_COLOR.blue,
   },
 ];
 
@@ -142,6 +151,10 @@ async function vanStatus(): Promise<TileData> {
   };
 }
 
+async function shortcutsStatus(): Promise<TileData> {
+  return { status: hubStatus(await loadHotkeyCount()) };
+}
+
 const STATUS_LOADERS: Record<string, () => Promise<TileData>> = {
   "my-tasks": tasksStatus,
   "quick-add": async () => ({ status: "" }),
@@ -150,6 +163,7 @@ const STATUS_LOADERS: Record<string, () => Promise<TileData>> = {
   "speed-test": speedTestStatus,
   battery: batteryStatus,
   "van-power": vanStatus,
+  shortcuts: shortcutsStatus,
 };
 
 // The icon SVGs ship in the build's assets/src; drop the outer <svg> so the

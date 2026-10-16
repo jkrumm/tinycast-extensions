@@ -91,6 +91,13 @@
       "icon": "van.png"
     },
     {
+      "name": "shortcuts",
+      "title": "Shortcuts",
+      "description": "Every global hotkey, launcher alias and favorite, read live from Tinycast's settings",
+      "mode": "view",
+      "icon": "shortcuts.png"
+    },
+    {
       "name": "hub",
       "title": "Dashboard",
       "description": "One-glance grid over every command",
