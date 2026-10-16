@@ -108,18 +108,28 @@ export function loadWatchdogStorage(
     join(dir, STATE_FILE),
   ) as Partial<WatchdogStorage> | null;
   const base = emptyStorage();
-  const stored: WatchdogStorage = parsed
-    ? {
-        ...base,
-        // Merged over the defaults rather than falling back wholesale — a
-        // state persisted before a field was added must still pick up that
-        // field's default instead of losing the counters.
-        state: migrateWatchdogState(parsed.state),
-        events: parsed.events ?? [],
-        counts: parsed.counts ?? {},
-        since: parsed.since ?? null,
-      }
-    : base;
+  // A wrong-shaped file (hand edit, partial write) must not spread garbage into the state.
+  const valid =
+    parsed !== null &&
+    typeof parsed === "object" &&
+    (parsed.state === undefined ||
+      (typeof parsed.state === "object" && parsed.state !== null)) &&
+    (parsed.events === undefined || Array.isArray(parsed.events)) &&
+    (parsed.counts === undefined ||
+      (typeof parsed.counts === "object" && parsed.counts !== null));
+  const stored: WatchdogStorage =
+    valid && parsed
+      ? {
+          ...base,
+          // Merged over the defaults rather than falling back wholesale — a
+          // state persisted before a field was added must still pick up that
+          // field's default instead of losing the counters.
+          state: migrateWatchdogState(parsed.state),
+          events: parsed.events ?? [],
+          counts: parsed.counts ?? {},
+          since: parsed.since ?? null,
+        }
+      : base;
   const marker = readPendingMarker(dir);
   const state =
     marker && marker.at > (stored.state.reboot?.at ?? 0)
