@@ -1395,6 +1395,125 @@ final class Reader: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
 
 // MARK: - Main
 
+// MARK: - launchd modes (van-sampler)
+//
+// The signed copy of this binary is the launchd PROGRAM of com.jkrumm.van-sampler. macOS makes the
+// agent's own program the TCC "responsible process" and every child inherits that (fork/posix_spawn
+// copy it, exec keeps it), so the Bluetooth grant is attributed to this binary — Tinycast need not
+// run. Hence `--supervise`: it spawns the real job (jobrun -> bun entry -> this binary again for the
+// scan) as a CHILD and waits, never `exec`s, so this binary stays the responsible process.
+
+if let flag = CommandLine.arguments.firstIndex(of: "--supervise") {
+    var command = Array(CommandLine.arguments[(flag + 1)...])
+    if command.first == "--" { command.removeFirst() }
+    if command.isEmpty {
+        fputs("usage: van-ble --supervise -- <command> [args...]\n", stderr)
+        exit(2)
+    }
+    let child = Process()
+    child.executableURL = URL(fileURLWithPath: "/usr/bin/env")  // resolves via the plist's PATH
+    child.arguments = command
+    child.terminationHandler = { finished in
+        exit(finished.terminationReason == .exit ? finished.terminationStatus : 128 + finished.terminationStatus)
+    }
+    // jobrun enforces deadlines on its own process group; this only relays a plain stop.
+    var relays = [DispatchSourceSignal]()
+    for sig in [SIGTERM, SIGINT, SIGHUP] {
+        signal(sig, SIG_IGN)
+        let source = DispatchSource.makeSignalSource(signal: sig, queue: .main)
+        source.setEventHandler { if child.isRunning { kill(child.processIdentifier, sig) } }
+        source.resume()
+        relays.append(source)
+    }
+    do { try child.run() } catch {
+        fputs("van-ble --supervise: cannot run \(command[0]): \(error)\n", stderr)
+        exit(127)
+    }
+    withExtendedLifetime(relays) { RunLoop.main.run() }
+}
+
+// `--tcc-probe [--wait-prompt]` prints one JSON line about Bluetooth authorization AS SEEN BY THIS
+// PROCESS, then runs a short scan. exit 0 = allowedAlways + poweredOn + scan ran; 3 = anything else.
+// Without `--wait-prompt` a not-yet-decided authorization fails at once (proves a persisted grant and,
+// run through `--supervise`, that the child is attributed to the same grant); with it the probe
+// waits up to 120 s for a human to answer the macOS dialog.
+final class TccProbe: NSObject, CBCentralManagerDelegate {
+    private var central: CBCentralManager!
+    private let waitPrompt: Bool
+    private let initial: CBManagerAuthorization
+    private var adverts = 0
+    private var scanned = false
+    private var finished = false
+    private let started = Date()
+
+    init(waitPrompt: Bool) {
+        self.waitPrompt = waitPrompt
+        self.initial = CBCentralManager.authorization
+        super.init()
+        central = CBCentralManager(delegate: self, queue: nil)
+        let limit = waitPrompt ? 130.0 : 25.0
+        DispatchQueue.main.asyncAfter(deadline: .now() + limit) { [self] in finish("deadline") }
+    }
+
+    private static func name(_ a: CBManagerAuthorization) -> String {
+        switch a {
+        case .notDetermined: return "notDetermined"
+        case .restricted: return "restricted"
+        case .denied: return "denied"
+        case .allowedAlways: return "allowedAlways"
+        @unknown default: return "unknown"
+        }
+    }
+
+    func centralManagerDidUpdateState(_ central: CBCentralManager) {
+        let auth = CBCentralManager.authorization
+        if auth == .notDetermined && !waitPrompt { finish("not-determined"); return }
+        guard auth != .notDetermined else { return }  // dialog still up
+        guard auth == .allowedAlways else { finish("authorization-\(TccProbe.name(auth))"); return }
+        guard central.state == .poweredOn else {
+            if central.state == .unknown || central.state == .resetting { return }
+            finish("state-\(central.state.rawValue)")
+            return
+        }
+        guard !scanned else { return }
+        scanned = true
+        central.scanForPeripherals(withServices: nil, options: [CBCentralManagerScanOptionAllowDuplicatesKey: false])
+        DispatchQueue.main.asyncAfter(deadline: .now() + 6) { [self] in finish(nil) }
+    }
+
+    func centralManager(
+        _ central: CBCentralManager, didDiscover peripheral: CBPeripheral,
+        advertisementData: [String: Any], rssi RSSI: NSNumber
+    ) { adverts += 1 }
+
+    private func finish(_ failure: String?) {
+        guard !finished else { return }
+        finished = true
+        central.stopScan()
+        let ok = failure == nil && scanned
+        let line: [String: Any] = [
+            "probe": "van-ble-tcc",
+            "ok": ok,
+            "failure": failure as Any? ?? NSNull(),
+            "initialAuthorization": TccProbe.name(initial),
+            "finalAuthorization": TccProbe.name(CBCentralManager.authorization),
+            "prompted": initial == .notDetermined && CBCentralManager.authorization != .notDetermined,
+            "adverts": adverts,
+            "waitedMs": Int(Date().timeIntervalSince(started) * 1000),
+            "pid": getpid(),
+            "ppid": getppid(),
+        ]
+        let data = (try? JSONSerialization.data(withJSONObject: line, options: [.sortedKeys])) ?? Data()
+        print(String(decoding: data, as: UTF8.self))
+        exit(ok ? 0 : 3)
+    }
+}
+
+if CommandLine.arguments.contains("--tcc-probe") {
+    let probe = TccProbe(waitPrompt: CommandLine.arguments.contains("--wait-prompt"))
+    withExtendedLifetime(probe) { RunLoop.main.run() }
+}
+
 if CommandLine.arguments.contains("--selftest") {
     if let failure = selftest() {
         print("fail: \(failure)")
