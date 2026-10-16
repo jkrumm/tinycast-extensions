@@ -7,7 +7,9 @@ import {
   formatSpend,
   formatWeekdayTime,
   menuBarTitle,
+  menuBarTitleWithFreshness,
   overflowModelsLine,
+  spendErrorText,
   usageTileStatus,
 } from "./format";
 import { quotaLimits } from "./limits";
@@ -180,5 +182,29 @@ describe("overflowModelsLine", () => {
       ]),
     ).toBe("Opus weekly 40% · Sonnet weekly —");
     expect(overflowModelsLine([])).toBeNull();
+  });
+});
+
+describe("menuBarTitleWithFreshness", () => {
+  it("marks only a stale quota, nothing else", () => {
+    expect(menuBarTitleWithFreshness(BUG_REPORT_FILE, false)).toBe("14%");
+    expect(menuBarTitleWithFreshness(BUG_REPORT_FILE, true)).toBe(
+      "14% (stale)",
+    );
+  });
+});
+
+describe("spendErrorText", () => {
+  it("says why the argo spend fetch failed", () => {
+    expect(spendErrorText(new Error("timed out after 25s"))).toBe(
+      "Spend unavailable — argo timed out after 25s",
+    );
+    expect(spendErrorText(new Error("401: unauthorized"))).toBe(
+      "Spend unavailable — argo rejected the token",
+    );
+    expect(spendErrorText(new TypeError("Could not resolve host"))).toBe(
+      "Spend unavailable — argo not reachable",
+    );
+    expect(spendErrorText("boom")).toBe("Spend unavailable — boom");
   });
 });

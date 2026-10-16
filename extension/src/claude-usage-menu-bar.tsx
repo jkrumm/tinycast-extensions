@@ -19,8 +19,9 @@ import {
   formatRelativeReset,
   formatSpend,
   formatWeekdayTime,
-  menuBarTitle,
+  menuBarTitleWithFreshness,
   modelLimitLabel,
+  spendErrorText,
 } from "./usage/format";
 import { QuotaWindow, quotaLimits, weeklyPace } from "./usage/limits";
 import {
@@ -37,8 +38,9 @@ const SPEND_LANE_LIMIT = 5;
 
 // Tinycast only stores a menu-bar render once nothing is loading, and kills a
 // run after 60 s — a hanging argo request (flaky mobile internet) would
-// otherwise keep the quota title from ever updating.
-const SPEND_TIMEOUT_MS = 15_000;
+// otherwise keep the quota title from ever updating. Runs in parallel with
+// the quota fetch (20 s cap), so this fits the deadline with room to spare.
+const SPEND_TIMEOUT_MS = 25_000;
 
 function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
   return new Promise((resolve, reject) => {
@@ -60,8 +62,9 @@ function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
 }
 
 // Same split as claude-usage.tsx: getQuota() never rejects, getTimeseries()
-// can — spend keeps its last-good value + a spendError flag so a failing
-// spend fetch doesn't blank out a working quota reading.
+// can — spend keeps its last-good value + a spendError line so a failing
+// spend fetch doesn't blank out a working quota reading. The error is kept
+// as text: the result is persisted as JSON, an Error would come back as {}.
 function useUsage() {
   const lastSpendRef = useRef<SpendAggregate | undefined>(undefined);
 
@@ -69,7 +72,7 @@ function useUsage() {
     async () => {
       const [quotaResult, spendResult] = await Promise.allSettled([
         getQuota(),
-        withTimeout(getTimeseries(), SPEND_TIMEOUT_MS),
+        withTimeout(getTimeseries("7d"), SPEND_TIMEOUT_MS),
       ]);
       const quota: UsageQuota =
         quotaResult.status === "fulfilled"
@@ -83,7 +86,7 @@ function useUsage() {
       return {
         quota,
         spend: lastSpendRef.current ?? null,
-        spendError: spendResult.reason,
+        spendError: spendErrorText(spendResult.reason),
       };
     },
     [],
@@ -139,7 +142,8 @@ export default function ClaudeUsageMenuBar() {
     [data],
   );
 
-  const offline = !!(data && (isQuotaError(data.quota) || data.spendError));
+  const quotaStale =
+    !!data && !isQuotaError(data.quota) && isStaleHint(data.quota.fetched_at);
 
   return (
     <MenuBarExtra
@@ -148,11 +152,11 @@ export default function ClaudeUsageMenuBar() {
       // dropdown spells out every limit.
       title={
         data && !isQuotaError(data.quota)
-          ? `${menuBarTitle(data.quota)}${offline ? " (offline)" : ""}`
+          ? menuBarTitleWithFreshness(data.quota, quotaStale)
           : undefined
       }
       isLoading={isLoading}
-      tooltip={`Claude Usage${offline ? " (offline)" : ""}`}
+      tooltip={`Claude Usage${quotaStale ? " (stale)" : ""}`}
     >
       {data && !isQuotaError(data.quota) && <QuotaSection quota={data.quota} />}
 
@@ -163,7 +167,11 @@ export default function ClaudeUsageMenuBar() {
       )}
 
       {data && data.spend && (
-        <MenuBarExtra.Section title="Spend (today)">
+        <MenuBarExtra.Section
+          title={
+            data.spendError ? "Spend (today, last known)" : "Spend (today)"
+          }
+        >
           {topLanesWithOther(data.spend.today, SPEND_LANE_LIMIT).map(
             ({ label, value }) => (
               <MenuBarExtra.Item
@@ -178,9 +186,9 @@ export default function ClaudeUsageMenuBar() {
         </MenuBarExtra.Section>
       )}
 
-      {data && !data.spend && (
+      {data && data.spendError && (
         <MenuBarExtra.Section>
-          <MenuBarExtra.Item title="Spend unavailable — argo request failed" />
+          <MenuBarExtra.Item title={data.spendError} />
         </MenuBarExtra.Section>
       )}
 

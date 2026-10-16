@@ -71,6 +71,26 @@ export function menuBarTitle(quota: UsageQuota): string {
     : title;
 }
 
+// The menu-bar title flags only what the title itself shows — the quota. A
+// failed spend fetch is a dropdown line, not "(offline)" next to a live number.
+export function menuBarTitleWithFreshness(
+  quota: UsageQuota,
+  stale: boolean,
+): string {
+  return `${menuBarTitle(quota)}${stale ? " (stale)" : ""}`;
+}
+
+// One short dropdown line for a failed argo spend fetch, saying why.
+export function spendErrorText(error: unknown): string {
+  const message = error instanceof Error ? error.message : String(error);
+  if (/timed out/i.test(message)) return `Spend unavailable — argo ${message}`;
+  if (/^401|^403/.test(message))
+    return "Spend unavailable — argo rejected the token";
+  if (/resolve|network|offline|connection/i.test(message))
+    return "Spend unavailable — argo not reachable";
+  return `Spend unavailable — ${message.slice(0, 60)}`;
+}
+
 // Hub tile status line (≤ ~18 characters): weekly first.
 export function usageTileStatus(limits: QuotaLimits): string {
   return `7d ${formatPercent(limits.weekly.percent)} · 5h ${formatPercent(limits.session.percent)}`;

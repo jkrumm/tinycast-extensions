@@ -293,9 +293,12 @@ run make secrets" while still reading the battery.
   ahead). The menu-bar title is the bare weekly percent (`14%`, same as the
   ring; ` · 5h 85%` appended only at ≥ 80 %), refreshed every 2 min (the
   file is refetched when > 100 s old, `uv` capped at 20 s, spend capped at
-  15 s — Tinycast keeps the old title if a run is still loading at its 60 s
-  deadline); the dropdown says when the quota was fetched (`(stale)` past
-  15 min).
+  25 s — Tinycast keeps the old title if a run is still loading at its 60 s
+  deadline); ` (stale)` is appended to the title only when the quota is older
+  than 15 min, and the dropdown says when it was fetched. The menu bar fetches
+  the **7-day** spend series (~65 KB; the 30-day one the detail view needs is
+  ~360 KB, 7–15 s over the mobile router) and a failed spend fetch is one
+  dropdown line saying why, never a title marker.
 - **Claude usage (spend)** — argo proxy (`{baseUrl}/usage/timeseries`,
   `{baseUrl}/usage/summary`), bearer token from the secrets chain.
 - **Netgear** — the router's own HTTP API at `netgearHost` (default
