@@ -100,7 +100,7 @@ def print_command_metadata():
 WATCHDOG_DIR = Path.home() / ".local/state/netgear-watchdog"
 
 
-def print_watchdog_events(_local_storage: dict):
+def print_watchdog_events():
     print()
     print("== netgear-watchdog log (newest first, routine ticks collapsed) ==")
     state_file = WATCHDOG_DIR / "state.json"
@@ -111,6 +111,9 @@ def print_watchdog_events(_local_storage: dict):
         storage = json.loads(state_file.read_text())
     except (OSError, ValueError):
         print("  unreadable state.json, skipping")
+        return
+    if not isinstance(storage, dict):
+        print("  unexpected shape, skipping")
         return
     storage["enabled"] = not (WATCHDOG_DIR / "paused").exists()
     print(f"  enabled: {storage.get('enabled')}")
@@ -211,7 +214,7 @@ def main() -> int:
 
     data = load_json(DATA_FILE) or {}
     local_storage = data.get("localStorage", {})
-    print_watchdog_events(local_storage)
+    print_watchdog_events()
     print_netgear_log()
     print_local_storage_sizes(local_storage)
     print_speed_test_history_count(local_storage)

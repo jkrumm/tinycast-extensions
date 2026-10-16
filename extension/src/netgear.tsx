@@ -262,7 +262,7 @@ export default function Netgear() {
         const iccid = status.iccid || (await pinStore.getLastIccid()) || "";
         onProgress("Rebooting router…");
         await client.reboot();
-        await recordReboot({ at: Date.now(), source: "ui", iccid });
+        recordReboot({ at: Date.now(), source: "ui", iccid });
         revalidateWatchdog();
         revalidate();
       },

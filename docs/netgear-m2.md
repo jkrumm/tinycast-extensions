@@ -362,7 +362,10 @@ interleaved with `probe-failed` and raw `reconnect-failed: curl exited
   Reconnect once failed with "Router rejected the request" because the
   watchdog was mid-connect (2026-10); `reconnect()` is state-aware and
   tolerates a rejected call when the router is already moving the right way,
-  and the tick re-reads every minute, so the two no longer serialize.
+  and the tick re-reads every minute, so the two no longer serialize. Accepted
+  trade-off (review 2026-10-16): each login starts a new router session, so a
+  tick's login can still invalidate a UI POST in flight — the UI reports
+  "rejected" and a retry works.
 - **Data-roaming rule**: roaming is meant to be always on. As Admin, when
   `wwan.autoconnect` is readable (non-empty) and not `Always`, and the last
   attempt was ≥10 minutes ago (`WatchdogState.lastRoamingAttemptAt`, set on

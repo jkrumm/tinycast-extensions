@@ -41,6 +41,7 @@ deploy: build ## Build and copy straight into Tinycast Beta's installed extensio
 	@cmp -s "$(EXT_DIR)/build/package.json" "$(TINYCAST_EXT_DIR)/package.json"; echo $$? > /tmp/tinycast-manifest-changed
 	rsync -a --delete --exclude '*.map' "$(EXT_DIR)/build/" "$(TINYCAST_EXT_DIR)/"
 	@echo "Deployed to $(TINYCAST_EXT_DIR)"
+	@launchctl print gui/$$(id -u)/com.jkrumm.netgear-watchdog >/dev/null 2>&1 || echo "WARNING: com.jkrumm.netgear-watchdog is not loaded — the Netgear watchdog no longer runs inside Tinycast. Run 'make watchdog-setup'."
 	@# Tinycast only rescans manifests at launch — a new/renamed command needs a restart
 	@if [ "$$(cat /tmp/tinycast-manifest-changed)" != 0 ]; then \
 		echo "Manifest changed — restarting Tinycast Beta so it rescans commands"; \
@@ -76,6 +77,7 @@ van-eval: ## SoC estimator tuning loop: replay the estimator leave-one-out over 
 WATCHDOG_LABEL := com.jkrumm.netgear-watchdog
 WATCHDOG_PLIST := $(HOME)/Library/LaunchAgents/$(WATCHDOG_LABEL).plist
 
+# Rolling back to a Tinycast-hosted watchdog: run `make watchdog-teardown` first, or two watchdogs mutate the router.
 # Not `ray build`/`deploy`: the watchdog is a launchd job, not part of the Tinycast bundle.
 watchdog-setup: ## MacBook: render + load the 60 s netgear-watchdog LaunchAgent (wrapped in jobrun)
 	@test -x "$(HOME)/.local/bin/jobrun" || { echo "jobrun missing — run 'make setup' in dotfiles first"; exit 1; }

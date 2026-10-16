@@ -144,7 +144,9 @@ export function saveWatchdogStorage(
 }
 
 // Drops the marker file only if it is still the one the tick applied — a
-// newer Restart written meanwhile stays for the next tick.
+// newer Restart written meanwhile stays for the next tick. Not atomic: a
+// Restart landing between the read and the rm is lost, but the router's own
+// reboot is then caught by the tick's unreachable/recovery path anyway.
 export function consumeRebootMarker(
   applied: RebootMarker,
   dir: string = DEFAULT_WATCHDOG_DIR,

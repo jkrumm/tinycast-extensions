@@ -68,6 +68,16 @@ describe("watchdog storage", () => {
     expect(s.state.stuckStreak).toBe(0);
   });
 
+  it("treats a wrong-shaped state file as empty instead of spreading it", () => {
+    writeFileSync(
+      join(dir, "state.json"),
+      '{"state":"oops","events":{"a":1},"counts":null}',
+    );
+    const s = loadWatchdogStorage(dir);
+    expect(s.state).toEqual(INITIAL_WATCHDOG_STATE);
+    expect(s.events).toEqual([]);
+  });
+
   it("ignores an invalid marker file", () => {
     writeFileSync(join(dir, "reboot-marker.json"), '{"at":"x"}');
     expect(readPendingMarker(dir)).toBeNull();
