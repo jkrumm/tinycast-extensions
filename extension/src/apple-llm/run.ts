@@ -6,7 +6,8 @@ import { spawn } from "child_process";
 import { join } from "path";
 import { LlmReply, parseLlmReply } from "./parse";
 
-const TIMEOUT_MS = 60_000;
+// A hang guard, not a budget: a slow on-device answer is not a failure.
+const TIMEOUT_MS = 30 * 60_000;
 
 export function translate(texts: string[], to = "English"): Promise<LlmReply> {
   return runHelper({ mode: "translate", texts, to });
