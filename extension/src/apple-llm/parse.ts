@@ -12,7 +12,16 @@ export function parseLlmReply(stdout: string): LlmReply {
     .pop();
   if (!line)
     return { ok: false, available: true, error: "apple-llm printed nothing" };
-  const raw: unknown = JSON.parse(line);
+  let raw: unknown;
+  try {
+    raw = JSON.parse(line);
+  } catch {
+    return {
+      ok: false,
+      available: true,
+      error: "apple-llm printed invalid output",
+    };
+  }
   if (typeof raw !== "object" || raw === null) {
     return {
       ok: false,
@@ -43,6 +52,15 @@ export function parseLlmReply(stdout: string): LlmReply {
 export function describeLlmError(
   reply: Extract<LlmReply, { ok: false }>,
 ): string {
+  if (reply.error.includes("guardrailViolation")) {
+    return "The on-device model refused this text (safety filter).";
+  }
+  if (reply.error.includes("unsupportedLanguageOrLocale")) {
+    return "The on-device model does not support this language.";
+  }
+  if (reply.error.includes("exceededContextWindowSize")) {
+    return "This text is too long for the on-device model.";
+  }
   if (reply.available) return reply.error;
   if (reply.error.includes("appleIntelligenceNotEnabled")) {
     return "Apple Intelligence is off — enable it in System Settings.";

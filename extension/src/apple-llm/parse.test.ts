@@ -19,6 +19,18 @@ describe("parseLlmReply", () => {
     expect(r.available).toBe(false);
     expect(describeLlmError(r)).toContain("Apple Intelligence is off");
   });
+  it("does not throw on non-JSON output", () => {
+    expect(parseLlmReply("dyld: Library not loaded")).toMatchObject({
+      ok: false,
+    });
+  });
+  it("maps model refusals to a friendly message", () => {
+    const r = parseLlmReply(
+      '{"ok":false,"available":true,"results":[""],"error":"guardrailViolation(x)"}',
+    );
+    if (r.ok) throw new Error("expected failure");
+    expect(describeLlmError(r)).toContain("safety filter");
+  });
   it("reports empty output", () => {
     expect(parseLlmReply("")).toMatchObject({ ok: false });
   });

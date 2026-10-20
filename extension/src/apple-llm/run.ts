@@ -33,6 +33,8 @@ export function runHelper(request: object): Promise<LlmReply> {
         resolve({ ok: false, available: true, error: String(e) });
       }
     });
+    // The helper may exit before reading stdin (dyld failure, missing binary).
+    child.stdin.on("error", () => undefined);
     child.stdin.end(JSON.stringify(request));
   });
 }

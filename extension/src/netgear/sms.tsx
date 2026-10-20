@@ -112,10 +112,27 @@ export function SmsInbox({
   );
 }
 
+// Model output is attacker-influenced: neutralise link/image/HTML syntax.
+function escapeMarkdown(text: string): string {
+  return text.replace(/[\\[\]<>!`]/g, (c) => `\\${c}`);
+}
+
 function SmsDetail({ message }: { message: RouterSmsMessage }) {
   const [translation, setTranslation] = useState<string | null>(null);
 
+  const [translating, setTranslating] = useState(false);
+
   async function translateMessage() {
+    if (translating || !message.text.trim()) return;
+    setTranslating(true);
+    try {
+      await runTranslation();
+    } finally {
+      setTranslating(false);
+    }
+  }
+
+  async function runTranslation() {
     const toast = await showToast({
       style: Toast.Style.Animated,
       title: "Translating…",
@@ -144,7 +161,7 @@ function SmsDetail({ message }: { message: RouterSmsMessage }) {
           "",
           `**English (on-device, may be inaccurate)**`,
           "",
-          translation,
+          escapeMarkdown(translation),
         ]
       : []),
   ].join("\n");
