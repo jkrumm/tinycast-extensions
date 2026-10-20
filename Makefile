@@ -17,6 +17,8 @@ install: ## Install dependencies (frozen lockfile)
 
 HELPER_SRC := $(EXT_DIR)/helpers/van-ble/main.swift
 HELPER_BIN := $(EXT_DIR)/assets/van-ble
+LLM_SRC := $(EXT_DIR)/helpers/apple-llm/main.swift
+LLM_BIN := $(EXT_DIR)/assets/apple-llm
 
 # The Van Power BLE helper (Swift, CoreBluetooth + CommonCrypto, no deps) is
 # spawned by the extension from environment.assetsPath. Tinycast Beta is the
@@ -25,6 +27,8 @@ helper: ## Compile the van-ble BLE helper into extension/assets and run its --se
 	@mkdir -p $(EXT_DIR)/assets
 	swiftc -O -o $(HELPER_BIN) $(HELPER_SRC)
 	@printf 'van-ble selftest: ' && $(HELPER_BIN) --selftest
+	swiftc -O -o $(LLM_BIN) $(LLM_SRC)
+	@printf 'apple-llm selftest: ' && $(LLM_BIN) --selftest
 
 build: helper ## Build the extension for Tinycast/Raycast "Add from folder"
 	cd $(EXT_DIR) && $(RAY) build -e dist -o build

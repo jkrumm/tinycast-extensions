@@ -7,9 +7,13 @@ import {
   Detail,
   Icon,
   List,
+  Toast,
+  showToast,
 } from "@raycast/api";
 import { RouterSmsMessage, RouterStatus } from "./types";
 import { withAdmin } from "./session";
+import { translate } from "../apple-llm/run";
+import { describeLlmError } from "../apple-llm/parse";
 
 function formatSmsTime(iso: string): string {
   if (!iso) return "—";
@@ -109,12 +113,40 @@ export function SmsInbox({
 }
 
 function SmsDetail({ message }: { message: RouterSmsMessage }) {
+  const [translation, setTranslation] = useState<string | null>(null);
+
+  async function translateMessage() {
+    const toast = await showToast({
+      style: Toast.Style.Animated,
+      title: "Translating…",
+    });
+    const reply = await translate([message.text]);
+    if (!reply.ok) {
+      toast.style = Toast.Style.Failure;
+      toast.title = "Translation failed";
+      toast.message = describeLlmError(reply);
+      return;
+    }
+    setTranslation(reply.results[0] ?? "");
+    toast.hide();
+  }
+
   const markdown = [
     `# ${message.sender || "Unknown"}`,
     "",
     formatSmsTime(message.rxTime),
     "",
     message.text,
+    ...(translation
+      ? [
+          "",
+          "---",
+          "",
+          `**English (on-device, may be inaccurate)**`,
+          "",
+          translation,
+        ]
+      : []),
   ].join("\n");
   return (
     <Detail
@@ -122,7 +154,19 @@ function SmsDetail({ message }: { message: RouterSmsMessage }) {
       markdown={markdown}
       actions={
         <ActionPanel>
+          <Action
+            title="Translate to English"
+            icon={Icon.Globe}
+            shortcut={{ modifiers: ["cmd"], key: "t" }}
+            onAction={translateMessage}
+          />
           <Action.CopyToClipboard title="Copy Text" content={message.text} />
+          {translation && (
+            <Action.CopyToClipboard
+              title="Copy Translation"
+              content={translation}
+            />
+          )}
         </ActionPanel>
       }
     />

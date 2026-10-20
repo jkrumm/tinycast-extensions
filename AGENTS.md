@@ -74,11 +74,13 @@ extension/
                            classification, low-battery alert state machine, subtitle/status words),
                            sampler-runner (one run), sampler-storage (file-backed `sampler.json` + `paused` flag, via `store.ts`),
                            notify (osascript notification), types, fixtures
+    apple-llm/            feature code: run (spawns the helper, the only impure bit), parse (pure)
     lib/                  shared: argo.ts (fetch client), secrets.ts (Keychain/1Password chain),
                            action-log.ts (persistent log file), svg.ts + chart/ (hero/chart library, see svg-charts skill), preferences.ts (Preferences type),
                            action-log.ts (persistent log file, pure fs)
   helpers/
     van-ble/main.swift    Swift BLE helper (CoreBluetooth + CommonCrypto, no deps) → assets/van-ble
+    apple-llm/main.swift  Swift CLI over the on-device Apple model (FoundationModels) → assets/apple-llm
   scripts/
     fake-router.ts        `make fake-router` entry — starts the fake M2 on 127.0.0.1:8188
     chart-previews.ts     `make previews` entry — renders every hero + chart gallery to PNGs
@@ -475,6 +477,20 @@ The
 - **Speed Test** — `/usr/bin/networkQuality` (`speed-test/run.ts`), quick
   (`-c -M 4 -u`, download-only, ~4s/~15MB) or full (`-c`, ~10-20s/~170MB).
   Last 20 results persisted in `LocalStorage`.
+
+- **Apple on-device model** — `extension/helpers/apple-llm/main.swift` (built
+  by `make helper` into the gitignored `assets/apple-llm`, `--selftest` in
+  `make check`): an agnostic CLI over `SystemLanguageModel` (macOS 26+, Apple
+  Intelligence enabled; verified live 2026-10-20). One JSON request on stdin
+  (`{"mode":"check"}`, `{"mode":"prompt","prompt","instructions?"}`,
+  `{"mode":"translate","texts":[…],"to?"}`), ONE JSON line out
+  (`{ok, available, reason?, results[], error?}`), exit 0 whatever happens;
+  a fresh session per text. `apple-llm/run.ts` spawns it from `assetsPath`;
+  the SMS detail's **Translate to English** (cmd+T) is the first user. The
+  texts are untrusted: a small model can be talked out of translating
+  ("ignore previous instructions…" returned "Hello"), so the original always
+  stays on screen next to the translation and the output is only ever shown,
+  never acted on. Not yet exposed over HTTP — the CLI is the interface.
 
 - **Shortcuts** — `/usr/bin/defaults export com.tinycast.app.beta -` (an XML plist;
   `plutil -convert json` fails on its `<data>`/`<date>` values, so `shortcuts/parse.ts`

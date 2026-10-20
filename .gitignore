@@ -4,3 +4,4 @@ build/
 .DS_Store
 .env
 extension/assets/van-ble
+extension/assets/apple-llm
