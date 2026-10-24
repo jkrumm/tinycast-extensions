@@ -29,7 +29,8 @@ import {
   WeeklyPace,
   weeklyPace,
 } from "./limits";
-import { SpendAggregate } from "./types";
+import { eligibility } from "./routing";
+import { AccountQuota, SpendAggregate } from "./types";
 
 // Keeps the lane chart to 6 rows max (5 lanes + "other") — argo tracks ~60
 // lanes, almost all zero on a given day; a handful of big rows reads better
@@ -232,4 +233,37 @@ export function spendHeroes(
 // The chart heading's number: the whole window's spend.
 export function periodTotal(spend: SpendAggregate): number {
   return spend.dailyTotals.reduce((sum, d) => sum + d.total, 0);
+}
+
+// One column per Max account (2–3): weekly % with the week-elapsed tick, then
+// when it resets — or, for an account this Mac's picker would skip, why. The
+// 5h numbers and both machines' eligibility are in `routingTables`.
+export function accountsPanel(accounts: AccountQuota[], nowMs: number): string {
+  const columns = accounts.slice(0, PANEL_COLUMNS).map((a): PanelColumn => {
+    const weekly: QuotaWindow = {
+      label: "Weekly",
+      percent: a.sevenDayPct,
+      resetsAt: a.sevenDayResetsAt,
+    };
+    const { eligible, reason } = eligibility(a, nowMs / 1000);
+    const pace = weeklyPace(weekly, nowMs / 1000);
+    const flagged =
+      !eligible && (reason === "login expired" || reason === "no sample");
+    return {
+      ...percentColumn(
+        `${a.id}${a.plan ? ` · ${a.plan}` : ""}`,
+        weekly,
+        !eligible && reason
+          ? `not pickable: ${reason}`
+          : weekly.resetsAt === null
+            ? "no reset time"
+            : `resets ${formatWeekdayTime(weekly.resetsAt)} · in ${formatRelativeReset(weekly.resetsAt, nowMs)}`,
+        flagged
+          ? RAYCAST_COLOR.secondaryText
+          : ((pace && PACE_COLOR[pace.status]) ?? undefined),
+      ),
+      marker: pace?.elapsed,
+    };
+  });
+  return toDataUri(statusPanel({ columns }));
 }

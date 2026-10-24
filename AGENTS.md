@@ -37,7 +37,9 @@ extension/
     shortcuts.tsx           command — List of every global hotkey, launcher alias and favorite (Enter launches it), read live from Tinycast's defaults
     hub.tsx                 command — Grid dashboard, one tile per command
     ticktick/             feature code: client, types, format, parse, search, create-task
-    usage/                feature code: quota (fs read), spend (argo), aggregate (pure), format
+    usage/                feature code: quota (argo + local picker + fs read), local (spawns `claude-account`,
+                           the only impure routing bit), routing + routing-text (pure: eligibility, merge,
+                           divergence, tables), spend (argo), aggregate (pure), format
     netgear/              feature code: client, transport (curl), types, fixtures, live-smoke,
                            pin-store, flows (incl. ensureRouterReachable self-heal), wifi
                            (rejoiner), wifi-creds-store (persisted router Wi-Fi creds), errors
@@ -294,11 +296,26 @@ run make secrets" while still reading the battery.
   timeout, mapped in the pure `usage/accounts.ts`; freshness per account =
   min(`updated_at`, `receivedAt`), disabled accounts hidden. Any Argo failure or
   a payload without `quota` falls back to the local path below, shown as
-  `iu (local)`. With ≥ 2 accounts the menu-bar title is `iu 8/88 · me 3/12`
-  (5h/7d) with per-account marks `⚠auth`, `⊘` exhausted, `…` stale
-  (> `STALE_HINT_SECONDS`); the dropdown and Detail list each account with
+  `iu (local)`. With ≥ 2 accounts the menu-bar title is per-account weekly % with marks (see the routing view below); the dropdown and Detail list each account with
   both resets. The top-level quota buckets (panel, pace, hub) stay the
   primary account's.
+- **Claude usage (routing view)** — routing is **per machine**, so the views keep
+  both sides: the mini's accounts from Argo (above) and this Mac's from
+  `claude-account usage --json` plus `claude-account pick --lane <lane> --dry --why`
+  for the six lanes (`usage/local.ts`: binary `~/.local/bin/claude-account`, explicit
+  `PATH` with `/opt/homebrew/bin` for its `env bun` shebang, 8 s timeout; `--dry`
+  neither refreshes the quota cache nor writes a pick-log line, and the extension
+  never refreshes anything itself). `usage/routing.ts` merges them per id (fresher
+  numbers win, **auth and exhaustion are this Mac's**) into `quota.accounts`, keeps
+  both raw sides in `quota.routing = { local, argo, picks }`, restates the picker's
+  eligibility (enabled ∧ auth_ok ∧ not exhausted ∧ 5h < 85 ∧ 7d < 90 ∧ sample < 6 h,
+  `docs/claude-accounts.md` in dotfiles) so a view can say *why* an account is out, and
+  flags where the machines disagree. Argo carries no per-lane picks, so the mini side
+  is eligibility only. Menu-bar title: `▸iu89 me8⚠` (weekly % per account, `▸` = the
+  interactive pick on this Mac, `⚠` login expired, `⊘` exhausted, `…` stale, `·5h91`
+  when the 5h window alone is near the limit); dropdown: Accounts, Routing (lane
+  picks, eligibility per machine, divergences). Detail: `accountsPanel` hero, then one
+  table (both machines' eligibility) and the lane table.
 - **Claude usage (local quota fallback)** — `/tmp/claude_sl/usage_api.json`, refreshed via
   `~/.claude/fetch_usage.py` (the same rate-limit-aware fetcher the
   statusline uses) when missing or >5 min stale. **Never calls

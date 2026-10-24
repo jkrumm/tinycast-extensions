@@ -4,7 +4,12 @@
 // to this list is checked and looked at everywhere. Not imported by any command.
 
 import { aggregateSpend } from "../../usage/aggregate";
-import { quotaPanel, spendHeroes, usageMetrics } from "../../usage/heroes";
+import {
+  accountsPanel,
+  quotaPanel,
+  spendHeroes,
+  usageMetrics,
+} from "../../usage/heroes";
 import { quotaLimits } from "../../usage/limits";
 import {
   historyImage as speedHistory,
@@ -35,7 +40,7 @@ import {
   trendImage as signalTrend,
 } from "../../netgear/signal-view";
 import type { SignalSample } from "../../netgear/signal-view";
-import type { UsageQuotaOk } from "../../usage/types";
+import type { AccountQuota, UsageQuotaOk } from "../../usage/types";
 import type { SpeedTestRecord } from "../../speed-test/types";
 import type { BatterySnapshot } from "../../battery/types";
 import type { RouterStatus } from "../../netgear/types";
@@ -121,6 +126,30 @@ export function productionHeroes(now: number): ProductionHero[] {
   };
   const limits = quotaLimits(quota);
   add("usage", "usage-quota", quotaPanel(limits, now));
+  const account = (
+    id: string,
+    plan: string,
+    seven: number,
+    authOk = true,
+  ): AccountQuota => ({
+    id,
+    plan,
+    fiveHourPct: 4,
+    sevenDayPct: seven,
+    fiveHourResetsAt: now / 1000 + 4_080,
+    sevenDayResetsAt: weeklyReset,
+    authOk,
+    exhaustedUntil: null,
+    updatedAt: now / 1000,
+  });
+  add(
+    "usage",
+    "usage-accounts",
+    accountsPanel(
+      [account("iu", "max20x", 62), account("me", "max5x", 8, false)],
+      now,
+    ),
+  );
 
   const totals = dailySpend({ days: 30 });
   const spend = aggregateSpend({

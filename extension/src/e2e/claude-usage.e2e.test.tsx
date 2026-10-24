@@ -74,7 +74,7 @@ describe("claude-usage command", () => {
     );
   });
 
-  it("lists the non-primary account in a table for a two-account quota", async () => {
+  it("shows both accounts, both machines' eligibility and the lane picks", async () => {
     const now = Date.now() / 1000;
     const account = (id: string, five: number, seven: number) => ({
       id,
@@ -89,7 +89,21 @@ describe("claude-usage command", () => {
     });
     getQuotaMock.mockResolvedValue({
       ...(okQuota as UsageQuotaOk),
-      accounts: [account("iu", 8, 88), account("me", 3, 12)],
+      accounts: [
+        account("iu", 8, 88),
+        { ...account("me", 3, 12), authOk: false }, // merged: this Mac's auth
+      ],
+      routing: {
+        argo: [account("iu", 8, 88), account("me", 3, 12)],
+        local: [
+          account("iu", 8, 88),
+          { ...account("me", 3, 12), authOk: false },
+        ],
+        picks: [
+          { lane: "interactive", picked: "iu", reason: "home" },
+          { lane: "wave", picked: "iu", reason: "spill" },
+        ],
+      },
     });
     getTimeseriesMock.mockResolvedValue(timeseries);
 
@@ -99,7 +113,13 @@ describe("claude-usage command", () => {
     );
     const markdown = renderer.root.findByType(Detail).props.markdown as string;
     expect(markdown).toContain("| me | 3% ·");
-    expect(markdown).not.toContain("| iu |");
+    expect(markdown).toContain("| iu | 8% ·");
+    expect(markdown).toContain("✗ login expired"); // this Mac
+    expect(markdown).toContain("eligible on the mini, not on this Mac");
+    expect(markdown).toContain("| wave | spill |");
+    expect(imageSvg(markdown, "Accounts")).toContain(
+      "not pickable: login expired",
+    );
     assertNoBadSubstrings(
       markdown.replace(/data:[^)]+/g, "data:"),
       "claude-usage two accounts",

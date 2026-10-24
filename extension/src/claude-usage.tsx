@@ -7,21 +7,19 @@ import {
   hasMultipleAccounts,
   isQuotaError,
   UsageQuota,
-  AccountQuota,
   SpendAggregate,
 } from "./usage/types";
 import {
   periodTotal,
+  accountsPanel,
   quotaPanel,
   spendHeroes,
   usageMetrics,
 } from "./usage/heroes";
 import { WEEK_SECONDS, quotaLimits } from "./usage/limits";
-import { STALE_HINT_SECONDS, accountFlags, flagText } from "./usage/accounts";
+import { routingMarkdown } from "./usage/routing-text";
 import {
   extraUsageLine,
-  formatPercent,
-  formatRelativeReset,
   formatSpend,
   overflowModelsLine,
 } from "./usage/format";
@@ -106,20 +104,6 @@ export default function ClaudeUsage() {
   );
 }
 
-function accountsTable(accounts: AccountQuota[]): string[] {
-  const rows = accounts.map((a) => {
-    const flags = accountFlags(a, STALE_HINT_SECONDS).map(flagText).join(", ");
-    const reset = (t: number | null) =>
-      t === null ? "—" : formatRelativeReset(t);
-    return `| ${a.id}${a.plan ? ` (${a.plan})` : ""} | ${formatPercent(a.fiveHourPct)} · ${reset(a.fiveHourResetsAt)} | ${formatPercent(a.sevenDayPct)} · ${reset(a.sevenDayResetsAt)} | ${flags || "ok"} |`;
-  });
-  return [
-    "| Account | 5h · resets in | 7d · resets in | Status |",
-    "|-|-|-|-|",
-    ...rows,
-  ];
-}
-
 function renderMarkdown(
   data: UsageData | undefined,
   isLoading: boolean,
@@ -146,13 +130,20 @@ function renderMarkdown(
 
   const now = Date.now();
   const limits = quotaLimits(quota);
-  // The primary account is the hero above; the table adds the others.
-  if (hasMultipleAccounts(quota))
-    lines.push(...accountsTable(quota.accounts.slice(1)), "");
-  lines.push(`![Quota](${quotaPanel(limits, now)})`, "");
-  // The panel has room for weekly, 5h and one model cap.
-  const overflow = overflowModelsLine(limits.models.slice(1));
-  if (overflow) lines.push(overflow, "");
+  if (hasMultipleAccounts(quota)) {
+    // One column per account; the 5h numbers, both machines' eligibility and
+    // the lane picks follow as a table. The primary's model caps have no panel
+    // column then, so they are one line.
+    lines.push(`![Accounts](${accountsPanel(quota.accounts, now)})`, "");
+    lines.push(...routingMarkdown(quota.accounts, quota.routing, now), "");
+    const caps = overflowModelsLine(limits.models);
+    if (caps) lines.push(caps, "");
+  } else {
+    lines.push(`![Quota](${quotaPanel(limits, now)})`, "");
+    // The panel has room for weekly, 5h and one model cap.
+    const overflow = overflowModelsLine(limits.models.slice(1));
+    if (overflow) lines.push(overflow, "");
+  }
   const extra = extraUsageLine(quota.extra_usage);
   if (extra) lines.push(extra, "");
 

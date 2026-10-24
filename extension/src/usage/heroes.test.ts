@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { quotaPanel, spendHeroes, usageMetrics } from "./heroes";
+import { accountsPanel, quotaPanel, spendHeroes, usageMetrics } from "./heroes";
 import { QuotaLimits, WEEK_SECONDS } from "./limits";
-import { SpendAggregate } from "./types";
+import { AccountQuota, SpendAggregate } from "./types";
 
 const decode = (uri: string) =>
   Buffer.from(uri.split(";base64,")[1].split("?")[0], "base64").toString();
@@ -114,5 +114,37 @@ describe("spendHeroes", () => {
     const svg = decode(days);
     expect(svg).not.toMatch(/NaN|undefined/);
     expect(svg).toContain("avg $");
+  });
+});
+
+describe("accountsPanel", () => {
+  const account = (over: Partial<AccountQuota>): AccountQuota => ({
+    id: "iu",
+    plan: "max20x",
+    fiveHourPct: 4,
+    sevenDayPct: 14,
+    fiveHourResetsAt: NOW / 1000 + 3600,
+    sevenDayResetsAt: RESET,
+    authOk: true,
+    exhaustedUntil: null,
+    updatedAt: NOW / 1000,
+    ...over,
+  });
+
+  it("draws one column per account, the primary first", () => {
+    const svg = decode(
+      accountsPanel([account({}), account({ id: "me", plan: "max5x" })], NOW),
+    );
+    expect(svg.indexOf("IU")).toBeLessThan(svg.indexOf("ME"));
+    expect(svg).toContain("MAX20X");
+    expect(svg).toContain(">14<");
+  });
+
+  it("says why an account the picker would skip is skipped, and greys it", () => {
+    const svg = decode(
+      accountsPanel([account({ authOk: false, sevenDayPct: 8 })], NOW),
+    );
+    expect(svg).toContain("not pickable: login expired");
+    expect(svg).toContain("raycast-secondary-text");
   });
 });

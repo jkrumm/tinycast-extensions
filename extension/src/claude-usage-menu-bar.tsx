@@ -29,6 +29,8 @@ import {
   modelLimitLabel,
   spendErrorText,
 } from "./usage/format";
+import { eligibilityLine, laneLines } from "./usage/routing-text";
+import { RoutingView, divergences, eligibility } from "./usage/routing";
 import { QuotaWindow, quotaLimits, weeklyPace } from "./usage/limits";
 import {
   hasMultipleAccounts,
@@ -167,7 +169,13 @@ export default function ClaudeUsageMenuBar() {
       tooltip={`Claude Usage${quotaStale ? " (stale)" : ""}`}
     >
       {data && hasMultipleAccounts(data.quota) && (
-        <AccountsSection accounts={data.quota.accounts} />
+        <>
+          <AccountsSection accounts={data.quota.accounts} />
+          <RoutingSection
+            accounts={data.quota.accounts}
+            routing={data.quota.routing}
+          />
+        </>
       )}
 
       {data && !isQuotaError(data.quota) && <QuotaSection quota={data.quota} />}
@@ -226,6 +234,7 @@ export default function ClaudeUsageMenuBar() {
 }
 
 function AccountsSection({ accounts }: { accounts: AccountQuota[] }) {
+  const now = Date.now() / 1000;
   return (
     <MenuBarExtra.Section title="Accounts">
       {accounts.map((a) => {
@@ -237,7 +246,9 @@ function AccountsSection({ accounts }: { accounts: AccountQuota[] }) {
             key={a.id}
             icon={{
               source: Icon.Circle,
-              tintColor: dotColor(a.sevenDayPct),
+              tintColor: eligibility(a, now).eligible
+                ? dotColor(a.sevenDayPct)
+                : Color.SecondaryText,
             }}
             title={`${a.id}${a.plan ? ` (${a.plan})` : ""}: ${accountSummary(a)}${flags ? ` — ${flags}` : ""}`}
           />
@@ -248,6 +259,39 @@ function AccountsSection({ accounts }: { accounts: AccountQuota[] }) {
           key={`${a.id}-reset`}
           title={`${a.id} resets: 5h ${formatRelativeReset(a.fiveHourResetsAt)} · 7d ${a.sevenDayResetsAt === null ? "—" : formatWeekdayTime(a.sevenDayResetsAt)}`}
         />
+      ))}
+    </MenuBarExtra.Section>
+  );
+}
+
+// Which account each lane would pick on this Mac, the mini's eligibility from
+// Argo, and where the two machines disagree.
+function RoutingSection({
+  accounts,
+  routing,
+}: {
+  accounts: AccountQuota[];
+  routing: RoutingView | undefined;
+}) {
+  if (!routing) return null;
+  const now = Date.now() / 1000;
+  const diverging = divergences(routing, now);
+  return (
+    <MenuBarExtra.Section title="Routing">
+      {laneLines(routing.picks).map((line) => (
+        <MenuBarExtra.Item key={line} title={line} />
+      ))}
+      {!routing.local && (
+        <MenuBarExtra.Item title="This Mac's picker unavailable" />
+      )}
+      {accounts.map((a) => (
+        <MenuBarExtra.Item
+          key={`${a.id}-elig`}
+          title={`${a.id}: ${eligibilityLine(a, routing, now)}`}
+        />
+      ))}
+      {diverging.map((d) => (
+        <MenuBarExtra.Item key={d} title={`⚠ ${d}`} />
       ))}
     </MenuBarExtra.Section>
   );

@@ -1,6 +1,7 @@
 import { QuotaLimits, QuotaWindow, WeeklyPace, quotaLimits } from "./limits";
 import { formatPercent } from "./percent";
 import { STALE_HINT_SECONDS, accountsTitle } from "./accounts";
+import { interactivePick } from "./routing-text";
 import {
   ExtraUsage,
   UsageBucket,
@@ -86,7 +87,12 @@ export function menuBarTitleWithFreshness(
   // Several accounts: per-account numbers and marks replace the bare percent;
   // staleness is flagged per account there.
   if (hasMultipleAccounts(quota))
-    return accountsTitle(quota.accounts, STALE_HINT_SECONDS);
+    return accountsTitle(
+      quota.accounts,
+      STALE_HINT_SECONDS,
+      Date.now() / 1000,
+      interactivePick(quota.routing?.picks ?? null),
+    );
   return `${menuBarTitle(quota)}${stale ? " (stale)" : ""}`;
 }
 
