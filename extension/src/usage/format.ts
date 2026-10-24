@@ -1,14 +1,19 @@
 import { QuotaLimits, QuotaWindow, WeeklyPace, quotaLimits } from "./limits";
+import { formatPercent } from "./percent";
 import { STALE_HINT_SECONDS, accountsTitle } from "./accounts";
-import { ExtraUsage, UsageBucket, UsageQuota, isQuotaError } from "./types";
+import {
+  ExtraUsage,
+  UsageBucket,
+  UsageQuota,
+  hasMultipleAccounts,
+  isQuotaError,
+} from "./types";
 
 export function formatUtilization(u: UsageBucket): string {
   return formatPercent(u.utilization);
 }
 
-export function formatPercent(percent: number | null): string {
-  return percent === null ? "—" : `${Math.round(percent)}%`;
-}
+export { formatPercent };
 
 export function formatRelativeReset(
   epochSeconds: number | null,
@@ -80,8 +85,8 @@ export function menuBarTitleWithFreshness(
 ): string {
   // Several accounts: per-account numbers and marks replace the bare percent;
   // staleness is flagged per account there.
-  if (!isQuotaError(quota) && (quota.accounts?.length ?? 0) > 1)
-    return accountsTitle(quota.accounts!, STALE_HINT_SECONDS);
+  if (hasMultipleAccounts(quota))
+    return accountsTitle(quota.accounts, STALE_HINT_SECONDS);
   return `${menuBarTitle(quota)}${stale ? " (stale)" : ""}`;
 }
 

@@ -2,7 +2,7 @@
 // and the compact menu-bar title for several of them. No @raycast/api.
 
 import { AccountQuota, UsageQuotaOk } from "./types";
-import { formatPercent } from "./format";
+import { formatPercent } from "./percent";
 
 // Per account, as pushed by agent-gateway (percent numbers, epoch seconds,
 // null when unknown, updated_at epoch ms).
@@ -42,6 +42,11 @@ function toSeconds(value: number | null | undefined): number | null {
   return value > 1e11 ? value / 1000 : value;
 }
 
+function freshness(...times: (number | null)[]): number {
+  const known = times.filter((t): t is number => t !== null);
+  return known.length > 0 ? Math.min(...known) : 0;
+}
+
 // Enabled accounts only, "iu" first. Null when the payload has no quota yet or
 // nothing is enabled — the caller falls back to the local file.
 export function accountsFromOverview(
@@ -70,8 +75,8 @@ export function accountsFromOverview(
           exhaustedUntil !== null && exhaustedUntil > nowSeconds
             ? exhaustedUntil
             : null,
-        // Unknown on both sides counts as infinitely old.
-        updatedAt: Math.min(own ?? 0, received ?? own ?? 0),
+        // Oldest known timestamp; unknown on both sides counts as infinitely old.
+        updatedAt: freshness(own, received),
       };
     })
     .sort(
@@ -83,9 +88,21 @@ export function accountsFromOverview(
 }
 
 // The single-account shape the views and the hub already read.
-export function primaryQuota(accounts: AccountQuota[]): UsageQuotaOk {
+// `local` (the statusline's file, read only) lends the model caps and extra
+// usage Argo does not carry.
+export function primaryQuota(
+  accounts: AccountQuota[],
+  local?: UsageQuotaOk | null,
+): UsageQuotaOk {
   const p = accounts[0];
   return {
+    ...(local?.limits ? { limits: local.limits } : {}),
+    ...(local?.seven_day_sonnet
+      ? { seven_day_sonnet: local.seven_day_sonnet }
+      : {}),
+    ...(local?.extra_usage !== undefined
+      ? { extra_usage: local.extra_usage }
+      : {}),
     accounts,
     five_hour: {
       utilization: p.fiveHourPct,

@@ -4,6 +4,7 @@ import { useMemo, useRef } from "react";
 import { getQuota, isStaleHint } from "./usage/quota";
 import { getTimeseries, aggregateSpend } from "./usage/spend";
 import {
+  hasMultipleAccounts,
   isQuotaError,
   UsageQuota,
   AccountQuota,
@@ -145,8 +146,9 @@ function renderMarkdown(
 
   const now = Date.now();
   const limits = quotaLimits(quota);
-  if ((quota.accounts?.length ?? 0) > 1)
-    lines.push(...accountsTable(quota.accounts!), "");
+  // The primary account is the hero above; the table adds the others.
+  if (hasMultipleAccounts(quota))
+    lines.push(...accountsTable(quota.accounts.slice(1)), "");
   lines.push(`![Quota](${quotaPanel(limits, now)})`, "");
   // The panel has room for weekly, 5h and one model cap.
   const overflow = overflowModelsLine(limits.models.slice(1));

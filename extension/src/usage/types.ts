@@ -63,6 +63,13 @@ export interface UsageQuotaError {
 
 export type UsageQuota = UsageQuotaOk | UsageQuotaError;
 
+// Two or more accounts to show: the one place the length check lives.
+export function hasMultipleAccounts(
+  q: UsageQuota,
+): q is UsageQuotaOk & { accounts: AccountQuota[] } {
+  return !isQuotaError(q) && (q.accounts?.length ?? 0) > 1;
+}
+
 export function isQuotaError(q: UsageQuota): q is UsageQuotaError {
   return "error" in q;
 }

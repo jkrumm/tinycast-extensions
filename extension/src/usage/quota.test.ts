@@ -137,7 +137,34 @@ describe("getQuota via argo", () => {
     expect(q.accounts?.map((a) => a.id)).toEqual(["iu", "me"]);
     expect(q.five_hour.utilization).toBe(8);
     expect(execFileMock).not.toHaveBeenCalled();
-    expect(readFileMock).not.toHaveBeenCalled();
+  });
+
+  it("treats a 2 h old argo payload as failed and falls back", async () => {
+    const old = Date.now() - 2 * 3600_000;
+    argoFetchMock.mockResolvedValue({
+      latest: { quota: { accounts: { iu: acct({ updated_at: old }) } } },
+      receivedAt: old,
+    });
+    readFileMock.mockResolvedValue(JSON.stringify(okQuota(Date.now() / 1000)));
+    const q = await getQuota();
+    if ("error" in q) throw new Error("unexpected error");
+    expect(q.accounts?.[0].id).toBe("iu (local)");
+  });
+
+  it("merges limits and extra_usage from the local file without fetching", async () => {
+    argoFetchMock.mockResolvedValue(overview({ iu: acct(), me: acct() }));
+    readFileMock.mockResolvedValue(
+      JSON.stringify({
+        ...okQuota(Date.now() / 1000),
+        limits: [{ kind: "weekly_scoped", label: "Fable" }],
+        extra_usage: { is_enabled: true },
+      }),
+    );
+    const q = await getQuota();
+    if ("error" in q) throw new Error("unexpected error");
+    expect(q.limits).toHaveLength(1);
+    expect(q.extra_usage).toEqual({ is_enabled: true });
+    expect(execFileMock).not.toHaveBeenCalled();
   });
 
   it("falls back to the local file labelled iu (local) when argo fails", async () => {

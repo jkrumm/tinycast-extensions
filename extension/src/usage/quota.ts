@@ -24,6 +24,9 @@ const REFETCH_AFTER_SECONDS = 100;
 const FETCH_TIMEOUT_MS = 20_000;
 
 const ARGO_TIMEOUT_MS = 5_000;
+// An Argo reading whose newest account is older than this is as good as a
+// failed fetch (the push stopped) — the local file is fresher.
+const ARGO_MAX_AGE_SECONDS = 30 * 60;
 
 const FETCH_BIN = "/opt/homebrew/bin/uv";
 const FETCH_ARGS = ["run", `${homedir()}/.claude/fetch_usage.py`];
@@ -72,7 +75,11 @@ async function getArgoQuota(): Promise<UsageQuota | null> {
       ARGO_TIMEOUT_MS,
     );
     const accounts = accountsFromOverview(overview);
-    return accounts ? primaryQuota(accounts) : null;
+    if (!accounts) return null;
+    const newest = Math.max(...accounts.map((a) => a.updatedAt));
+    if (Date.now() / 1000 - newest > ARGO_MAX_AGE_SECONDS) return null;
+    const local = await readQuotaFile();
+    return primaryQuota(accounts, local && !("error" in local) ? local : null);
   } catch {
     return null;
   }
