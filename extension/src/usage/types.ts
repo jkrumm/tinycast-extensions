@@ -28,7 +28,24 @@ export interface ExtraUsage {
   decimal_places: number | null;
 }
 
+// One Claude Max account as the views show it — mapped from Argo's
+// `quota.accounts` entry (usage/accounts.ts) or built from the local file.
+export interface AccountQuota {
+  id: string; // "iu" | "me" | "iu (local)"
+  plan: string | null;
+  fiveHourPct: number | null; // 0-100
+  sevenDayPct: number | null; // 0-100
+  fiveHourResetsAt: number | null; // unix seconds
+  sevenDayResetsAt: number | null; // unix seconds
+  authOk: boolean;
+  exhaustedUntil: number | null; // unix seconds, only while in the future
+  updatedAt: number; // unix seconds, already min(account.updated_at, receivedAt)
+}
+
 export interface UsageQuotaOk {
+  // Every enabled account, primary first. The top-level buckets below are the
+  // primary account's (or the local file's), so single-account code keeps working.
+  accounts?: AccountQuota[];
   five_hour: UsageBucket;
   seven_day: UsageBucket;
   // Legacy, null on current plans; files written before the fetcher learned

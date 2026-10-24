@@ -288,7 +288,18 @@ run make secrets" while still reading the battery.
 
 - **TickTick** — argo proxy (`{baseUrl}/ticktick/*`), bearer token from the
   secrets chain. See `.claude/skills/ticktick-api/SKILL.md`.
-- **Claude usage (quota)** — `/tmp/claude_sl/usage_api.json`, refreshed via
+- **Claude usage (accounts)** — two Max accounts (`iu` 20x primary, `me` 5x).
+  Primary source: Argo `GET /agents/overview` (agent-gateway is loopback-only
+  and pushes its overview to Argo ≤10 min) → `latest.quota.accounts`, 5 s
+  timeout, mapped in the pure `usage/accounts.ts`; freshness per account =
+  min(`updated_at`, `receivedAt`), disabled accounts hidden. Any Argo failure or
+  a payload without `quota` falls back to the local path below, shown as
+  `iu (local)`. With ≥ 2 accounts the menu-bar title is `iu 8/88 · me 3/12`
+  (5h/7d) with per-account marks `⚠auth`, `⊘` exhausted, `…` stale
+  (> `STALE_HINT_SECONDS`); the dropdown and Detail list each account with
+  both resets. The top-level quota buckets (panel, pace, hub) stay the
+  primary account's.
+- **Claude usage (local quota fallback)** — `/tmp/claude_sl/usage_api.json`, refreshed via
   `~/.claude/fetch_usage.py` (the same rate-limit-aware fetcher the
   statusline uses) when missing or >5 min stale. **Never calls
   `api.anthropic.com` directly.** Weekly-first (a Max plan's binding limit):

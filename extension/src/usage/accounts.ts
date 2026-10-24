@@ -1,0 +1,154 @@
+// Pure: Argo's `/agents/overview` quota payload → the accounts the views show,
+// and the compact menu-bar title for several of them. No @raycast/api.
+
+import { AccountQuota, UsageQuotaOk } from "./types";
+import { formatPercent } from "./format";
+
+// Per account, as pushed by agent-gateway (percent numbers, epoch seconds,
+// null when unknown, updated_at epoch ms).
+interface RawAccount {
+  five_hour_pct?: number | null;
+  seven_day_pct?: number | null;
+  five_hour_resets_at?: number | null;
+  seven_day_resets_at?: number | null;
+  auth_ok?: boolean | null;
+  exhausted_until?: number | null;
+  enabled?: boolean | null;
+  plan?: string | null;
+  updated_at?: number | null;
+}
+
+export interface OverviewResponse {
+  latest: { quota?: { accounts?: Record<string, RawAccount> } } | null;
+  receivedAt?: number | string | null;
+}
+
+export const STALE_HINT_SECONDS = 15 * 60;
+
+export const PRIMARY_ACCOUNT = "iu";
+
+function toMs(value: number | string | null | undefined): number | null {
+  if (typeof value === "number") return value;
+  if (typeof value === "string") {
+    const ms = Date.parse(value);
+    return Number.isNaN(ms) ? null : ms;
+  }
+  return null;
+}
+
+// Tolerate seconds or milliseconds for a timestamp field.
+function toSeconds(value: number | null | undefined): number | null {
+  if (typeof value !== "number") return null;
+  return value > 1e11 ? value / 1000 : value;
+}
+
+// Enabled accounts only, "iu" first. Null when the payload has no quota yet or
+// nothing is enabled — the caller falls back to the local file.
+export function accountsFromOverview(
+  overview: OverviewResponse | null | undefined,
+  nowSeconds = Date.now() / 1000,
+): AccountQuota[] | null {
+  const raw = overview?.latest?.quota?.accounts;
+  if (!raw) return null;
+  const receivedMs = toMs(overview?.receivedAt);
+
+  const accounts = Object.entries(raw)
+    .filter(([, a]) => a && a.enabled !== false)
+    .map(([id, a]): AccountQuota => {
+      const own = toSeconds(a.updated_at);
+      const received = receivedMs === null ? null : receivedMs / 1000;
+      const exhaustedUntil = toSeconds(a.exhausted_until);
+      return {
+        id,
+        plan: a.plan ?? null,
+        fiveHourPct: a.five_hour_pct ?? null,
+        sevenDayPct: a.seven_day_pct ?? null,
+        fiveHourResetsAt: toSeconds(a.five_hour_resets_at),
+        sevenDayResetsAt: toSeconds(a.seven_day_resets_at),
+        authOk: a.auth_ok !== false,
+        exhaustedUntil:
+          exhaustedUntil !== null && exhaustedUntil > nowSeconds
+            ? exhaustedUntil
+            : null,
+        // Unknown on both sides counts as infinitely old.
+        updatedAt: Math.min(own ?? 0, received ?? own ?? 0),
+      };
+    })
+    .sort(
+      (a, b) =>
+        Number(b.id === PRIMARY_ACCOUNT) - Number(a.id === PRIMARY_ACCOUNT) ||
+        a.id.localeCompare(b.id),
+    );
+  return accounts.length > 0 ? accounts : null;
+}
+
+// The single-account shape the views and the hub already read.
+export function primaryQuota(accounts: AccountQuota[]): UsageQuotaOk {
+  const p = accounts[0];
+  return {
+    accounts,
+    five_hour: {
+      utilization: p.fiveHourPct,
+      resets_at_epoch: p.fiveHourResetsAt,
+    },
+    seven_day: {
+      utilization: p.sevenDayPct,
+      resets_at_epoch: p.sevenDayResetsAt,
+    },
+    // The oldest account bounds how fresh the whole reading is.
+    fetched_at: Math.min(...accounts.map((a) => a.updatedAt)),
+  };
+}
+
+export type AccountFlag = "auth" | "exhausted" | "stale";
+
+export function accountFlags(
+  account: AccountQuota,
+  staleAfterSeconds: number,
+  nowSeconds = Date.now() / 1000,
+): AccountFlag[] {
+  const flags: AccountFlag[] = [];
+  if (!account.authOk) flags.push("auth");
+  if (account.exhaustedUntil !== null && account.exhaustedUntil > nowSeconds)
+    flags.push("exhausted");
+  if (nowSeconds - account.updatedAt > staleAfterSeconds) flags.push("stale");
+  return flags;
+}
+
+const FLAG_MARK: Record<AccountFlag, string> = {
+  auth: "⚠auth",
+  exhausted: "⊘",
+  stale: "…",
+};
+
+const pct = (p: number | null) => (p === null ? "—" : String(Math.round(p)));
+
+// "iu 8/88 · me 3/12" — 5h / 7d per account, a mark after the numbers for
+// auth failure (⚠auth), exhausted (⊘) and stale (…).
+export function accountsTitle(
+  accounts: AccountQuota[],
+  staleAfterSeconds: number,
+  nowSeconds = Date.now() / 1000,
+): string {
+  return accounts
+    .map((a) => {
+      const marks = accountFlags(a, staleAfterSeconds, nowSeconds)
+        .map((f) => FLAG_MARK[f])
+        .join("");
+      return `${a.id} ${pct(a.fiveHourPct)}/${pct(a.sevenDayPct)}${marks}`;
+    })
+    .join(" · ");
+}
+
+// Dropdown / detail wording for the flags.
+export function flagText(flag: AccountFlag): string {
+  return flag === "auth"
+    ? "login expired"
+    : flag === "exhausted"
+      ? "exhausted"
+      : "stale";
+}
+
+export function accountSummary(a: AccountQuota): string {
+  return `5h ${formatPercent(a.fiveHourPct)} · 7d ${formatPercent(a.sevenDayPct)}`;
+}
