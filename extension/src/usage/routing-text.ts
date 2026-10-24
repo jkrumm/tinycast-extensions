@@ -29,16 +29,17 @@ export function laneLines(picks: RoutingView["picks"]): string[] {
   return laneGroups(picks).map(groupLine);
 }
 
-// Detail: every lane, the account it goes to and why, in plain words.
+// Detail: one row per (account, reason) group of lanes, in plain words.
 export function lanesTable(picks: RoutingView["picks"]): string[] {
   if (!picks) return [];
-  const rows = laneGroups(picks).flatMap((g) =>
-    g.lanes.map(
-      (lane) =>
-        `| ${laneLabel(lane)} | ${g.account ?? "spill"} | ${reasonWords(g.reason)} |`,
+  return [
+    "| Work | Goes to | Why |",
+    "|-|-|-|",
+    ...laneGroups(picks).map(
+      (g) =>
+        `| ${g.lanes.map(laneLabel).join(", ")} | ${g.account ?? "spill"} | ${reasonWords(g.reason)} |`,
     ),
-  );
-  return ["| Work | Goes to | Why |", "|-|-|-|", ...rows];
+  ];
 }
 
 // Detail: each account's verdict on both machines.

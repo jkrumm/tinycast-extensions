@@ -253,9 +253,9 @@ export function reasonWords(reason: string): string {
     case "home":
       return "home account";
     case "pace":
-      return "home account is burning ahead of pace";
+      return "home account ahead of pace";
     case "session":
-      return "home account's 5h window is full";
+      return "home account's 5h is full";
     case "spill":
       return "no account has room";
     case "forced":
