@@ -153,12 +153,18 @@ describe("title and flags", () => {
     expect(q.five_hour.utilization).toBe(8);
   });
 
-  it("primaryQuota exposes the first account and the oldest freshness", () => {
+  it("primaryQuota exposes the first account and the newest freshness", () => {
     const q = primaryQuota([
       accounts[0],
       { ...accounts[1], updatedAt: NOW - 500 },
     ]);
     expect(q.five_hour.utilization).toBe(8);
-    expect(q.fetched_at).toBe(NOW - 500);
+    expect(q.fetched_at).toBe(accounts[0].updatedAt);
+    expect(
+      primaryQuota([
+        { ...accounts[0], updatedAt: NOW - 3000 },
+        { ...accounts[1], updatedAt: NOW - 500 },
+      ]).fetched_at,
+    ).toBe(NOW - 500);
   });
 });

@@ -119,14 +119,9 @@ export function primaryQuota(
       utilization: p.sevenDayPct,
       resets_at_epoch: p.sevenDayResetsAt,
     },
-    // The oldest account with numbers bounds how fresh the reading is (one
-    // that never had a sample would pin it at 1970).
-    fetched_at: Math.min(
-      ...(accounts.some((a) => a.updatedAt > 0)
-        ? accounts.filter((a) => a.updatedAt > 0)
-        : accounts
-      ).map((a) => a.updatedAt),
-    ),
+    // The newest sample bounds how fresh the reading is; a lagging account is
+    // flagged per account (accountFlags "stale"), not for the whole view.
+    fetched_at: Math.max(...accounts.map((a) => a.updatedAt)),
   };
 }
 
