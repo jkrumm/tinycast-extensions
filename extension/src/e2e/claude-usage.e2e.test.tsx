@@ -112,14 +112,16 @@ describe("claude-usage command", () => {
       () => renderer.root.findByType(Detail).props.isLoading === false,
     );
     const markdown = renderer.root.findByType(Detail).props.markdown as string;
-    expect(markdown).toContain("| me | 3% ·");
-    expect(markdown).toContain("| iu | 8% ·");
-    expect(markdown).toContain("✗ login expired"); // this Mac
+    // Headline first: work goes to iu, me's login is broken on this Mac.
+    expect(markdown).toContain("**Working on iu");
+    expect(markdown).toContain("me: login expired");
+    expect(markdown).toContain("| Interactive | iu | home account |");
+    expect(markdown).toContain("| Waves | spill | no account has room |");
+    expect(markdown).toContain("| me | ✗ login expired | ✓ eligible |"); // this Mac | mini
     expect(markdown).toContain("eligible on the mini, not on this Mac");
-    expect(markdown).toContain("| wave | spill |");
-    expect(imageSvg(markdown, "Accounts")).toContain(
-      "not pickable: login expired",
-    );
+    const capacity = imageSvg(markdown, "Capacity");
+    expect(capacity.indexOf("POOL")).toBeLessThan(capacity.indexOf("IU"));
+    expect(capacity).toContain("not pickable: login expired");
     assertNoBadSubstrings(
       markdown.replace(/data:[^)]+/g, "data:"),
       "claude-usage two accounts",

@@ -13,7 +13,8 @@ import { useCachedPromise } from "@raycast/utils";
 import { isOverdue, isDueToday } from "./ticktick/format";
 import { loadOpenTasks } from "./ticktick/load";
 import { getQuota } from "./usage/quota";
-import { isQuotaError } from "./usage/types";
+import { hasMultipleAccounts, isQuotaError } from "./usage/types";
+import { summarize, summaryTileStatus } from "./usage/summary";
 import { quotaLimits } from "./usage/limits";
 import { usageTileStatus } from "./usage/format";
 import { getClient } from "./netgear/session";
@@ -111,6 +112,10 @@ async function tasksStatus(): Promise<TileData> {
 async function usageStatus(): Promise<TileData> {
   const quota = await getQuota();
   if (isQuotaError(quota)) return { status: "Error" };
+  if (hasMultipleAccounts(quota))
+    return {
+      status: summaryTileStatus(summarize(quota.accounts, quota.routing)),
+    };
   return { status: usageTileStatus(quotaLimits(quota)) };
 }
 

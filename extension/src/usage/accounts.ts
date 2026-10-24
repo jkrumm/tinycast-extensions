@@ -2,7 +2,6 @@
 // and the compact menu-bar title for several of them. No @raycast/api.
 
 import { AccountQuota, UsageQuotaOk } from "./types";
-import { formatPercent } from "./percent";
 
 // Per account, as pushed by agent-gateway (percent numbers, epoch seconds,
 // null when unknown, updated_at epoch ms).
@@ -138,54 +137,4 @@ export function accountFlags(
     flags.push("exhausted");
   if (nowSeconds - account.updatedAt > staleAfterSeconds) flags.push("stale");
   return flags;
-}
-
-const FLAG_MARK: Record<AccountFlag, string> = {
-  auth: "⚠",
-  exhausted: "⊘",
-  stale: "…",
-};
-
-const pct = (p: number | null) => (p === null ? "—" : String(Math.round(p)));
-
-// 5h windows at or past this get their number in the title: the picker leaves
-// an account at 85 (usage/routing.ts SESSION_LIMIT, same number).
-const TITLE_SESSION_HINT = 85;
-
-// "▸iu89 me8⚠" — weekly % per account (the limit that binds), `▸` before the
-// account an interactive spawn on this Mac would pick, a mark after the number
-// for auth failure (⚠), exhausted (⊘) and stale (…), and `·5h91` once the 5h
-// window alone is about to make the account ineligible. Compact on purpose:
-// the menu bar behind the notch is crowded.
-export function accountsTitle(
-  accounts: AccountQuota[],
-  staleAfterSeconds: number,
-  nowSeconds = Date.now() / 1000,
-  picked: string | null = null,
-): string {
-  return accounts
-    .map((a) => {
-      const marks = accountFlags(a, staleAfterSeconds, nowSeconds)
-        .map((f) => FLAG_MARK[f])
-        .join("");
-      const session =
-        a.fiveHourPct !== null && a.fiveHourPct >= TITLE_SESSION_HINT
-          ? `·5h${pct(a.fiveHourPct)}`
-          : "";
-      return `${a.id === picked ? "▸" : ""}${a.id}${pct(a.sevenDayPct)}${session}${marks}`;
-    })
-    .join(" ");
-}
-
-// Dropdown / detail wording for the flags.
-export function flagText(flag: AccountFlag): string {
-  return flag === "auth"
-    ? "login expired"
-    : flag === "exhausted"
-      ? "exhausted"
-      : "stale";
-}
-
-export function accountSummary(a: AccountQuota): string {
-  return `5h ${formatPercent(a.fiveHourPct)} · 7d ${formatPercent(a.sevenDayPct)}`;
 }

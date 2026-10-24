@@ -4,7 +4,6 @@ import {
   STALE_HINT_SECONDS,
   accountFlags,
   accountsFromOverview,
-  accountsTitle,
   primaryQuota,
 } from "./accounts";
 
@@ -113,18 +112,7 @@ describe("title and flags", () => {
     NOW,
   )!;
 
-  it("formats both accounts compactly", () => {
-    expect(accountsTitle(accounts, STALE_HINT_SECONDS, NOW)).toBe("iu88 me12");
-  });
-
-  it("marks the picked account and a near-limit 5h window", () => {
-    const hot = [accounts[0], { ...accounts[1], fiveHourPct: 91 }];
-    expect(accountsTitle(hot, STALE_HINT_SECONDS, NOW, "me")).toBe(
-      "iu88 ▸me12·5h91",
-    );
-  });
-
-  it("marks auth failure, exhaustion and staleness per account", () => {
+  it("flags auth failure, exhaustion and staleness per account", () => {
     const marked = [
       { ...accounts[0], authOk: false },
       {
@@ -137,7 +125,6 @@ describe("title and flags", () => {
       "exhausted",
       "stale",
     ]);
-    expect(accountsTitle(marked, STALE_HINT_SECONDS, NOW)).toBe("iu88⚠ me12⊘…");
   });
 
   it("primaryQuota lends limits and extra_usage from the local file", () => {

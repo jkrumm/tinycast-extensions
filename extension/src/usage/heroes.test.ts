@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { accountsPanel, quotaPanel, spendHeroes, usageMetrics } from "./heroes";
+import {
+  capacityMetrics,
+  capacityPanel,
+  quotaPanel,
+  spendHeroes,
+  usageMetrics,
+} from "./heroes";
+import { summarize } from "./summary";
 import { QuotaLimits, WEEK_SECONDS } from "./limits";
 import { AccountQuota, SpendAggregate } from "./types";
 
@@ -117,7 +124,7 @@ describe("spendHeroes", () => {
   });
 });
 
-describe("accountsPanel", () => {
+describe("capacityPanel", () => {
   const account = (over: Partial<AccountQuota>): AccountQuota => ({
     id: "iu",
     plan: "max20x",
@@ -130,21 +137,48 @@ describe("accountsPanel", () => {
     updatedAt: NOW / 1000,
     ...over,
   });
+  const summary = (accounts: AccountQuota[]) =>
+    summarize(accounts, undefined, NOW / 1000);
 
-  it("draws one column per account, the primary first", () => {
+  it("draws the pool first, then one column per account", () => {
     const svg = decode(
-      accountsPanel([account({}), account({ id: "me", plan: "max5x" })], NOW),
+      capacityPanel(
+        summary([
+          account({ sevenDayPct: 89 }),
+          account({ id: "me", plan: "max5x", sevenDayPct: 9 }),
+        ]),
+      ),
     );
+    expect(svg.indexOf("POOL")).toBeLessThan(svg.indexOf("IU"));
     expect(svg.indexOf("IU")).toBeLessThan(svg.indexOf("ME"));
-    expect(svg).toContain("MAX20X");
-    expect(svg).toContain(">14<");
+    expect(svg).toContain(">73<"); // (20·89 + 5·9) / 25
+    expect(svg).toContain("6.8x of 25x left");
+    expect(svg).toContain("MAX5X · WORKING");
   });
 
   it("says why an account the picker would skip is skipped, and greys it", () => {
     const svg = decode(
-      accountsPanel([account({ authOk: false, sevenDayPct: 8 })], NOW),
+      capacityPanel(
+        summary([
+          account({ authOk: false, sevenDayPct: 8 }),
+          account({ id: "me", plan: "max5x" }),
+        ]),
+      ),
     );
     expect(svg).toContain("not pickable: login expired");
     expect(svg).toContain("raycast-secondary-text");
+  });
+
+  it("shows each account's 5h window next to spend", () => {
+    const svg = decode(
+      capacityMetrics({
+        summary: summary([account({}), account({ id: "me", plan: "max5x" })]),
+        spend: spend([1, 2, 3]),
+        nowMs: NOW,
+      }),
+    );
+    expect(svg).toContain(">IU 5H<");
+    expect(svg).toContain(">TODAY<");
+    expect(svg).not.toMatch(/NaN|undefined/);
   });
 });

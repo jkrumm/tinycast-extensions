@@ -28,8 +28,8 @@ extension/
     my-tasks.tsx         command — TickTick task list
     quick-add.tsx        command — TickTick quick add
     ticktick-menu-bar.tsx command — TickTick menu bar
-    claude-usage.tsx      command — Claude weekly/5h/model limits, weekly pace + spend charts, Detail view
-    claude-usage-menu-bar.tsx command — Claude quota + spend, menu bar (2m interval)
+    claude-usage.tsx      command — Claude usage Detail: working account, pool + per-account weekly pace, lane routing, spend
+    claude-usage-menu-bar.tsx command — Claude working account + status mark, accounts, routing, spend; menu bar (2m interval)
     netgear.tsx           command — Netgear MR2100 status + actions + sub-views
     battery.tsx            command — MacBook charge/health + charge-limit control
     speed-test.tsx          command — networkQuality speed/latency/data-used + history
@@ -39,7 +39,10 @@ extension/
     ticktick/             feature code: client, types, format, parse, search, create-task
     usage/                feature code: quota (argo + local picker + fs read), local (spawns `claude-account`,
                            the only impure routing bit), routing + routing-text (pure: eligibility, merge,
-                           divergence, tables), spend (argo), aggregate (pure), format
+                           divergence, lane/machine tables), summary (pure: THE reading every surface
+                           uses — working account, weighted pool, pace, severity, title, lane groups),
+                           heroes (capacity panel + metrics row, spend charts), spend (argo),
+                           aggregate (pure), format
     netgear/              feature code: client, transport (curl), types, fixtures, live-smoke,
                            pin-store, flows (incl. ensureRouterReachable self-heal), wifi
                            (rejoiner), wifi-creds-store (persisted router Wi-Fi creds), errors
@@ -296,9 +299,9 @@ run make secrets" while still reading the battery.
   timeout, mapped in the pure `usage/accounts.ts`; freshness per account =
   min(`updated_at`, `receivedAt`), disabled accounts hidden. Any Argo failure or
   a payload without `quota` falls back to the local path below, shown as
-  `iu (local)`. With ≥ 2 accounts the menu-bar title is per-account weekly % with marks (see the routing view below); the dropdown and Detail list each account with
-  both resets. The top-level quota buckets (panel, pace, hub) stay the
-  primary account's.
+  `iu (local)`. With ≥ 2 accounts every surface reads `usage/summary.ts` (below); with one
+  account (legacy local fallback) the old single-quota views stay. The top-level
+  quota buckets stay the primary account's.
 - **Claude usage (routing view)** — routing is **per machine**, so the views keep
   both sides: the mini's accounts from Argo (above) and this Mac's from
   `claude-account usage --json` plus `claude-account pick --lane <lane> --dry --why`
@@ -311,11 +314,26 @@ run make secrets" while still reading the battery.
   eligibility (enabled ∧ auth_ok ∧ not exhausted ∧ 5h < 85 ∧ 7d < 90 ∧ sample < 6 h,
   `docs/claude-accounts.md` in dotfiles) so a view can say *why* an account is out, and
   flags where the machines disagree. Argo carries no per-lane picks, so the mini side
-  is eligibility only. Menu-bar title: `▸iu89 me8⚠` (weekly % per account, `▸` = the
-  interactive pick on this Mac, `⚠` login expired, `⊘` exhausted, `…` stale, `·5h91`
-  when the 5h window alone is near the limit); dropdown: Accounts, Routing (lane
-  picks, eligibility per machine, divergences). Detail: `accountsPanel` hero, then one
-  table (both machines' eligibility) and the lane table.
+  is eligibility only (**proposed Argo field, not shipped:**
+  `snapshot.quota.picks = {lane: {picked, reason, stale}}` — once present the Detail can
+  show the mini's routing next to this Mac's; until then the views handle its absence).
+- **Claude usage (summary + layout)** — `usage/summary.ts` turns merged accounts +
+  `routing` into one `UsageSummary`: the **working account** (this Mac's `interactive`
+  pick; without the picker, the eligible account with most capacity left, flagged
+  "estimated"), the **pool** (weekly use weighted by plan multiple, `max20x`=20,
+  `max5x`=5 — a % of a 5x plan is a quarter of a 20x %; equal weights when a plan is
+  unknown; `left` in plan units, "6.8x of 25x"), per-account weekly **pace**
+  (`limits.ts weeklyPace`), and a **severity** (spill > broken [auth, exhausted,
+  sample > 1 h] > low [pool < 15 % left] > ok). Surfaces, one hierarchy:
+  menu-bar title `me 9%` = working account + its weekly use, prefix `▾` low,
+  `⚠` broken, `⊘ spill` (ring icon = pool use); dropdown = headline line, Accounts
+  (weekly + pace + 5h per account, flags), Routing (lanes grouped by account+reason in
+  plain words, divergences), Spend submenu; Detail = bold headline, `capacityPanel`
+  (pool + one column per account, pace tick, "out Fri 14:00" / "~20% at reset" /
+  "not pickable: …"), `capacityMetrics` row (each account's 5h, spend today / 7 days),
+  `## Routing` (lane table: work → account → why; machines table), then spend charts;
+  hub tile `me · pool 73%`. Model caps (Fable) and extra usage only show in the
+  single-account view.
 - **Claude usage (local quota fallback)** — `/tmp/claude_sl/usage_api.json`, refreshed via
   `~/.claude/fetch_usage.py` (the same rate-limit-aware fetcher the
   statusline uses) when missing or >5 min stale. **Never calls
@@ -979,11 +997,11 @@ table**, and **every number is drawn once**.
   number, a horizontal gauge, one sub line); it replaces rows of big rings that
   ate the fold for two numbers. Van Power (battery + solar), battery
   (charge + health), speed-test (download + upload), netgear (signal + battery).
-  Claude usage (weekly with a week-elapsed tick + 5h + one model cap).
+  Claude usage (pool + per-account weekly with a week-elapsed tick; one account: weekly + 5h + one model cap).
 - `statCards({ size: "compact" })` — one hairline row of label-over-value
   metrics: battery's voltage/temperature/adapter, speed-test's
   latency/responsiveness/interface, netgear's internet (toned)/data/uptime/
-  clients, claude-usage's weekly pace/week gone/today (vs avg)/quota-week spend. Van Power has
+  clients, claude-usage's each account's 5h/today (vs avg)/7-day spend (one account: weekly pace/week gone/today/quota-week spend). Van Power has
   none: cell spread and temperature are **warning lines** (spread ≥ 100 mV, or ≥ 50 mV while the charge is 20–90 % — cells naturally diverge at the ends of charge —
   < 5 °C or > 40 °C), cycles/capacity/charger current are cut as numbers that
   change no decision.
@@ -1007,7 +1025,8 @@ so both commands are invisible there.** This repo's target channel is
 already beta (`com.tinycast.app.beta`) for exactly this reason — see the
 top of this file. `claude-usage-menu-bar` uses `lib/svg.ts`'s
 `menuBarRing()` for a live, no-text ring icon (18×18pt, nothing reads at
-that size, the weekly quota) and keeps its status-item `title` to the bare weekly percent, since
+that size, the pool's weekly use) and keeps its status-item `title` to the working account
+plus its weekly use (`me 9%`, a mark prefix when something needs attention), since
 a native title now costs real menu-bar space next to every other app's.
 
 ## Adding a command

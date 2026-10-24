@@ -5,7 +5,8 @@
 
 import { aggregateSpend } from "../../usage/aggregate";
 import {
-  accountsPanel,
+  capacityMetrics,
+  capacityPanel,
   quotaPanel,
   spendHeroes,
   usageMetrics,
@@ -40,6 +41,7 @@ import {
   trendImage as signalTrend,
 } from "../../netgear/signal-view";
 import type { SignalSample } from "../../netgear/signal-view";
+import { summarize } from "../../usage/summary";
 import type { AccountQuota, UsageQuotaOk } from "../../usage/types";
 import type { SpeedTestRecord } from "../../speed-test/types";
 import type { BatterySnapshot } from "../../battery/types";
@@ -142,14 +144,25 @@ export function productionHeroes(now: number): ProductionHero[] {
     exhaustedUntil: null,
     updatedAt: now / 1000,
   });
-  add(
-    "usage",
-    "usage-accounts",
-    accountsPanel(
-      [account("iu", "max20x", 62), account("me", "max5x", 8, false)],
-      now,
-    ),
+  const summary = summarize(
+    [account("iu", "max20x", 89), account("me", "max5x", 9)],
+    {
+      local: null,
+      argo: null,
+      picks: [
+        { lane: "interactive", picked: "me", reason: "pace" },
+        { lane: "wave", picked: "me", reason: "home" },
+      ],
+    },
+    now / 1000,
   );
+  add("usage", "usage-capacity", capacityPanel(summary));
+  const broken = summarize(
+    [account("iu", "max20x", 62), account("me", "max5x", 8, false)],
+    undefined,
+    now / 1000,
+  );
+  add("usage", "usage-capacity-broken", capacityPanel(broken));
 
   const totals = dailySpend({ days: 30 });
   const spend = aggregateSpend({
@@ -184,6 +197,11 @@ export function productionHeroes(now: number): ProductionHero[] {
   });
   const spendImages = spendHeroes(spend, weeklyReset - 7 * 24 * 3600);
   add("usage", "usage-metrics", usageMetrics({ limits, spend, nowMs: now }));
+  add(
+    "usage",
+    "usage-capacity-metrics",
+    capacityMetrics({ summary, spend, nowMs: now }),
+  );
   add("usage", "usage-lanes", spendImages.lanes);
   add("usage", "usage-days", spendImages.days);
 

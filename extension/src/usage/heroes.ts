@@ -29,8 +29,9 @@ import {
   WeeklyPace,
   weeklyPace,
 } from "./limits";
-import { eligibility } from "./routing";
-import { AccountQuota, SpendAggregate } from "./types";
+import { SESSION_LIMIT } from "./routing";
+import { AccountSummary, UsageSummary, flagWords, paceWords } from "./summary";
+import { SpendAggregate } from "./types";
 
 // Keeps the lane chart to 6 rows max (5 lanes + "other") — argo tracks ~60
 // lanes, almost all zero on a given day; a handful of big rows reads better
@@ -235,35 +236,98 @@ export function periodTotal(spend: SpendAggregate): number {
   return spend.dailyTotals.reduce((sum, d) => sum + d.total, 0);
 }
 
-// One column per Max account (2–3): weekly % with the week-elapsed tick, then
-// when it resets — or, for an account this Mac's picker would skip, why. The
-// 5h numbers and both machines' eligibility are in `routingTables`.
-export function accountsPanel(accounts: AccountQuota[], nowMs: number): string {
-  const columns = accounts.slice(0, PANEL_COLUMNS).map((a): PanelColumn => {
-    const weekly: QuotaWindow = {
-      label: "Weekly",
-      percent: a.sevenDayPct,
-      resetsAt: a.sevenDayResetsAt,
-    };
-    const { eligible, reason } = eligibility(a, nowMs / 1000);
-    const pace = weeklyPace(weekly, nowMs / 1000);
-    const flagged =
-      !eligible && (reason === "login expired" || reason === "no sample");
-    return {
-      ...percentColumn(
-        `${a.id}${a.plan ? ` · ${a.plan}` : ""}`,
-        weekly,
-        !eligible && reason
-          ? `not pickable: ${reason}`
-          : weekly.resetsAt === null
-            ? "no reset time"
-            : `resets ${formatWeekdayTime(weekly.resetsAt)} · in ${formatRelativeReset(weekly.resetsAt, nowMs)}`,
-        flagged
-          ? RAYCAST_COLOR.secondaryText
-          : ((pace && PACE_COLOR[pace.status]) ?? undefined),
-      ),
-      marker: pace?.elapsed,
-    };
-  });
-  return toDataUri(statusPanel({ columns }));
+// The top of the multi-account Detail: the pool first (weighted weekly use
+// across every account, with how much capacity is left in plan units), then
+// one column per account — weekly use with the week-elapsed tick (fill past it
+// = ahead of pace), and under it where the week is heading, or why this Mac's
+// picker would skip the account.
+export function capacityPanel(summary: UsageSummary): string {
+  const columns: PanelColumn[] = [];
+  const { pool } = summary;
+  if (pool) {
+    const units = (n: number) =>
+      Number.isInteger(n) ? String(n) : n.toFixed(1);
+    columns.push({
+      label: pool.weighted ? "Pool" : "Pool · equal weights",
+      value: Math.round(pool.usedPct),
+      unit: "%",
+      percent: pool.usedPct,
+      color: thresholdColor(pool.usedPct),
+      marker: pool.elapsedPct ?? undefined,
+      sub: pool.weighted
+        ? `${units(pool.left)}x of ${units(pool.total)}x left`
+        : `${Math.round(100 - pool.usedPct)}% left`,
+    });
+  }
+  for (const a of summary.accounts) {
+    const flagged = a.flags.length > 0 || !a.eligibility.eligible;
+    const broken = a.flags.includes("auth") || a.weeklyPct === null;
+    columns.push({
+      label: [a.id, a.plan, a.working ? "working" : null]
+        .filter(Boolean)
+        .join(" · "),
+      value: a.weeklyPct === null ? null : Math.round(a.weeklyPct),
+      unit: "%",
+      percent: a.weeklyPct ?? 0,
+      color: broken
+        ? RAYCAST_COLOR.secondaryText
+        : ((a.pace && PACE_COLOR[a.pace.status]) ??
+          thresholdColor(a.weeklyPct ?? 0)),
+      marker: a.pace?.elapsed,
+      sub: accountSub(a, flagged),
+    });
+  }
+  return toDataUri(statusPanel({ columns: columns.slice(0, PANEL_COLUMNS) }));
+}
+
+function accountSub(a: AccountSummary, flagged: boolean): string {
+  if (flagged) {
+    const why =
+      a.flags.length > 0
+        ? a.flags.map(flagWords).join(", ")
+        : (a.eligibility.reason ?? "not pickable");
+    return `not pickable: ${why}`;
+  }
+  const pace = paceWords(a.pace, formatWeekdayTime);
+  return a.weeklyResetsAt === null
+    ? pace
+    : `${pace} · resets ${formatWeekdayTime(a.weeklyResetsAt)}`;
+}
+
+// The quiet row under the panel: each account's 5h window (the limit that
+// gates the next spawn), then spend today against the daily average and the
+// last 7 days.
+export function capacityMetrics(opts: {
+  summary: UsageSummary;
+  spend: SpendAggregate | null;
+  nowMs: number;
+}): string {
+  const { summary, spend, nowMs } = opts;
+  const cards: StatCard[] = summary.accounts.map((a) => ({
+    label: `${a.id} 5h`,
+    value:
+      a.fiveHourPct === null
+        ? null
+        : `${Math.round(a.fiveHourPct)}% · ${formatRelativeReset(a.fiveHourResetsAt, nowMs)}`,
+    tone:
+      a.fiveHourPct !== null && a.fiveHourPct >= SESSION_LIMIT
+        ? "bad"
+        : undefined,
+  }));
+  if (spend) {
+    const history = spend.dailyTotals.slice(0, -1).map((d) => d.total);
+    const average =
+      history.reduce((sum, v) => sum + v, 0) / (history.length || 1);
+    cards.push(
+      {
+        label: "Today",
+        value: formatSpend(spend.todayTotal),
+        delta: spendDelta(spend.todayTotal - average, history.length >= 3),
+      },
+      { label: "7 days", value: formatSpend(spend.sevenDayTotal) },
+    );
+  }
+  return toDataUri(
+    statCards({ cards, size: "compact", columns: Math.min(cards.length, 6) }),
+  );
 }

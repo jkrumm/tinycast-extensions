@@ -553,7 +553,7 @@ for (const hero of productionHeroes(END)) add(hero.group, hero.name, hero.svg);
     {
       name: "Claude Usage",
       glyph: "C",
-      status: "5h 62% · 7d 88%",
+      status: "me · pool 73%",
       color: C.purple,
       icon: "usage",
     },
@@ -728,8 +728,15 @@ const PAGES: Record<string, PageItem[]> = {
     ]),
   ],
   "page-usage": [
-    "usage-quota",
-    "usage-metrics",
+    lineMock("Working on me · pool 73% used"),
+    "usage-capacity",
+    "usage-capacity-metrics",
+    lineMock("Routing"),
+    tableMock([
+      ["Work", "Goes to", "Why"],
+      ["Interactive", "me", "home account is burning ahead of pace"],
+      ["Waves", "me", "home account"],
+    ]),
     lineMock("Spend today"),
     "usage-lanes",
     lineMock("Last 30 days"),

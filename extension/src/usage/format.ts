@@ -1,14 +1,6 @@
 import { QuotaLimits, QuotaWindow, WeeklyPace, quotaLimits } from "./limits";
 import { formatPercent } from "./percent";
-import { STALE_HINT_SECONDS, accountsTitle } from "./accounts";
-import { interactivePick } from "./routing-text";
-import {
-  ExtraUsage,
-  UsageBucket,
-  UsageQuota,
-  hasMultipleAccounts,
-  isQuotaError,
-} from "./types";
+import { ExtraUsage, UsageBucket, UsageQuota, isQuotaError } from "./types";
 
 export function formatUtilization(u: UsageBucket): string {
   return formatPercent(u.utilization);
@@ -78,22 +70,18 @@ export function menuBarTitle(quota: UsageQuota): string {
     : title;
 }
 
-// The menu-bar title flags only what the title itself shows — the quota. A
-// failed spend fetch is a dropdown line, not "(offline)" next to a live number.
+// Legacy single-account title: the menu-bar title flags only what it shows —
+// the quota. A failed spend fetch is a dropdown line, not "(offline)" here.
 export function menuBarTitleWithFreshness(
   quota: UsageQuota,
   stale: boolean,
 ): string {
-  // Several accounts: per-account numbers and marks replace the bare percent;
-  // staleness is flagged per account there.
-  if (hasMultipleAccounts(quota))
-    return accountsTitle(
-      quota.accounts,
-      STALE_HINT_SECONDS,
-      Date.now() / 1000,
-      interactivePick(quota.routing?.picks ?? null),
-    );
   return `${menuBarTitle(quota)}${stale ? " (stale)" : ""}`;
+}
+
+// Legacy single-account hub tile status (≤ ~18 characters): weekly first.
+export function usageTileStatus(limits: QuotaLimits): string {
+  return `7d ${formatPercent(limits.weekly.percent)} · 5h ${formatPercent(limits.session.percent)}`;
 }
 
 // One short dropdown line for a failed argo spend fetch, saying why.
@@ -105,11 +93,6 @@ export function spendErrorText(error: unknown): string {
   if (/resolve|network|offline|connection/i.test(message))
     return "Spend unavailable — argo not reachable";
   return `Spend unavailable — ${message.slice(0, 60)}`;
-}
-
-// Hub tile status line (≤ ~18 characters): weekly first.
-export function usageTileStatus(limits: QuotaLimits): string {
-  return `7d ${formatPercent(limits.weekly.percent)} · 5h ${formatPercent(limits.session.percent)}`;
 }
 
 // Paid credits past the plan limits — only worth a line while switched on.

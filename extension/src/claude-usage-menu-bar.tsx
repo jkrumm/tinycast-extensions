@@ -9,12 +9,6 @@ import { useCachedPromise } from "@raycast/utils";
 import { useMemo, useRef } from "react";
 import { getQuota, isStaleHint } from "./usage/quota";
 import {
-  STALE_HINT_SECONDS,
-  accountFlags,
-  accountSummary,
-  flagText,
-} from "./usage/accounts";
-import {
   getTimeseries,
   aggregateSpend,
   topLanesWithOther,
@@ -29,18 +23,26 @@ import {
   modelLimitLabel,
   spendErrorText,
 } from "./usage/format";
-import { eligibilityLine, laneLines } from "./usage/routing-text";
-import { RoutingView, divergences, eligibility } from "./usage/routing";
+import { laneLines, missingSideNote } from "./usage/routing-text";
+import { divergences } from "./usage/routing";
+import {
+  AccountSummary,
+  UsageSummary,
+  flagWords,
+  menuBarTitle,
+  paceWords,
+  summarize,
+} from "./usage/summary";
 import { QuotaWindow, quotaLimits, weeklyPace } from "./usage/limits";
 import {
   hasMultipleAccounts,
   isQuotaError,
   UsageQuota,
   UsageQuotaOk,
-  AccountQuota,
   SpendAggregate,
 } from "./usage/types";
 import { menuBarRing, toDataUri } from "./lib/svg";
+import { RoutingView } from "./usage/routing";
 
 // Matches the detail view's cap (5 lanes + "other") — argo tracks ~60 lanes,
 // almost all zero on a given day.
@@ -104,13 +106,13 @@ function useUsage() {
   );
 }
 
-// A live ring reflecting the weekly quota — the limit that binds on a Max
-// plan. Native menu-bar rendering (beta) fits this into an 18×18pt
+// A live ring reflecting the pool's weekly use (the one account's weekly when
+// there is only one) — the limit that binds on a Max plan. Native menu-bar rendering (beta) fits this into an 18×18pt
 // NSStatusItem glyph, so no text: the ring's fill is the whole signal.
-function menuBarIcon(quota: UsageQuota): string {
-  const percent = isQuotaError(quota)
-    ? 0
-    : (quotaLimits(quota).weekly.percent ?? 0);
+function menuBarIcon(quota: UsageQuota, summary: UsageSummary | null): string {
+  const percent =
+    summary?.pool?.usedPct ??
+    (isQuotaError(quota) ? 0 : (quotaLimits(quota).weekly.percent ?? 0));
   return toDataUri(menuBarRing({ percent }));
 }
 
@@ -144,12 +146,19 @@ function dotColor(percent: number | null): Color {
   return Color.Red;
 }
 
+function summaryOf(quota: UsageQuota): UsageSummary | null {
+  return hasMultipleAccounts(quota)
+    ? summarize(quota.accounts, quota.routing)
+    : null;
+}
+
 export default function ClaudeUsageMenuBar() {
   const { data, isLoading, revalidate } = useUsage();
 
+  const summary = useMemo(() => (data ? summaryOf(data.quota) : null), [data]);
   const icon = useMemo(
-    () => (data ? menuBarIcon(data.quota) : Icon.LineChart),
-    [data],
+    () => (data ? menuBarIcon(data.quota, summary) : Icon.LineChart),
+    [data, summary],
   );
 
   const quotaStale =
@@ -158,27 +167,34 @@ export default function ClaudeUsageMenuBar() {
   return (
     <MenuBarExtra
       icon={icon}
-      // Compact: the bare weekly percent ("14%"), matching the ring. The
-      // dropdown spells out every limit.
+      // Several accounts: the account work goes to + its weekly use, with a
+      // mark when something needs attention. One account: the bare weekly %.
       title={
-        data && !isQuotaError(data.quota)
-          ? menuBarTitleWithFreshness(data.quota, quotaStale)
-          : undefined
+        summary
+          ? menuBarTitle(summary)
+          : data && !isQuotaError(data.quota)
+            ? menuBarTitleWithFreshness(data.quota, quotaStale)
+            : undefined
       }
       isLoading={isLoading}
-      tooltip={`Claude Usage${quotaStale ? " (stale)" : ""}`}
+      tooltip={summary ? summary.headline : "Claude Usage"}
     >
-      {data && hasMultipleAccounts(data.quota) && (
+      {data && summary && hasMultipleAccounts(data.quota) && (
         <>
-          <AccountsSection accounts={data.quota.accounts} />
-          <RoutingSection
-            accounts={data.quota.accounts}
-            routing={data.quota.routing}
-          />
+          <MenuBarExtra.Section>
+            <MenuBarExtra.Item
+              icon={severityIcon(summary)}
+              title={summary.headline}
+            />
+          </MenuBarExtra.Section>
+          <AccountsSection accounts={summary.accounts} />
+          <RoutingSection routing={data.quota.routing} />
         </>
       )}
 
-      {data && !isQuotaError(data.quota) && <QuotaSection quota={data.quota} />}
+      {data && !summary && !isQuotaError(data.quota) && (
+        <QuotaSection quota={data.quota} />
+      )}
 
       {data && isQuotaError(data.quota) && (
         <MenuBarExtra.Section>
@@ -187,22 +203,20 @@ export default function ClaudeUsageMenuBar() {
       )}
 
       {data && data.spend && (
-        <MenuBarExtra.Section
-          title={
-            data.spendError ? "Spend (today, last known)" : "Spend (today)"
-          }
-        >
-          {topLanesWithOther(data.spend.today, SPEND_LANE_LIMIT).map(
-            ({ label, value }) => (
-              <MenuBarExtra.Item
-                key={label}
-                title={`${label}: ${formatSpend(value)}`}
-              />
-            ),
-          )}
-          <MenuBarExtra.Item
-            title={`7d total: ${formatSpend(data.spend.sevenDayTotal)}`}
-          />
+        <MenuBarExtra.Section>
+          <MenuBarExtra.Submenu
+            icon={Icon.Coins}
+            title={`Spend ${formatSpend(data.spend.todayTotal)} today · ${formatSpend(data.spend.sevenDayTotal)} 7d${data.spendError ? " (last known)" : ""}`}
+          >
+            {topLanesWithOther(data.spend.today, SPEND_LANE_LIMIT).map(
+              ({ label, value }) => (
+                <MenuBarExtra.Item
+                  key={label}
+                  title={`${label}: ${formatSpend(value)}`}
+                />
+              ),
+            )}
+          </MenuBarExtra.Submenu>
         </MenuBarExtra.Section>
       )}
 
@@ -213,6 +227,11 @@ export default function ClaudeUsageMenuBar() {
       )}
 
       <MenuBarExtra.Section>
+        {data && !isQuotaError(data.quota) && (
+          <MenuBarExtra.Item
+            title={`Updated ${formatClock(data.quota.fetched_at)}${quotaStale ? " (stale)" : ""}`}
+          />
+        )}
         <MenuBarExtra.Item
           title="Open Details"
           icon={Icon.Sidebar}
@@ -233,66 +252,65 @@ export default function ClaudeUsageMenuBar() {
   );
 }
 
-function AccountsSection({ accounts }: { accounts: AccountQuota[] }) {
-  const now = Date.now() / 1000;
+function severityIcon(summary: UsageSummary) {
+  const tint =
+    summary.severity === "ok"
+      ? Color.Green
+      : summary.severity === "low"
+        ? Color.Orange
+        : Color.Red;
+  return { source: Icon.Circle, tintColor: tint };
+}
+
+// One line per account: where its week stands and is heading, then its 5h
+// window; a flag or the reason this Mac would not pick it comes last.
+function accountLine(a: AccountSummary): string {
+  const plan = a.plan ? ` ${a.plan}` : "";
+  const week = `${formatPercent(a.weeklyPct)} week (${paceWords(a.pace, formatWeekdayTime)})`;
+  const session = `5h ${formatPercent(a.fiveHourPct)} · ${formatRelativeReset(a.fiveHourResetsAt)}`;
+  const problem =
+    a.flags.length > 0
+      ? a.flags.map(flagWords).join(", ")
+      : a.eligibility.eligible
+        ? null
+        : `not pickable: ${a.eligibility.reason}`;
+  return `${a.id}${plan} — ${week} · ${session}${problem ? ` — ${problem}` : ""}`;
+}
+
+function AccountsSection({ accounts }: { accounts: AccountSummary[] }) {
   return (
     <MenuBarExtra.Section title="Accounts">
-      {accounts.map((a) => {
-        const flags = accountFlags(a, STALE_HINT_SECONDS)
-          .map(flagText)
-          .join(", ");
-        return (
-          <MenuBarExtra.Item
-            key={a.id}
-            icon={{
-              source: Icon.Circle,
-              tintColor: eligibility(a, now).eligible
-                ? dotColor(a.sevenDayPct)
-                : Color.SecondaryText,
-            }}
-            title={`${a.id}${a.plan ? ` (${a.plan})` : ""}: ${accountSummary(a)}${flags ? ` — ${flags}` : ""}`}
-          />
-        );
-      })}
       {accounts.map((a) => (
         <MenuBarExtra.Item
-          key={`${a.id}-reset`}
-          title={`${a.id} resets: 5h ${formatRelativeReset(a.fiveHourResetsAt)} · 7d ${a.sevenDayResetsAt === null ? "—" : formatWeekdayTime(a.sevenDayResetsAt)}`}
+          key={a.id}
+          icon={{
+            source: Icon.Circle,
+            tintColor:
+              a.flags.length > 0 || !a.eligibility.eligible
+                ? Color.SecondaryText
+                : dotColor(a.weeklyPct),
+          }}
+          title={accountLine(a)}
         />
       ))}
     </MenuBarExtra.Section>
   );
 }
 
-// Which account each lane would pick on this Mac, the mini's eligibility from
-// Argo, and where the two machines disagree.
-function RoutingSection({
-  accounts,
-  routing,
-}: {
-  accounts: AccountQuota[];
-  routing: RoutingView | undefined;
-}) {
+// Where each kind of work goes and why, and where this Mac and the mini
+// disagree.
+function RoutingSection({ routing }: { routing: RoutingView | undefined }) {
   if (!routing) return null;
-  const now = Date.now() / 1000;
-  const diverging = divergences(routing, now);
+  const note = missingSideNote(routing);
   return (
     <MenuBarExtra.Section title="Routing">
       {laneLines(routing.picks).map((line) => (
         <MenuBarExtra.Item key={line} title={line} />
       ))}
-      {!routing.local && (
-        <MenuBarExtra.Item title="This Mac's picker unavailable" />
-      )}
-      {accounts.map((a) => (
-        <MenuBarExtra.Item
-          key={`${a.id}-elig`}
-          title={`${a.id}: ${eligibilityLine(a, routing, now)}`}
-        />
-      ))}
-      {diverging.map((d) => (
+      {divergences(routing, Date.now() / 1000).map((d) => (
         <MenuBarExtra.Item key={d} title={`⚠ ${d}`} />
       ))}
+      {note && <MenuBarExtra.Item title={note} />}
     </MenuBarExtra.Section>
   );
 }
@@ -301,9 +319,7 @@ function QuotaSection({ quota }: { quota: UsageQuotaOk }) {
   const { weekly, session, models } = quotaLimits(quota);
   const pace = weeklyPace(weekly, Date.now() / 1000);
   return (
-    <MenuBarExtra.Section
-      title={quota.accounts?.[0] ? `Quota — ${quota.accounts[0].id}` : "Quota"}
-    >
+    <MenuBarExtra.Section title="Quota">
       {windowItem(
         "Weekly",
         weekly,
@@ -316,9 +332,6 @@ function QuotaSection({ quota }: { quota: UsageQuotaOk }) {
       {models.map((model) =>
         windowItem(modelLimitLabel(model), model, resetText(model)),
       )}
-      <MenuBarExtra.Item
-        title={`Updated ${formatClock(quota.fetched_at)}${isStaleHint(quota.fetched_at) ? " (stale)" : ""}`}
-      />
     </MenuBarExtra.Section>
   );
 }

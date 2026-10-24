@@ -11,13 +11,15 @@ import {
 } from "./usage/types";
 import {
   periodTotal,
-  accountsPanel,
+  capacityMetrics,
+  capacityPanel,
   quotaPanel,
   spendHeroes,
   usageMetrics,
 } from "./usage/heroes";
 import { WEEK_SECONDS, quotaLimits } from "./usage/limits";
 import { routingMarkdown } from "./usage/routing-text";
+import { summarize } from "./usage/summary";
 import {
   extraUsageLine,
   formatSpend,
@@ -130,32 +132,41 @@ function renderMarkdown(
 
   const now = Date.now();
   const limits = quotaLimits(quota);
-  if (hasMultipleAccounts(quota)) {
-    // One column per account; the 5h numbers, both machines' eligibility and
-    // the lane picks follow as a table. The primary's model caps have no panel
-    // column then, so they are one line.
-    lines.push(`![Accounts](${accountsPanel(quota.accounts, now)})`, "");
-    lines.push(...routingMarkdown(quota.accounts, quota.routing, now), "");
-    const caps = overflowModelsLine(limits.models);
-    if (caps) lines.push(caps, "");
-  } else {
-    lines.push(`![Quota](${quotaPanel(limits, now)})`, "");
-    // The panel has room for weekly, 5h and one model cap.
-    const overflow = overflowModelsLine(limits.models.slice(1));
-    if (overflow) lines.push(overflow, "");
-  }
-  const extra = extraUsageLine(quota.extra_usage);
-  if (extra) lines.push(extra, "");
-
   const spendBanner = freshnessBanner({
     fetchedAt: spendFetchedAt,
     error: spendError,
     offlineLabel: "Spend server not reachable",
   });
-  lines.push(
-    `![Pace and spend](${usageMetrics({ limits, spend, nowMs: now })})`,
-    "",
-  );
+
+  if (hasMultipleAccounts(quota)) {
+    // Top down: where work goes now and what needs attention, the pool and
+    // each account's week, the 5h windows + spend, then lane routing and the
+    // two machines' eligibility. Spend charts come last.
+    const summary = summarize(quota.accounts, quota.routing, now / 1000);
+    lines.push(
+      `**${summary.headline}**${summary.hasPicks ? "" : " _(estimated — this Mac's picker did not answer)_"}`,
+      "",
+    );
+    lines.push(`![Capacity](${capacityPanel(summary)})`, "");
+    lines.push(
+      `![5h windows and spend](${capacityMetrics({ summary, spend, nowMs: now })})`,
+      "",
+    );
+    const routing = routingMarkdown(quota.accounts, quota.routing, now / 1000);
+    if (routing.length > 0) lines.push("## Routing", "", ...routing, "");
+  } else {
+    lines.push(`![Quota](${quotaPanel(limits, now)})`, "");
+    // The panel has room for weekly, 5h and one model cap.
+    const overflow = overflowModelsLine(limits.models.slice(1));
+    if (overflow) lines.push(overflow, "");
+    lines.push(
+      `![Pace and spend](${usageMetrics({ limits, spend, nowMs: now })})`,
+      "",
+    );
+  }
+
+  const extra = extraUsageLine(quota.extra_usage);
+  if (extra) lines.push(extra, "");
 
   if (!spend) {
     lines.push(spendBanner ?? "_Spend unavailable — argo request failed._", "");
@@ -170,7 +181,8 @@ function renderMarkdown(
     limits.weekly.resetsAt === null
       ? null
       : limits.weekly.resetsAt - WEEK_SECONDS;
-  const { lanes, days } = spendHeroes(spend, weekStart);
+  const multi = hasMultipleAccounts(quota);
+  const { lanes, days } = spendHeroes(spend, multi ? null : weekStart);
   lines.push("## Spend today", "");
   lines.push(`![Spend by lane](${lanes})`, "");
   lines.push(
