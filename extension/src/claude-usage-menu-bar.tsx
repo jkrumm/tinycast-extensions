@@ -31,6 +31,7 @@ import {
 } from "./usage/format";
 import { QuotaWindow, quotaLimits, weeklyPace } from "./usage/limits";
 import {
+  hasMultipleAccounts,
   isQuotaError,
   UsageQuota,
   UsageQuotaOk,
@@ -165,11 +166,9 @@ export default function ClaudeUsageMenuBar() {
       isLoading={isLoading}
       tooltip={`Claude Usage${quotaStale ? " (stale)" : ""}`}
     >
-      {data &&
-        !isQuotaError(data.quota) &&
-        (data.quota.accounts?.length ?? 0) > 1 && (
-          <AccountsSection accounts={data.quota.accounts!} />
-        )}
+      {data && hasMultipleAccounts(data.quota) && (
+        <AccountsSection accounts={data.quota.accounts} />
+      )}
 
       {data && !isQuotaError(data.quota) && <QuotaSection quota={data.quota} />}
 

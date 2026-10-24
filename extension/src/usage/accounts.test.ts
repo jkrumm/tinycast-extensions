@@ -86,6 +86,27 @@ describe("accountsFromOverview", () => {
   });
 });
 
+describe("freshness fold", () => {
+  const fresh = (updated: number | null, received: number | null) =>
+    accountsFromOverview(
+      {
+        latest: { quota: { accounts: { iu: raw({ updated_at: updated }) } } },
+        receivedAt: received,
+      },
+      NOW,
+    )![0].updatedAt;
+
+  it("uses receivedAt when updated_at is null", () => {
+    expect(fresh(null, (NOW - 100) * 1000)).toBe(NOW - 100);
+  });
+  it("is 0 when both are null", () => {
+    expect(fresh(null, null)).toBe(0);
+  });
+  it("uses updated_at when receivedAt is missing", () => {
+    expect(fresh((NOW - 50) * 1000, null)).toBe(NOW - 50);
+  });
+});
+
 describe("title and flags", () => {
   const accounts = accountsFromOverview(
     {
@@ -124,6 +145,19 @@ describe("title and flags", () => {
     expect(accountsTitle(marked, STALE_HINT_SECONDS, NOW)).toBe(
       "iu 8/88⚠auth · me 3/12⊘…",
     );
+  });
+
+  it("primaryQuota lends limits and extra_usage from the local file", () => {
+    const q = primaryQuota(accounts, {
+      five_hour: { utilization: 1, resets_at_epoch: 1 },
+      seven_day: { utilization: 2, resets_at_epoch: 2 },
+      limits: [],
+      extra_usage: null,
+      fetched_at: 5,
+    });
+    expect(q.limits).toEqual([]);
+    expect(q.extra_usage).toBeNull();
+    expect(q.five_hour.utilization).toBe(8);
   });
 
   it("primaryQuota exposes the first account and the oldest freshness", () => {

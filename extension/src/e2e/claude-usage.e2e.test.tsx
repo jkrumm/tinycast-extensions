@@ -8,7 +8,7 @@ import {
   assertNoBadSubstrings,
   imageSvg,
 } from "./render";
-import { UsageQuota, TimeseriesResponse } from "../usage/types";
+import { UsageQuota, UsageQuotaOk, TimeseriesResponse } from "../usage/types";
 
 const getQuotaMock = vi.fn<() => Promise<UsageQuota>>();
 const getTimeseriesMock = vi.fn<() => Promise<TimeseriesResponse>>();
@@ -71,6 +71,38 @@ describe("claude-usage command", () => {
     assertNoBadSubstrings(
       markdown.replace(/data:[^)]+/g, "data:"),
       "claude-usage ok",
+    );
+  });
+
+  it("lists the non-primary account in a table for a two-account quota", async () => {
+    const now = Date.now() / 1000;
+    const account = (id: string, five: number, seven: number) => ({
+      id,
+      plan: null,
+      fiveHourPct: five,
+      sevenDayPct: seven,
+      fiveHourResetsAt: now + 3600,
+      sevenDayResetsAt: now + 86400,
+      authOk: true,
+      exhaustedUntil: null,
+      updatedAt: now,
+    });
+    getQuotaMock.mockResolvedValue({
+      ...(okQuota as UsageQuotaOk),
+      accounts: [account("iu", 8, 88), account("me", 3, 12)],
+    });
+    getTimeseriesMock.mockResolvedValue(timeseries);
+
+    const renderer = await renderCommand(<ClaudeUsage />);
+    await waitFor(
+      () => renderer.root.findByType(Detail).props.isLoading === false,
+    );
+    const markdown = renderer.root.findByType(Detail).props.markdown as string;
+    expect(markdown).toContain("| me | 3% ·");
+    expect(markdown).not.toContain("| iu |");
+    assertNoBadSubstrings(
+      markdown.replace(/data:[^)]+/g, "data:"),
+      "claude-usage two accounts",
     );
   });
 
