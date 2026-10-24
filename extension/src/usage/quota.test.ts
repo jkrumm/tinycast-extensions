@@ -23,6 +23,12 @@ vi.mock("../lib/argo", () => ({
     (argoFetchMock as (...a: unknown[]) => unknown)(...args),
 }));
 
+const loadLocalRoutingMock = vi.fn();
+vi.mock("./local", () => ({
+  loadLocalRouting: (...args: unknown[]) =>
+    (loadLocalRoutingMock as (...a: unknown[]) => unknown)(...args),
+}));
+
 import { getQuota, isStaleHint } from "./quota";
 
 function okQuota(fetchedAt: number) {
@@ -49,6 +55,8 @@ describe("getQuota", () => {
     readFileMock.mockReset();
     argoFetchMock.mockReset();
     argoFetchMock.mockRejectedValue(new Error("argo down"));
+    loadLocalRoutingMock.mockReset();
+    loadLocalRoutingMock.mockResolvedValue(null);
     execFileMock.mockClear();
     execFileMock.mockImplementation((_file, _args, cb) => cb(null));
   });
@@ -129,6 +137,8 @@ describe("getQuota via argo", () => {
   beforeEach(() => {
     argoFetchMock.mockReset();
     readFileMock.mockReset();
+    loadLocalRoutingMock.mockReset();
+    loadLocalRoutingMock.mockResolvedValue(null);
     execFileMock.mockClear();
   });
 
@@ -195,5 +205,66 @@ describe("getQuota via argo", () => {
     readFileMock.mockRejectedValue(new Error("ENOENT"));
     const q = await getQuota();
     expect("error" in q).toBe(true);
+  });
+
+  it("merges this Mac's picker view with argo's and exposes both", async () => {
+    argoFetchMock.mockResolvedValue(
+      overview({ iu: acct(), me: acct({ seven_day_pct: 8 }) }),
+    );
+    const nowS = Date.now() / 1000;
+    const base = {
+      plan: null,
+      fiveHourResetsAt: null,
+      sevenDayResetsAt: null,
+      exhaustedUntil: null,
+      updatedAt: nowS,
+    };
+    loadLocalRoutingMock.mockResolvedValue({
+      accounts: [
+        { ...base, id: "iu", fiveHourPct: 2, sevenDayPct: 89, authOk: true },
+        {
+          ...base,
+          id: "me",
+          fiveHourPct: null,
+          sevenDayPct: null,
+          authOk: false,
+        },
+      ],
+      picks: [{ lane: "wave", picked: "iu", reason: "spill" }],
+    });
+    readFileMock.mockRejectedValue(new Error("ENOENT"));
+    const q = await getQuota();
+    if ("error" in q) throw new Error("unexpected error");
+    const me = q.accounts?.find((a) => a.id === "me");
+    expect(me?.sevenDayPct).toBe(8); // argo's numbers
+    expect(me?.authOk).toBe(false); // this Mac's auth
+    expect(q.routing?.picks).toHaveLength(1);
+    expect(q.routing?.argo).toHaveLength(2);
+  });
+
+  it("works from the local picker alone when argo is down", async () => {
+    argoFetchMock.mockRejectedValue(new Error("502"));
+    const nowS = Date.now() / 1000;
+    loadLocalRoutingMock.mockResolvedValue({
+      accounts: [
+        {
+          id: "iu",
+          plan: null,
+          fiveHourPct: 2,
+          sevenDayPct: 89,
+          fiveHourResetsAt: null,
+          sevenDayResetsAt: null,
+          authOk: true,
+          exhaustedUntil: null,
+          updatedAt: nowS,
+        },
+      ],
+      picks: null,
+    });
+    readFileMock.mockRejectedValue(new Error("ENOENT"));
+    const q = await getQuota();
+    if ("error" in q) throw new Error("unexpected error");
+    expect(q.accounts?.map((a) => a.id)).toEqual(["iu"]);
+    expect(q.routing?.argo).toBeNull();
   });
 });

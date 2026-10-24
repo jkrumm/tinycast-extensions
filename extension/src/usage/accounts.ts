@@ -44,7 +44,7 @@ function toMs(value: number | string | null | undefined): number | null {
 }
 
 // Tolerate seconds or milliseconds for a timestamp field.
-function toSeconds(value: number | null | undefined): number | null {
+export function toSeconds(value: number | null | undefined): number | null {
   if (typeof value !== "number") return null;
   return value > 1e11 ? value / 1000 : value;
 }
@@ -119,8 +119,14 @@ export function primaryQuota(
       utilization: p.sevenDayPct,
       resets_at_epoch: p.sevenDayResetsAt,
     },
-    // The oldest account bounds how fresh the whole reading is.
-    fetched_at: Math.min(...accounts.map((a) => a.updatedAt)),
+    // The oldest account with numbers bounds how fresh the reading is (one
+    // that never had a sample would pin it at 1970).
+    fetched_at: Math.min(
+      ...(accounts.some((a) => a.updatedAt > 0)
+        ? accounts.filter((a) => a.updatedAt > 0)
+        : accounts
+      ).map((a) => a.updatedAt),
+    ),
   };
 }
 
@@ -140,28 +146,40 @@ export function accountFlags(
 }
 
 const FLAG_MARK: Record<AccountFlag, string> = {
-  auth: "⚠auth",
+  auth: "⚠",
   exhausted: "⊘",
   stale: "…",
 };
 
 const pct = (p: number | null) => (p === null ? "—" : String(Math.round(p)));
 
-// "iu 8/88 · me 3/12" — 5h / 7d per account, a mark after the numbers for
-// auth failure (⚠auth), exhausted (⊘) and stale (…).
+// 5h windows at or past this get their number in the title: the picker leaves
+// an account at 85 (usage/routing.ts SESSION_LIMIT, same number).
+const TITLE_SESSION_HINT = 85;
+
+// "▸iu89 me8⚠" — weekly % per account (the limit that binds), `▸` before the
+// account an interactive spawn on this Mac would pick, a mark after the number
+// for auth failure (⚠), exhausted (⊘) and stale (…), and `·5h91` once the 5h
+// window alone is about to make the account ineligible. Compact on purpose:
+// the menu bar behind the notch is crowded.
 export function accountsTitle(
   accounts: AccountQuota[],
   staleAfterSeconds: number,
   nowSeconds = Date.now() / 1000,
+  picked: string | null = null,
 ): string {
   return accounts
     .map((a) => {
       const marks = accountFlags(a, staleAfterSeconds, nowSeconds)
         .map((f) => FLAG_MARK[f])
         .join("");
-      return `${a.id} ${pct(a.fiveHourPct)}/${pct(a.sevenDayPct)}${marks}`;
+      const session =
+        a.fiveHourPct !== null && a.fiveHourPct >= TITLE_SESSION_HINT
+          ? `·5h${pct(a.fiveHourPct)}`
+          : "";
+      return `${a.id === picked ? "▸" : ""}${a.id}${pct(a.sevenDayPct)}${session}${marks}`;
     })
-    .join(" · ");
+    .join(" ");
 }
 
 // Dropdown / detail wording for the flags.

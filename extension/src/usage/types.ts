@@ -1,3 +1,5 @@
+import type { RoutingView } from "./routing";
+
 // Shape written by ~/.claude/fetch_usage.py to /tmp/claude_sl/usage_api.json.
 export interface UsageBucket {
   utilization: number | null; // 0-100
@@ -43,6 +45,9 @@ export interface AccountQuota {
 }
 
 export interface UsageQuotaOk {
+  // Per-machine accounts and this Mac's lane picks (usage/routing.ts); `accounts`
+  // below is their merge. Absent on the legacy single-account fallback.
+  routing?: RoutingView;
   // Every enabled account, primary first. The top-level buckets below are the
   // primary account's (or the local file's), so single-account code keeps working.
   accounts?: AccountQuota[];

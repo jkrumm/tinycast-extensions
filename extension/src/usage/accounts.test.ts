@@ -114,8 +114,13 @@ describe("title and flags", () => {
   )!;
 
   it("formats both accounts compactly", () => {
-    expect(accountsTitle(accounts, STALE_HINT_SECONDS, NOW)).toBe(
-      "iu 8/88 · me 3/12",
+    expect(accountsTitle(accounts, STALE_HINT_SECONDS, NOW)).toBe("iu88 me12");
+  });
+
+  it("marks the picked account and a near-limit 5h window", () => {
+    const hot = [accounts[0], { ...accounts[1], fiveHourPct: 91 }];
+    expect(accountsTitle(hot, STALE_HINT_SECONDS, NOW, "me")).toBe(
+      "iu88 ▸me12·5h91",
     );
   });
 
@@ -132,9 +137,7 @@ describe("title and flags", () => {
       "exhausted",
       "stale",
     ]);
-    expect(accountsTitle(marked, STALE_HINT_SECONDS, NOW)).toBe(
-      "iu 8/88⚠auth · me 3/12⊘…",
-    );
+    expect(accountsTitle(marked, STALE_HINT_SECONDS, NOW)).toBe("iu88⚠ me12⊘…");
   });
 
   it("primaryQuota lends limits and extra_usage from the local file", () => {

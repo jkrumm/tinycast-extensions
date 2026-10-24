@@ -3,6 +3,8 @@ import { execFile } from "child_process";
 import { promisify } from "util";
 import { homedir } from "os";
 import { argoFetch } from "../lib/argo";
+import { loadLocalRouting } from "./local";
+import { mergeAccounts } from "./routing";
 import {
   OverviewResponse,
   STALE_HINT_SECONDS,
@@ -11,7 +13,7 @@ import {
 } from "./accounts";
 
 export { STALE_HINT_SECONDS };
-import { UsageQuota } from "./types";
+import { AccountQuota, UsageQuota } from "./types";
 
 const execFileAsync = promisify(execFile);
 
@@ -65,24 +67,46 @@ function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
   });
 }
 
-// Primary source: agent-gateway's overview, pushed to Argo (agent-gateway
-// itself is loopback-only). Null on any failure or while the payload has no
-// `quota` yet.
-async function getArgoQuota(): Promise<UsageQuota | null> {
+// Argo's side: agent-gateway's overview, pushed to Argo (agent-gateway itself
+// is loopback-only) — the MINI's view. Null on any failure or while the payload
+// has no `quota` yet.
+async function getArgoAccounts(): Promise<AccountQuota[] | null> {
   try {
     const overview = await withTimeout(
       argoFetch<OverviewResponse>("/agents/overview"),
       ARGO_TIMEOUT_MS,
     );
-    const accounts = accountsFromOverview(overview);
-    if (!accounts) return null;
-    const newest = Math.max(...accounts.map((a) => a.updatedAt));
-    if (Date.now() / 1000 - newest > ARGO_MAX_AGE_SECONDS) return null;
-    const local = await readQuotaFile();
-    return primaryQuota(accounts, local && !("error" in local) ? local : null);
+    return accountsFromOverview(overview);
   } catch {
     return null;
   }
+}
+
+// Both machines' accounts plus this Mac's lane picks. An Argo reading whose
+// newest account is older than ARGO_MAX_AGE_SECONDS (the push stopped) is
+// dropped; the local picker's cache is then the only source. Null when
+// neither side answered — the caller falls back to the legacy file.
+async function getRoutingQuota(): Promise<UsageQuota | null> {
+  const [argoResult, localResult] = await Promise.all([
+    getArgoAccounts(),
+    loadLocalRouting().catch(() => null),
+  ]);
+  const nowSeconds = Date.now() / 1000;
+  const argo =
+    argoResult &&
+    nowSeconds - Math.max(...argoResult.map((a) => a.updatedAt)) <=
+      ARGO_MAX_AGE_SECONDS
+      ? argoResult
+      : null;
+  const local = localResult?.accounts ?? null;
+  if (!argo && !local) return null;
+
+  const file = await readQuotaFile();
+  const accounts = mergeAccounts(argo, local);
+  return {
+    ...primaryQuota(accounts, file && !("error" in file) ? file : null),
+    routing: { argo, local, picks: localResult?.picks ?? null },
+  };
 }
 
 // Fallback: the statusline's rate-limit-aware fetcher, single account — never
@@ -124,7 +148,7 @@ async function getLocalQuota(): Promise<UsageQuota> {
 }
 
 export async function getQuota(): Promise<UsageQuota> {
-  return (await getArgoQuota()) ?? (await getLocalQuota());
+  return (await getRoutingQuota()) ?? (await getLocalQuota());
 }
 
 export function isStaleHint(fetchedAt: number): boolean {
