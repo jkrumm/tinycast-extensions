@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
+  type OverviewResponse,
   STALE_HINT_SECONDS,
   accountFlags,
   accountsFromOverview,
@@ -8,6 +9,23 @@ import {
 } from "./accounts";
 
 const NOW = 1_800_000_000; // seconds
+
+type Accounts = NonNullable<
+  NonNullable<NonNullable<OverviewResponse["latest"]>["snapshot"]>["quota"]
+>["accounts"];
+
+const envelope = (
+  accounts: Accounts,
+  receivedAt: number | string | null = new Date(NOW * 1000).toISOString(),
+): OverviewResponse => ({
+  latest: {
+    id: 42,
+    machine: "mini",
+    generatedAt: new Date(NOW * 1000).toISOString(),
+    receivedAt,
+    snapshot: { quota: { accounts } },
+  },
+});
 
 const raw = (extra: Record<string, unknown> = {}) => ({
   five_hour_pct: 8,
@@ -24,18 +42,11 @@ const raw = (extra: Record<string, unknown> = {}) => ({
 describe("accountsFromOverview", () => {
   it("maps accounts, iu first, hides disabled ones", () => {
     const out = accountsFromOverview(
-      {
-        latest: {
-          quota: {
-            accounts: {
-              me: raw({ five_hour_pct: 3, seven_day_pct: 12 }),
-              iu: raw(),
-              old: raw({ enabled: false }),
-            },
-          },
-        },
-        receivedAt: NOW * 1000,
-      },
+      envelope({
+        me: raw({ five_hour_pct: 3, seven_day_pct: 12 }),
+        iu: raw(),
+        old: raw({ enabled: false }),
+      }),
       NOW,
     );
     expect(out?.map((a) => a.id)).toEqual(["iu", "me"]);
@@ -44,10 +55,7 @@ describe("accountsFromOverview", () => {
 
   it("freshness is min(updated_at, receivedAt)", () => {
     const out = accountsFromOverview(
-      {
-        latest: { quota: { accounts: { iu: raw() } } },
-        receivedAt: (NOW - 1200) * 1000,
-      },
+      envelope({ iu: raw() }, new Date((NOW - 1200) * 1000).toISOString()),
       NOW,
     );
     expect(out?.[0].updatedAt).toBe(NOW - 1200);
@@ -57,28 +65,17 @@ describe("accountsFromOverview", () => {
     expect(accountsFromOverview(null)).toBeNull();
     expect(accountsFromOverview({ latest: null })).toBeNull();
     expect(accountsFromOverview({ latest: {} })).toBeNull();
+    expect(accountsFromOverview({ latest: { snapshot: {} } })).toBeNull();
     expect(
-      accountsFromOverview({
-        latest: { quota: { accounts: { iu: raw({ enabled: false }) } } },
-      }),
+      accountsFromOverview(envelope({ iu: raw({ enabled: false }) })),
     ).toBeNull();
   });
 
   it("keeps nulls and drops a past exhausted_until", () => {
     const out = accountsFromOverview(
-      {
-        latest: {
-          quota: {
-            accounts: {
-              iu: raw({
-                five_hour_pct: null,
-                exhausted_until: NOW - 10,
-              }),
-            },
-          },
-        },
-        receivedAt: NOW * 1000,
-      },
+      envelope({
+        iu: raw({ five_hour_pct: null, exhausted_until: NOW - 10 }),
+      }),
       NOW,
     );
     expect(out?.[0].fiveHourPct).toBeNull();
@@ -89,10 +86,10 @@ describe("accountsFromOverview", () => {
 describe("freshness fold", () => {
   const fresh = (updated: number | null, received: number | null) =>
     accountsFromOverview(
-      {
-        latest: { quota: { accounts: { iu: raw({ updated_at: updated }) } } },
-        receivedAt: received,
-      },
+      envelope(
+        { iu: raw({ updated_at: updated }) },
+        received === null ? null : new Date(received).toISOString(),
+      ),
       NOW,
     )![0].updatedAt;
 
@@ -109,17 +106,10 @@ describe("freshness fold", () => {
 
 describe("title and flags", () => {
   const accounts = accountsFromOverview(
-    {
-      latest: {
-        quota: {
-          accounts: {
-            iu: raw(),
-            me: raw({ five_hour_pct: 3, seven_day_pct: 12 }),
-          },
-        },
-      },
-      receivedAt: NOW * 1000,
-    },
+    envelope({
+      iu: raw(),
+      me: raw({ five_hour_pct: 3, seven_day_pct: 12 }),
+    }),
     NOW,
   )!;
 

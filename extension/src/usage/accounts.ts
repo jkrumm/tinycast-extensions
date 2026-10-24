@@ -18,9 +18,16 @@ interface RawAccount {
   updated_at?: number | null;
 }
 
+// Argo's snapshot envelope: the agent-gateway `/api/overview` payload sits
+// under `latest.snapshot`; `receivedAt` is ISO and lives on `latest`.
 export interface OverviewResponse {
-  latest: { quota?: { accounts?: Record<string, RawAccount> } } | null;
-  receivedAt?: number | string | null;
+  latest: {
+    id?: number | string;
+    machine?: string;
+    generatedAt?: number | string | null;
+    receivedAt?: number | string | null;
+    snapshot?: { quota?: { accounts?: Record<string, RawAccount> } } | null;
+  } | null;
 }
 
 export const STALE_HINT_SECONDS = 15 * 60;
@@ -53,9 +60,9 @@ export function accountsFromOverview(
   overview: OverviewResponse | null | undefined,
   nowSeconds = Date.now() / 1000,
 ): AccountQuota[] | null {
-  const raw = overview?.latest?.quota?.accounts;
+  const raw = overview?.latest?.snapshot?.quota?.accounts;
   if (!raw) return null;
-  const receivedMs = toMs(overview?.receivedAt);
+  const receivedMs = toMs(overview?.latest?.receivedAt);
 
   const accounts = Object.entries(raw)
     .filter(([, a]) => a && a.enabled !== false)

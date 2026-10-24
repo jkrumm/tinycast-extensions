@@ -106,8 +106,13 @@ describe("getQuota", () => {
 describe("getQuota via argo", () => {
   const nowMs = () => Date.now();
   const overview = (accounts: Record<string, unknown>) => ({
-    latest: { quota: { accounts } },
-    receivedAt: nowMs(),
+    latest: {
+      id: 1,
+      machine: "mini",
+      generatedAt: new Date(nowMs()).toISOString(),
+      receivedAt: new Date(nowMs()).toISOString(),
+      snapshot: { quota: { accounts } },
+    },
   });
   const acct = (extra: Record<string, unknown> = {}) => ({
     five_hour_pct: 8,
@@ -142,8 +147,10 @@ describe("getQuota via argo", () => {
   it("treats a 2 h old argo payload as failed and falls back", async () => {
     const old = Date.now() - 2 * 3600_000;
     argoFetchMock.mockResolvedValue({
-      latest: { quota: { accounts: { iu: acct({ updated_at: old }) } } },
-      receivedAt: old,
+      latest: {
+        receivedAt: new Date(old).toISOString(),
+        snapshot: { quota: { accounts: { iu: acct({ updated_at: old }) } } },
+      },
     });
     readFileMock.mockResolvedValue(JSON.stringify(okQuota(Date.now() / 1000)));
     const q = await getQuota();
@@ -176,7 +183,7 @@ describe("getQuota via argo", () => {
   });
 
   it("falls back when the payload has no quota yet", async () => {
-    argoFetchMock.mockResolvedValue({ latest: {}, receivedAt: nowMs() });
+    argoFetchMock.mockResolvedValue({ latest: { snapshot: {} } });
     readFileMock.mockResolvedValue(JSON.stringify(okQuota(Date.now() / 1000)));
     const q = await getQuota();
     if ("error" in q) throw new Error("unexpected error");
@@ -184,7 +191,7 @@ describe("getQuota via argo", () => {
   });
 
   it("returns the error shape when neither source has data", async () => {
-    argoFetchMock.mockResolvedValue({ latest: null, receivedAt: null });
+    argoFetchMock.mockResolvedValue({ latest: null });
     readFileMock.mockRejectedValue(new Error("ENOENT"));
     const q = await getQuota();
     expect("error" in q).toBe(true);
