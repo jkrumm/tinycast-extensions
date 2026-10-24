@@ -2,6 +2,15 @@ import { readFile } from "fs/promises";
 import { execFile } from "child_process";
 import { promisify } from "util";
 import { homedir } from "os";
+import { argoFetch } from "../lib/argo";
+import {
+  OverviewResponse,
+  STALE_HINT_SECONDS,
+  accountsFromOverview,
+  primaryQuota,
+} from "./accounts";
+
+export { STALE_HINT_SECONDS };
 import { UsageQuota } from "./types";
 
 const execFileAsync = promisify(execFile);
@@ -13,7 +22,8 @@ const REFETCH_AFTER_SECONDS = 100;
 // fetch_usage.py's HTTP timeout is 10 s; never let a hung `uv` hold a menu-bar
 // run past Tinycast's 60 s deadline (a timed-out run keeps the old title).
 const FETCH_TIMEOUT_MS = 20_000;
-export const STALE_HINT_SECONDS = 15 * 60;
+
+const ARGO_TIMEOUT_MS = 5_000;
 
 const FETCH_BIN = "/opt/homebrew/bin/uv";
 const FETCH_ARGS = ["run", `${homedir()}/.claude/fetch_usage.py`];
@@ -33,9 +43,44 @@ function isStale(quota: UsageQuota | null): boolean {
   return now - quota.fetched_at > REFETCH_AFTER_SECONDS;
 }
 
-// The statusline uses the same rate-limit-aware fetcher — never call
-// api.anthropic.com directly from here.
-export async function getQuota(): Promise<UsageQuota> {
+function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(
+      () => reject(new Error(`timed out after ${ms / 1000}s`)),
+      ms,
+    );
+    promise.then(
+      (v) => {
+        clearTimeout(timer);
+        resolve(v);
+      },
+      (e) => {
+        clearTimeout(timer);
+        reject(e);
+      },
+    );
+  });
+}
+
+// Primary source: agent-gateway's overview, pushed to Argo (agent-gateway
+// itself is loopback-only). Null on any failure or while the payload has no
+// `quota` yet.
+async function getArgoQuota(): Promise<UsageQuota | null> {
+  try {
+    const overview = await withTimeout(
+      argoFetch<OverviewResponse>("/agents/overview"),
+      ARGO_TIMEOUT_MS,
+    );
+    const accounts = accountsFromOverview(overview);
+    return accounts ? primaryQuota(accounts) : null;
+  } catch {
+    return null;
+  }
+}
+
+// Fallback: the statusline's rate-limit-aware fetcher, single account — never
+// call api.anthropic.com directly.
+async function getLocalQuota(): Promise<UsageQuota> {
   let quota = await readQuotaFile();
   if (isStale(quota)) {
     try {
@@ -52,7 +97,27 @@ export async function getQuota(): Promise<UsageQuota> {
       fetched_at: 0,
     };
   }
-  return quota;
+  if ("error" in quota) return quota;
+  return {
+    ...quota,
+    accounts: [
+      {
+        id: "iu (local)",
+        plan: null,
+        fiveHourPct: quota.five_hour.utilization,
+        sevenDayPct: quota.seven_day.utilization,
+        fiveHourResetsAt: quota.five_hour.resets_at_epoch,
+        sevenDayResetsAt: quota.seven_day.resets_at_epoch,
+        authOk: true,
+        exhaustedUntil: null,
+        updatedAt: quota.fetched_at,
+      },
+    ],
+  };
+}
+
+export async function getQuota(): Promise<UsageQuota> {
+  return (await getArgoQuota()) ?? (await getLocalQuota());
 }
 
 export function isStaleHint(fetchedAt: number): boolean {

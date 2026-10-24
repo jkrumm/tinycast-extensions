@@ -17,6 +17,12 @@ vi.mock("child_process", () => ({
     (execFileMock as (...a: unknown[]) => unknown)(...args),
 }));
 
+const argoFetchMock = vi.fn();
+vi.mock("../lib/argo", () => ({
+  argoFetch: (...args: unknown[]) =>
+    (argoFetchMock as (...a: unknown[]) => unknown)(...args),
+}));
+
 import { getQuota, isStaleHint } from "./quota";
 
 function okQuota(fetchedAt: number) {
@@ -41,6 +47,8 @@ describe("isStaleHint", () => {
 describe("getQuota", () => {
   beforeEach(() => {
     readFileMock.mockReset();
+    argoFetchMock.mockReset();
+    argoFetchMock.mockRejectedValue(new Error("argo down"));
     execFileMock.mockClear();
     execFileMock.mockImplementation((_file, _args, cb) => cb(null));
   });
@@ -50,7 +58,7 @@ describe("getQuota", () => {
     readFileMock.mockResolvedValue(JSON.stringify(fresh));
 
     const quota = await getQuota();
-    expect(quota).toEqual(fresh);
+    expect(quota).toMatchObject(fresh);
     expect(execFileMock).not.toHaveBeenCalled();
   });
 
@@ -92,5 +100,66 @@ describe("getQuota", () => {
 
     const quota = await getQuota();
     expect("error" in quota).toBe(true);
+  });
+});
+
+describe("getQuota via argo", () => {
+  const nowMs = () => Date.now();
+  const overview = (accounts: Record<string, unknown>) => ({
+    latest: { quota: { accounts } },
+    receivedAt: nowMs(),
+  });
+  const acct = (extra: Record<string, unknown> = {}) => ({
+    five_hour_pct: 8,
+    seven_day_pct: 88,
+    five_hour_resets_at: Date.now() / 1000 + 3600,
+    seven_day_resets_at: Date.now() / 1000 + 86400,
+    auth_ok: true,
+    enabled: true,
+    plan: "max20x",
+    updated_at: nowMs(),
+    ...extra,
+  });
+
+  beforeEach(() => {
+    argoFetchMock.mockReset();
+    readFileMock.mockReset();
+    execFileMock.mockClear();
+  });
+
+  it("uses argo accounts and skips the local fetch", async () => {
+    argoFetchMock.mockResolvedValue(
+      overview({ me: acct({ five_hour_pct: 3 }), iu: acct() }),
+    );
+    const q = await getQuota();
+    expect("error" in q).toBe(false);
+    if ("error" in q) return;
+    expect(q.accounts?.map((a) => a.id)).toEqual(["iu", "me"]);
+    expect(q.five_hour.utilization).toBe(8);
+    expect(execFileMock).not.toHaveBeenCalled();
+    expect(readFileMock).not.toHaveBeenCalled();
+  });
+
+  it("falls back to the local file labelled iu (local) when argo fails", async () => {
+    argoFetchMock.mockRejectedValue(new Error("502"));
+    readFileMock.mockResolvedValue(JSON.stringify(okQuota(Date.now() / 1000)));
+    const q = await getQuota();
+    if ("error" in q) throw new Error("unexpected error");
+    expect(q.accounts?.map((a) => a.id)).toEqual(["iu (local)"]);
+  });
+
+  it("falls back when the payload has no quota yet", async () => {
+    argoFetchMock.mockResolvedValue({ latest: {}, receivedAt: nowMs() });
+    readFileMock.mockResolvedValue(JSON.stringify(okQuota(Date.now() / 1000)));
+    const q = await getQuota();
+    if ("error" in q) throw new Error("unexpected error");
+    expect(q.accounts?.[0].id).toBe("iu (local)");
+  });
+
+  it("returns the error shape when neither source has data", async () => {
+    argoFetchMock.mockResolvedValue({ latest: null, receivedAt: null });
+    readFileMock.mockRejectedValue(new Error("ENOENT"));
+    const q = await getQuota();
+    expect("error" in q).toBe(true);
   });
 });

@@ -9,6 +9,12 @@ import { useCachedPromise } from "@raycast/utils";
 import { useMemo, useRef } from "react";
 import { getQuota, isStaleHint } from "./usage/quota";
 import {
+  STALE_HINT_SECONDS,
+  accountFlags,
+  accountSummary,
+  flagText,
+} from "./usage/accounts";
+import {
   getTimeseries,
   aggregateSpend,
   topLanesWithOther,
@@ -28,6 +34,7 @@ import {
   isQuotaError,
   UsageQuota,
   UsageQuotaOk,
+  AccountQuota,
   SpendAggregate,
 } from "./usage/types";
 import { menuBarRing, toDataUri } from "./lib/svg";
@@ -158,6 +165,12 @@ export default function ClaudeUsageMenuBar() {
       isLoading={isLoading}
       tooltip={`Claude Usage${quotaStale ? " (stale)" : ""}`}
     >
+      {data &&
+        !isQuotaError(data.quota) &&
+        (data.quota.accounts?.length ?? 0) > 1 && (
+          <AccountsSection accounts={data.quota.accounts!} />
+        )}
+
       {data && !isQuotaError(data.quota) && <QuotaSection quota={data.quota} />}
 
       {data && isQuotaError(data.quota) && (
@@ -213,11 +226,41 @@ export default function ClaudeUsageMenuBar() {
   );
 }
 
+function AccountsSection({ accounts }: { accounts: AccountQuota[] }) {
+  return (
+    <MenuBarExtra.Section title="Accounts">
+      {accounts.map((a) => {
+        const flags = accountFlags(a, STALE_HINT_SECONDS)
+          .map(flagText)
+          .join(", ");
+        return (
+          <MenuBarExtra.Item
+            key={a.id}
+            icon={{
+              source: Icon.Circle,
+              tintColor: dotColor(a.sevenDayPct),
+            }}
+            title={`${a.id}${a.plan ? ` (${a.plan})` : ""}: ${accountSummary(a)}${flags ? ` — ${flags}` : ""}`}
+          />
+        );
+      })}
+      {accounts.map((a) => (
+        <MenuBarExtra.Item
+          key={`${a.id}-reset`}
+          title={`${a.id} resets: 5h ${formatRelativeReset(a.fiveHourResetsAt)} · 7d ${a.sevenDayResetsAt === null ? "—" : formatWeekdayTime(a.sevenDayResetsAt)}`}
+        />
+      ))}
+    </MenuBarExtra.Section>
+  );
+}
+
 function QuotaSection({ quota }: { quota: UsageQuotaOk }) {
   const { weekly, session, models } = quotaLimits(quota);
   const pace = weeklyPace(weekly, Date.now() / 1000);
   return (
-    <MenuBarExtra.Section title="Quota">
+    <MenuBarExtra.Section
+      title={quota.accounts?.[0] ? `Quota — ${quota.accounts[0].id}` : "Quota"}
+    >
       {windowItem(
         "Weekly",
         weekly,

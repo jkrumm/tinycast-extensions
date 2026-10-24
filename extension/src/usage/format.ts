@@ -1,4 +1,5 @@
 import { QuotaLimits, QuotaWindow, WeeklyPace, quotaLimits } from "./limits";
+import { STALE_HINT_SECONDS, accountsTitle } from "./accounts";
 import { ExtraUsage, UsageBucket, UsageQuota, isQuotaError } from "./types";
 
 export function formatUtilization(u: UsageBucket): string {
@@ -77,6 +78,10 @@ export function menuBarTitleWithFreshness(
   quota: UsageQuota,
   stale: boolean,
 ): string {
+  // Several accounts: per-account numbers and marks replace the bare percent;
+  // staleness is flagged per account there.
+  if (!isQuotaError(quota) && (quota.accounts?.length ?? 0) > 1)
+    return accountsTitle(quota.accounts!, STALE_HINT_SECONDS);
   return `${menuBarTitle(quota)}${stale ? " (stale)" : ""}`;
 }
 

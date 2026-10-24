@@ -3,7 +3,12 @@ import { useCachedPromise } from "@raycast/utils";
 import { useMemo, useRef } from "react";
 import { getQuota, isStaleHint } from "./usage/quota";
 import { getTimeseries, aggregateSpend } from "./usage/spend";
-import { isQuotaError, UsageQuota, SpendAggregate } from "./usage/types";
+import {
+  isQuotaError,
+  UsageQuota,
+  AccountQuota,
+  SpendAggregate,
+} from "./usage/types";
 import {
   periodTotal,
   quotaPanel,
@@ -11,8 +16,11 @@ import {
   usageMetrics,
 } from "./usage/heroes";
 import { WEEK_SECONDS, quotaLimits } from "./usage/limits";
+import { STALE_HINT_SECONDS, accountFlags, flagText } from "./usage/accounts";
 import {
   extraUsageLine,
+  formatPercent,
+  formatRelativeReset,
   formatSpend,
   overflowModelsLine,
 } from "./usage/format";
@@ -97,6 +105,20 @@ export default function ClaudeUsage() {
   );
 }
 
+function accountsTable(accounts: AccountQuota[]): string[] {
+  const rows = accounts.map((a) => {
+    const flags = accountFlags(a, STALE_HINT_SECONDS).map(flagText).join(", ");
+    const reset = (t: number | null) =>
+      t === null ? "—" : formatRelativeReset(t);
+    return `| ${a.id}${a.plan ? ` (${a.plan})` : ""} | ${formatPercent(a.fiveHourPct)} · ${reset(a.fiveHourResetsAt)} | ${formatPercent(a.sevenDayPct)} · ${reset(a.sevenDayResetsAt)} | ${flags || "ok"} |`;
+  });
+  return [
+    "| Account | 5h · resets in | 7d · resets in | Status |",
+    "|-|-|-|-|",
+    ...rows,
+  ];
+}
+
 function renderMarkdown(
   data: UsageData | undefined,
   isLoading: boolean,
@@ -123,6 +145,8 @@ function renderMarkdown(
 
   const now = Date.now();
   const limits = quotaLimits(quota);
+  if ((quota.accounts?.length ?? 0) > 1)
+    lines.push(...accountsTable(quota.accounts!), "");
   lines.push(`![Quota](${quotaPanel(limits, now)})`, "");
   // The panel has room for weekly, 5h and one model cap.
   const overflow = overflowModelsLine(limits.models.slice(1));
