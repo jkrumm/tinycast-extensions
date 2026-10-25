@@ -172,10 +172,11 @@ export function mergeAccounts(
   );
 }
 
-const sameRoute = (a: LanePick, b: LanePick) =>
-  a.reason === "spill" || b.reason === "spill"
-    ? a.reason === b.reason
-    : a.picked === b.picked;
+// No account has room: the picker prints `picked=spill`. Its `reason=spill` is
+// something else — home was full and the other account took the work.
+export const isSpill = (p: LanePick) => p.picked === "spill";
+
+const sameRoute = (a: LanePick, b: LanePick) => a.picked === b.picked;
 
 // Where the two machines disagree — the case that makes the MacBook route
 // differently from the mini. With both machines' picks it is the picks that
@@ -194,7 +195,7 @@ export function divergences(
     for (const mac of view.picks) {
       const mini = view.argoPicks.find((p) => p.lane === mac.lane);
       if (!mini || sameRoute(mac, mini)) continue;
-      const to = (p: LanePick) => (p.reason === "spill" ? "spill" : p.picked);
+      const to = (p: LanePick) => p.picked;
       const route = `this Mac → ${to(mac)}, mini → ${to(mini)}`;
       byRoute.set(route, [...(byRoute.get(route) ?? []), label(mac.lane)]);
     }
@@ -222,5 +223,5 @@ export function divergences(
 // "iu (home)" / "spill" — spill means no account has room for a bulk lane:
 // the caller falls back to its IU path (`rd` pauses instead).
 export function pickText(p: LanePick): string {
-  return p.reason === "spill" ? "spill" : `${p.picked} (${p.reason})`;
+  return isSpill(p) ? "spill" : `${p.picked} (${p.reason})`;
 }

@@ -6,6 +6,7 @@ import {
   menuBarTitle,
   paceWords,
   planWeight,
+  reasonWords,
   summarize,
   summaryTileStatus,
 } from "./summary";
@@ -104,7 +105,7 @@ describe("working account and severity", () => {
   it("marks a spill", () => {
     const s = summarize(
       [iu({ sevenDayPct: 95 }), me({ sevenDayPct: 95 })],
-      routing([pick("interactive", "iu", "spill")]),
+      routing([pick("interactive", "spill", "no-eligible-account")]),
       NOW,
     );
     expect(s.severity).toBe("spill");
@@ -144,6 +145,19 @@ describe("working account and severity", () => {
   });
 });
 
+describe("a pick that fell back to the other account", () => {
+  it("is not a spill: reason=spill with an account means home was full", () => {
+    const s = summarize(
+      [iu({ sevenDayPct: 90 }), me({ sevenDayPct: 19 })],
+      routing([pick("interactive", "me", "spill")]),
+      NOW,
+    );
+    expect(s.severity).not.toBe("spill");
+    expect(s.working).toBe("me");
+    expect(reasonWords("spill")).toBe("home account is full");
+  });
+});
+
 describe("paceWords", () => {
   const week = (percent: number) =>
     summarize([iu({ sevenDayPct: percent })], undefined, NOW).accounts[0].pace;
@@ -174,12 +188,12 @@ describe("laneGroups", () => {
       pick("headless", "me", "home"),
       pick("interactive", "me", "pace"),
       pick("wave", "me", "home"),
-      pick("fan", "iu", "spill"),
+      pick("fan", "spill", "no-eligible-account"),
     ]);
     expect(groups).toEqual([
       { account: "me", reason: "pace", lanes: ["interactive"] },
       { account: "me", reason: "home", lanes: ["wave", "headless"] },
-      { account: null, reason: "spill", lanes: ["fan"] },
+      { account: null, reason: "no-eligible-account", lanes: ["fan"] },
     ]);
   });
 });

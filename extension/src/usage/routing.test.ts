@@ -86,9 +86,9 @@ describe("parsePickOutput", () => {
     expect(parsePickOutput("wave", "spill\n")).toBeNull();
   });
   it("spill is spelled out, a pick shows its reason", () => {
-    expect(pickText({ lane: "w", picked: "iu", reason: "spill" })).toBe(
-      "spill",
-    );
+    expect(
+      pickText({ lane: "w", picked: "spill", reason: "no-eligible-account" }),
+    ).toBe("spill");
     expect(pickText({ lane: "w", picked: "me", reason: "home" })).toBe(
       "me (home)",
     );

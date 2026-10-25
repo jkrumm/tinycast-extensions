@@ -319,6 +319,8 @@ run make secrets" while still reading the battery.
   This Mac next to Mini per lane group, and a divergence is flagged when the **picks**
   differ (`divergences`, same account for another reason does not count). On a payload
   without the field the views fall back to eligibility-only comparison and say so.
+  A pick's `reason=spill` with a real account means *home was full and the other account
+  took it*; only `picked=spill` (reason `no-eligible-account`) is no room (`routing.isSpill`).
 - **Claude usage (summary + layout)** — `usage/summary.ts` turns merged accounts +
   `routing` into one `UsageSummary`: the **working account** (this Mac's `interactive`
   pick; without the picker, the eligible account with most capacity left, flagged

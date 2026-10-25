@@ -101,7 +101,7 @@ describe("claude-usage command", () => {
         ],
         picks: [
           { lane: "interactive", picked: "iu", reason: "home" },
-          { lane: "wave", picked: "iu", reason: "spill" },
+          { lane: "wave", picked: "spill", reason: "no-eligible-account" },
         ],
       },
     });

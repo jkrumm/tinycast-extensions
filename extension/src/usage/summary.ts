@@ -11,6 +11,7 @@ import {
   LanePick,
   RoutingView,
   eligibility,
+  isSpill,
 } from "./routing";
 import { AccountQuota } from "./types";
 
@@ -90,7 +91,7 @@ function workingAccount(
 ): { id: string | null; spill: boolean; fromPicker: boolean } {
   const pick = picks?.find((p) => p.lane === "interactive");
   if (pick)
-    return pick.reason === "spill"
+    return isSpill(pick)
       ? { id: null, spill: true, fromPicker: true }
       : { id: pick.picked, spill: false, fromPicker: true };
   const room = (a: AccountSummary) => a.weight * (100 - (a.weeklyPct ?? 100));
@@ -271,6 +272,8 @@ export function reasonWords(reason: string): string {
     case "session":
       return "home account's 5h is full";
     case "spill":
+      return "home account is full";
+    case "no-eligible-account":
       return "no account has room";
     case "forced":
       return "forced";
@@ -292,7 +295,7 @@ export function laneGroups(picks: LanePick[] | null): LaneGroup[] {
   const order = (lane: string) => LANES.indexOf(lane as (typeof LANES)[number]);
   const groups: LaneGroup[] = [];
   for (const p of [...picks].sort((a, b) => order(a.lane) - order(b.lane))) {
-    const account = p.reason === "spill" ? null : p.picked;
+    const account = isSpill(p) ? null : p.picked;
     const group = groups.find(
       (g) => g.account === account && g.reason === p.reason,
     );

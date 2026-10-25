@@ -33,7 +33,7 @@ export function laneLines(picks: RoutingView["picks"]): string[] {
 const pickCell = (p: LanePick | undefined) =>
   !p
     ? "—"
-    : `${p.reason === "spill" ? "spill" : p.picked} (${reasonWords(p.reason)})${p.stale ? " — stale sample" : ""}`;
+    : `${p.picked} (${reasonWords(p.reason)})${p.stale ? " — stale sample" : ""}`;
 
 interface LaneRow {
   lanes: string[];
