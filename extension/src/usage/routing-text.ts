@@ -2,6 +2,7 @@
 // for the menu-bar dropdown. No @raycast/api.
 
 import { Eligibility, RoutingView, divergences, eligibility } from "./routing";
+import { LANES, LanePick } from "./routing";
 import { LaneGroup, laneGroups, laneLabel, reasonWords } from "./summary";
 import { AccountQuota } from "./types";
 
@@ -29,16 +30,64 @@ export function laneLines(picks: RoutingView["picks"]): string[] {
   return laneGroups(picks).map(groupLine);
 }
 
-// Detail: one row per (account, reason) group of lanes, in plain words.
-export function lanesTable(picks: RoutingView["picks"]): string[] {
-  if (!picks) return [];
+const pickCell = (p: LanePick | undefined) =>
+  !p
+    ? "—"
+    : `${p.reason === "spill" ? "spill" : p.picked} (${reasonWords(p.reason)})${p.stale ? " — stale sample" : ""}`;
+
+interface LaneRow {
+  lanes: string[];
+  mac: LanePick;
+  mini: LanePick | undefined;
+}
+
+// Lanes that route the same way on both machines share a row.
+function laneRows(view: Pick<RoutingView, "picks" | "argoPicks">): LaneRow[] {
+  const rows: LaneRow[] = [];
+  for (const lane of LANES) {
+    const mac = view.picks?.find((p) => p.lane === lane);
+    if (!mac) continue;
+    const mini = view.argoPicks?.find((p) => p.lane === lane);
+    const row = rows.find(
+      (r) =>
+        pickCell(r.mac) === pickCell(mac) &&
+        pickCell(r.mini) === pickCell(mini),
+    );
+    if (row) row.lanes.push(lane);
+    else rows.push({ lanes: [lane], mac, mini });
+  }
+  return rows;
+}
+
+// Detail: one row per group of lanes that route alike. With the mini's picks
+// the table puts the two machines side by side and marks a row where they
+// pick different accounts; without them it is this Mac only.
+export function lanesTable(
+  view: Pick<RoutingView, "picks" | "argoPicks">,
+): string[] {
+  if (!view.picks) return [];
+  const label = (r: LaneRow) => r.lanes.map(laneLabel).join(", ");
+  if (!view.argoPicks)
+    return [
+      "| Work | Goes to | Why |",
+      "|-|-|-|",
+      ...laneGroups(view.picks).map(
+        (g) =>
+          `| ${g.lanes.map(laneLabel).join(", ")} | ${g.account ?? "spill"} | ${reasonWords(g.reason)} |`,
+      ),
+    ];
   return [
-    "| Work | Goes to | Why |",
+    "| Work | This Mac | Mini |",
     "|-|-|-|",
-    ...laneGroups(picks).map(
-      (g) =>
-        `| ${g.lanes.map(laneLabel).join(", ")} | ${g.account ?? "spill"} | ${reasonWords(g.reason)} |`,
-    ),
+    ...laneRows(view).map((r) => {
+      const differs =
+        r.mini !== undefined &&
+        divergences(
+          { local: null, argo: null, picks: [r.mac], argoPicks: [r.mini] },
+          0,
+        ).length > 0;
+      return `| ${differs ? "⚠ " : ""}${label(r)} | ${pickCell(r.mac)} | ${pickCell(r.mini)} |`;
+    }),
   ];
 }
 
@@ -63,6 +112,8 @@ export function missingSideNote(view: RoutingView): string | null {
   if (!view.local) return "This Mac's picker is unavailable — routing unknown.";
   if (!view.argo)
     return "Mini state unavailable (Argo not reachable or stale).";
+  if (!view.argoPicks)
+    return "Mini picks unavailable — comparing eligibility only.";
   return null;
 }
 
@@ -74,10 +125,10 @@ export function routingMarkdown(
 ): string[] {
   if (!view) return [];
   const lines: string[] = [];
-  const lanes = lanesTable(view.picks);
+  const lanes = lanesTable(view);
   if (lanes.length > 0) lines.push(...lanes, "");
   lines.push(...machinesTable(accounts, view, nowSeconds));
-  const diverging = divergences(view, nowSeconds);
+  const diverging = divergences(view, nowSeconds, laneLabel);
   if (diverging.length > 0) lines.push("", ...diverging.map((d) => `⚠️ ${d}`));
   const note = missingSideNote(view);
   if (note) lines.push("", `_${note}_`);

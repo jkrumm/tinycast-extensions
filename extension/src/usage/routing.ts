@@ -25,6 +25,7 @@ export interface LanePick {
   lane: string;
   picked: string;
   reason: string; // home | pace | session | spill | forced | …
+  stale?: boolean; // the mini's pick ran on an old quota sample (Argo only)
 }
 
 // What one machine knows: its accounts, and (this Mac only) what each lane
@@ -33,6 +34,9 @@ export interface RoutingView {
   local: AccountQuota[] | null;
   argo: AccountQuota[] | null;
   picks: LanePick[] | null;
+  // What the mini's picker chose per lane (Argo `snapshot.quota.picks`); null
+  // on a payload without the field — the views fall back to eligibility.
+  argoPicks?: LanePick[] | null;
 }
 
 export interface Eligibility {
@@ -68,6 +72,25 @@ export function eligibility(
 export function parsePickOutput(lane: string, stdout: string): LanePick | null {
   const m = /^# picked=(\S+) reason=(\S+)/m.exec(stdout);
   return m ? { lane, picked: m[1], reason: m[2] } : null;
+}
+
+// Argo's `snapshot.quota.picks = {lane: {picked, reason, stale}}` → LANES order.
+// Null when absent or empty; unknown lanes are ignored.
+export function parseArgoPicks(raw: unknown): LanePick[] | null {
+  if (!raw || typeof raw !== "object") return null;
+  const picks: LanePick[] = [];
+  for (const lane of LANES) {
+    const p = (raw as Record<string, unknown>)[lane] as
+      { picked?: unknown; reason?: unknown; stale?: unknown } | undefined;
+    if (p && typeof p.picked === "string" && typeof p.reason === "string")
+      picks.push({
+        lane,
+        picked: p.picked,
+        reason: p.reason,
+        stale: p.stale === true,
+      });
+  }
+  return picks.length > 0 ? picks : null;
 }
 
 interface RawLocalAccount {
@@ -149,12 +172,36 @@ export function mergeAccounts(
   );
 }
 
-// Where the two machines disagree about whether an account can be picked —
-// the case that makes the MacBook route differently from the mini.
+const sameRoute = (a: LanePick, b: LanePick) =>
+  a.reason === "spill" || b.reason === "spill"
+    ? a.reason === b.reason
+    : a.picked === b.picked;
+
+// Where the two machines disagree — the case that makes the MacBook route
+// differently from the mini. With both machines' picks it is the picks that
+// differ, lane by lane; without the mini's (an older Argo payload) it falls
+// back to whether an account is eligible on one side only. `label` names a
+// lane group in words (usage/summary.ts laneLabel).
 export function divergences(
-  view: Pick<RoutingView, "local" | "argo">,
+  view: Pick<RoutingView, "local" | "argo"> &
+    Partial<Pick<RoutingView, "picks" | "argoPicks">>,
   nowSeconds = Date.now() / 1000,
+  label: (lane: string) => string = (l) => l,
 ): string[] {
+  if (view.picks && view.argoPicks) {
+    // Lanes that split the same way share one line.
+    const byRoute = new Map<string, string[]>();
+    for (const mac of view.picks) {
+      const mini = view.argoPicks.find((p) => p.lane === mac.lane);
+      if (!mini || sameRoute(mac, mini)) continue;
+      const to = (p: LanePick) => (p.reason === "spill" ? "spill" : p.picked);
+      const route = `this Mac → ${to(mac)}, mini → ${to(mini)}`;
+      byRoute.set(route, [...(byRoute.get(route) ?? []), label(mac.lane)]);
+    }
+    return [...byRoute].map(
+      ([route, lanes]) => `${lanes.join(", ")}: ${route}`,
+    );
+  }
   if (!view.local || !view.argo) return [];
   const lines: string[] = [];
   for (const l of view.local) {

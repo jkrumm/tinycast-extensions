@@ -113,13 +113,13 @@ describe("getQuota", () => {
 
 describe("getQuota via argo", () => {
   const nowMs = () => Date.now();
-  const overview = (accounts: Record<string, unknown>) => ({
+  const overview = (accounts: Record<string, unknown>, picks?: unknown) => ({
     latest: {
       id: 1,
       machine: "mini",
       generatedAt: new Date(nowMs()).toISOString(),
       receivedAt: new Date(nowMs()).toISOString(),
-      snapshot: { quota: { accounts } },
+      snapshot: { quota: { accounts, ...(picks ? { picks } : {}) } },
     },
   });
   const acct = (extra: Record<string, unknown> = {}) => ({
@@ -240,6 +240,26 @@ describe("getQuota via argo", () => {
     expect(me?.authOk).toBe(false); // this Mac's auth
     expect(q.routing?.picks).toHaveLength(1);
     expect(q.routing?.argo).toHaveLength(2);
+  });
+
+  it("carries the mini's picks, and null when the field is absent", async () => {
+    readFileMock.mockRejectedValue(new Error("ENOENT"));
+    argoFetchMock.mockResolvedValue(
+      overview(
+        { iu: acct() },
+        { wave: { picked: "iu", reason: "home", stale: false } },
+      ),
+    );
+    const q = await getQuota();
+    if ("error" in q) throw new Error("unexpected error");
+    expect(q.routing?.argoPicks).toEqual([
+      { lane: "wave", picked: "iu", reason: "home", stale: false },
+    ]);
+
+    argoFetchMock.mockResolvedValue(overview({ iu: acct() }));
+    const old = await getQuota();
+    if ("error" in old) throw new Error("unexpected error");
+    expect(old.routing?.argoPicks).toBeNull();
   });
 
   it("works from the local picker alone when argo is down", async () => {

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   divergences,
+  parseArgoPicks,
   eligibility,
   mergeAccounts,
   parseLocalUsage,
@@ -201,5 +202,82 @@ describe("divergences", () => {
   it("is quiet when they agree or a side is missing", () => {
     expect(divergences({ argo: [acct()], local: [acct()] }, NOW)).toEqual([]);
     expect(divergences({ argo: null, local: [acct()] }, NOW)).toEqual([]);
+  });
+});
+
+describe("mini picks", () => {
+  const mac = (picked: string, reason = "home") => ({
+    lane: "wave",
+    picked,
+    reason,
+  });
+
+  it("parses Argo's lane map in LANES order and drops junk", () => {
+    expect(
+      parseArgoPicks({
+        wave: { picked: "me", reason: "home", stale: true },
+        interactive: { picked: "iu", reason: "pace", stale: false },
+        bogus: { picked: "x", reason: "home" },
+        fan: { picked: 3 },
+      }),
+    ).toEqual([
+      { lane: "interactive", picked: "iu", reason: "pace", stale: false },
+      { lane: "wave", picked: "me", reason: "home", stale: true },
+    ]);
+    expect(parseArgoPicks(undefined)).toBeNull();
+    expect(parseArgoPicks({})).toBeNull();
+  });
+
+  it("flags a divergence when the picks differ, even if eligibility agrees", () => {
+    const view = {
+      local: [acct()],
+      argo: [acct()],
+      picks: [mac("me")],
+      argoPicks: [mac("iu")],
+    };
+    expect(divergences(view, NOW, () => "Waves")).toEqual([
+      "Waves: this Mac → me, mini → iu",
+    ]);
+  });
+
+  it("merges lanes that split the same way into one line", () => {
+    const lane = (l: string, p: string) => ({
+      lane: l,
+      picked: p,
+      reason: "home",
+    });
+    const view = {
+      local: null,
+      argo: null,
+      picks: [lane("wave", "me"), lane("fan", "me"), lane("headless", "iu")],
+      argoPicks: [
+        lane("wave", "iu"),
+        lane("fan", "iu"),
+        lane("headless", "iu"),
+      ],
+    };
+    expect(divergences(view, NOW)).toEqual([
+      "wave, fan: this Mac → me, mini → iu",
+    ]);
+  });
+
+  it("does not flag the same account for a different reason", () => {
+    const view = {
+      local: null,
+      argo: null,
+      picks: [mac("me", "pace")],
+      argoPicks: [mac("me", "home")],
+    };
+    expect(divergences(view, NOW)).toEqual([]);
+  });
+
+  it("falls back to eligibility when the mini sent no picks", () => {
+    const view = {
+      local: [acct({ authOk: false })],
+      argo: [acct()],
+      picks: [mac("me")],
+      argoPicks: null,
+    };
+    expect(divergences(view, NOW)[0]).toMatch(/eligible on the mini/);
   });
 });

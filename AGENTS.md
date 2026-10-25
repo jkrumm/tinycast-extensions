@@ -313,10 +313,12 @@ run make secrets" while still reading the battery.
   both raw sides in `quota.routing = { local, argo, picks }`, restates the picker's
   eligibility (enabled ∧ auth_ok ∧ not exhausted ∧ 5h < 85 ∧ 7d < 90 ∧ sample < 6 h,
   `docs/claude-accounts.md` in dotfiles) so a view can say *why* an account is out, and
-  flags where the machines disagree. Argo carries no per-lane picks, so the mini side
-  is eligibility only (**proposed Argo field, not shipped:**
-  `snapshot.quota.picks = {lane: {picked, reason, stale}}` — once present the Detail can
-  show the mini's routing next to this Mac's; until then the views handle its absence).
+  flags where the machines disagree. Argo's `snapshot.quota.picks = {lane: {picked, reason, stale}}` (agent-gateway,
+  refreshed every 10 min) is the mini's real pick per lane: parsed by
+  `routing.parseArgoPicks` into `routing.argoPicks`. The Detail's lane table then shows
+  This Mac next to Mini per lane group, and a divergence is flagged when the **picks**
+  differ (`divergences`, same account for another reason does not count). On a payload
+  without the field the views fall back to eligibility-only comparison and say so.
 - **Claude usage (summary + layout)** — `usage/summary.ts` turns merged accounts +
   `routing` into one `UsageSummary`: the **working account** (this Mac's `interactive`
   pick; without the picker, the eligible account with most capacity left, flagged

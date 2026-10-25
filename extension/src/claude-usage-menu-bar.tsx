@@ -29,6 +29,7 @@ import {
   AccountSummary,
   UsageSummary,
   accountProblem,
+  laneLabel,
   menuBarTitle,
   paceWords,
   summarize,
@@ -299,14 +300,18 @@ function AccountsSection({ accounts }: { accounts: AccountSummary[] }) {
 function RoutingSection({ routing }: { routing: RoutingView | undefined }) {
   if (!routing) return null;
   const note = missingSideNote(routing);
+  const diverging = divergences(routing, Date.now() / 1000, laneLabel);
   return (
     <MenuBarExtra.Section title="Routing">
       {laneLines(routing.picks).map((line) => (
         <MenuBarExtra.Item key={line} title={line} />
       ))}
-      {divergences(routing, Date.now() / 1000).map((d) => (
+      {diverging.map((d) => (
         <MenuBarExtra.Item key={d} title={`⚠ ${d}`} />
       ))}
+      {routing.picks && routing.argoPicks && diverging.length === 0 && (
+        <MenuBarExtra.Item title="Mini picks the same" />
+      )}
       {note && <MenuBarExtra.Item title={note} />}
     </MenuBarExtra.Section>
   );

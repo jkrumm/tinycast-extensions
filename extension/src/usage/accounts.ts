@@ -25,7 +25,12 @@ export interface OverviewResponse {
     machine?: string;
     generatedAt?: number | string | null;
     receivedAt?: number | string | null;
-    snapshot?: { quota?: { accounts?: Record<string, RawAccount> } } | null;
+    snapshot?: {
+      quota?: {
+        accounts?: Record<string, RawAccount>;
+        picks?: unknown; // {lane: {picked, reason, stale}} — usage/routing.ts parseArgoPicks
+      };
+    } | null;
   } | null;
 }
 

@@ -4,7 +4,7 @@ import { promisify } from "util";
 import { homedir } from "os";
 import { argoFetch } from "../lib/argo";
 import { loadLocalRouting } from "./local";
-import { mergeAccounts } from "./routing";
+import { LanePick, mergeAccounts, parseArgoPicks } from "./routing";
 import {
   OverviewResponse,
   STALE_HINT_SECONDS,
@@ -70,13 +70,22 @@ function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
 // Argo's side: agent-gateway's overview, pushed to Argo (agent-gateway itself
 // is loopback-only) — the MINI's view. Null on any failure or while the payload
 // has no `quota` yet.
-async function getArgoAccounts(): Promise<AccountQuota[] | null> {
+async function getArgoAccounts(): Promise<{
+  accounts: AccountQuota[];
+  picks: LanePick[] | null;
+} | null> {
   try {
     const overview = await withTimeout(
       argoFetch<OverviewResponse>("/agents/overview"),
       ARGO_TIMEOUT_MS,
     );
-    return accountsFromOverview(overview);
+    const accounts = accountsFromOverview(overview);
+    return accounts
+      ? {
+          accounts,
+          picks: parseArgoPicks(overview.latest?.snapshot?.quota?.picks),
+        }
+      : null;
   } catch {
     return null;
   }
@@ -92,12 +101,13 @@ async function getRoutingQuota(): Promise<UsageQuota | null> {
     loadLocalRouting().catch(() => null),
   ]);
   const nowSeconds = Date.now() / 1000;
-  const argo =
+  const argoFresh =
     argoResult &&
-    nowSeconds - Math.max(...argoResult.map((a) => a.updatedAt)) <=
+    nowSeconds - Math.max(...argoResult.accounts.map((a) => a.updatedAt)) <=
       ARGO_MAX_AGE_SECONDS
       ? argoResult
       : null;
+  const argo = argoFresh?.accounts ?? null;
   const local = localResult?.accounts ?? null;
   if (!argo && !local) return null;
 
@@ -105,7 +115,12 @@ async function getRoutingQuota(): Promise<UsageQuota | null> {
   const accounts = mergeAccounts(argo, local);
   return {
     ...primaryQuota(accounts, file && !("error" in file) ? file : null),
-    routing: { argo, local, picks: localResult?.picks ?? null },
+    routing: {
+      argo,
+      local,
+      picks: localResult?.picks ?? null,
+      argoPicks: argoFresh?.picks ?? null,
+    },
   };
 }
 
