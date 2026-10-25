@@ -39,6 +39,7 @@ export interface AccountSummary {
   weeklyResetsAt: number | null;
   pace: WeeklyPace | null;
   flags: AccountFlag[];
+  ageSeconds: number; // age of the newest sample
   eligibility: Eligibility; // on this Mac
   working: boolean; // the account an interactive spawn goes to now
 }
@@ -124,6 +125,7 @@ export function summarize(
       nowSeconds,
     ),
     flags: accountFlags(a, STALE_ACCOUNT_SECONDS, nowSeconds),
+    ageSeconds: nowSeconds - a.updatedAt,
     // This Mac's own verdict when it has one; Argo's accounts are merged in
     // `merged` already (usage/routing.ts mergeAccounts).
     eligibility: eligibility(a, nowSeconds),
@@ -160,14 +162,21 @@ export function summarize(
   };
 }
 
-const FLAG_WORDS: Record<AccountFlag, string> = {
-  auth: "login expired",
-  exhausted: "exhausted",
-  stale: "stale sample",
-};
+// What is wrong with an account, in words, or null. A sample past the picker's
+// 6 h limit names the age and says the account is skipped — that is the case
+// that silently routes everything to the other account.
+export function accountProblem(a: AccountSummary): string | null {
+  if (a.flags.includes("auth")) return "login expired";
+  if (a.flags.includes("exhausted")) return "exhausted";
+  if (!a.eligibility.eligible && a.eligibility.reason?.startsWith("sample"))
+    return `${a.eligibility.reason} — skipped`;
+  if (a.flags.includes("stale")) return `sample ${ageText(a.ageSeconds)} old`;
+  return null;
+}
 
-export function flagWords(flag: AccountFlag): string {
-  return FLAG_WORDS[flag];
+function ageText(seconds: number): string {
+  const h = Math.floor(seconds / 3600);
+  return h >= 48 ? "days" : h >= 1 ? `${h}h` : `${Math.round(seconds / 60)}m`;
 }
 
 function headlineText(s: {
@@ -183,7 +192,7 @@ function headlineText(s: {
   const where = s.working ? `Working on ${s.working}` : "No account to pick";
   if (s.severity === "broken") {
     const a = s.broken[0];
-    return `${where} · ${a.id}: ${a.flags.map(flagWords).join(", ")}${poolText}`;
+    return `${where} · ${a.id}: ${accountProblem(a)}${poolText}`;
   }
   if (s.severity === "low") return `${where} · low headroom${poolText}`;
   return `${where}${poolText}`;
@@ -193,19 +202,24 @@ function headlineText(s: {
 
 const SEVERITY_MARK: Record<Severity, string> = {
   ok: "",
-  low: "▾ ",
-  broken: "⚠ ",
-  spill: "⊘ ",
+  low: "▾",
+  broken: "⚠",
+  spill: "⊘",
 };
 
-// "me 9%" — the account work goes to and its own weekly use; a leading mark
-// for low headroom (▾), a broken account (⚠) or a spill (⊘). The menu bar
-// behind the notch is crowded, so nothing else goes in.
+// "me 9%" — the account work goes to and its own weekly use. Something to
+// look at swaps the `%` for a leading mark so the title stays the same width:
+// the bar behind the notch is full, and a title two characters wider pushes
+// this item (and its neighbours) out of sight — exactly when it matters.
+// Marks: ▾ low headroom, ⚠ a broken account, ⊘ spill.
 export function menuBarTitle(s: UsageSummary): string {
-  const mark = SEVERITY_MARK[s.severity];
-  if (s.severity === "spill") return `${mark}spill`;
+  if (s.severity === "spill") return `${SEVERITY_MARK.spill}spill`;
   const w = s.accounts.find((a) => a.working);
-  return w ? `${mark}${w.id} ${pct(w.weeklyPct)}` : `${mark}—`;
+  if (!w) return "—";
+  const n = w.weeklyPct === null ? "—" : String(Math.round(w.weeklyPct));
+  return s.severity === "ok"
+    ? `${w.id} ${n}%`
+    : `${SEVERITY_MARK[s.severity]}${w.id} ${n}`;
 }
 
 // Hub tile status (≤ ~18 characters).
@@ -213,8 +227,8 @@ export function summaryTileStatus(s: UsageSummary): string {
   const mark = SEVERITY_MARK[s.severity];
   const pool = s.pool ? ` · pool ${pct(s.pool.usedPct)}` : "";
   return s.severity === "spill"
-    ? `${mark}spill${pool}`
-    : `${mark}${s.working ?? "—"}${pool}`;
+    ? `${mark} spill${pool}`
+    : `${mark}${mark ? " " : ""}${s.working ?? "—"}${pool}`;
 }
 
 // ---- Accounts --------------------------------------------------------------

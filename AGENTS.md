@@ -325,9 +325,10 @@ run make secrets" while still reading the battery.
   unknown; `left` in plan units, "6.8x of 25x"), per-account weekly **pace**
   (`limits.ts weeklyPace`), and a **severity** (spill > broken [auth, exhausted,
   sample > 1 h] > low [pool < 15 % left] > ok). Surfaces, one hierarchy:
-  menu-bar title `me 9%` = working account + its weekly use, prefix `▾` low,
-  `⚠` broken, `⊘ spill` (ring icon = pool use); dropdown = headline line, Accounts
-  (weekly + pace + 5h per account, flags), Routing (lanes grouped by account+reason in
+  menu-bar title `me 9%` = working account + its weekly use; a problem swaps the `%` for a
+  leading mark (`▾iu 86` low, `⚠iu 89` broken, `⊘spill`) so the title keeps its width — the bar
+  behind the notch is full and a wider title hides the item (ring icon = pool use); dropdown = headline line, Accounts
+  (weekly + pace + 5h per account; a sample past the picker's 6 h limit reads "sample 7h old — skipped"), Routing (lanes grouped by account+reason in
   plain words, divergences), Spend submenu; Detail = bold headline, `capacityPanel`
   (pool + one column per account, pace tick, "out Fri 14:00" / "~20% at reset" /
   "not pickable: …"), `capacityMetrics` row (each account's 5h, spend today / 7 days),

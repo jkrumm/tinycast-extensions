@@ -121,7 +121,7 @@ describe("claude-usage command", () => {
     expect(markdown).toContain("eligible on the mini, not on this Mac");
     const capacity = imageSvg(markdown, "Capacity");
     expect(capacity.indexOf("POOL")).toBeLessThan(capacity.indexOf("IU"));
-    expect(capacity).toContain("not pickable: login expired");
+    expect(capacity).toContain("login expired");
     assertNoBadSubstrings(
       markdown.replace(/data:[^)]+/g, "data:"),
       "claude-usage two accounts",

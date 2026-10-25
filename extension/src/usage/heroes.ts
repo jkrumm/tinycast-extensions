@@ -30,7 +30,12 @@ import {
   weeklyPace,
 } from "./limits";
 import { SESSION_LIMIT } from "./routing";
-import { AccountSummary, UsageSummary, flagWords, paceWords } from "./summary";
+import {
+  AccountSummary,
+  UsageSummary,
+  accountProblem,
+  paceWords,
+} from "./summary";
 import { SpendAggregate } from "./types";
 
 // Keeps the lane chart to 6 rows max (5 lanes + "other") — argo tracks ~60
@@ -261,7 +266,12 @@ export function capacityPanel(summary: UsageSummary): string {
   }
   for (const a of summary.accounts) {
     const flagged = a.flags.length > 0 || !a.eligibility.eligible;
-    const broken = a.flags.includes("auth") || a.weeklyPct === null;
+    // Greyed: the account cannot be used for a reason other than being full
+    // (a full account keeps its red).
+    const greyed =
+      a.weeklyPct === null ||
+      a.flags.length > 0 ||
+      (!a.eligibility.eligible && !a.eligibility.reason?.includes("≥"));
     columns.push({
       label: [a.id, a.plan, a.working ? "working" : null]
         .filter(Boolean)
@@ -269,7 +279,7 @@ export function capacityPanel(summary: UsageSummary): string {
       value: a.weeklyPct === null ? null : Math.round(a.weeklyPct),
       unit: "%",
       percent: a.weeklyPct ?? 0,
-      color: broken
+      color: greyed
         ? RAYCAST_COLOR.secondaryText
         : ((a.pace && PACE_COLOR[a.pace.status]) ??
           thresholdColor(a.weeklyPct ?? 0)),
@@ -282,11 +292,8 @@ export function capacityPanel(summary: UsageSummary): string {
 
 function accountSub(a: AccountSummary, flagged: boolean): string {
   if (flagged) {
-    const why =
-      a.flags.length > 0
-        ? a.flags.map(flagWords).join(", ")
-        : (a.eligibility.reason ?? "not pickable");
-    return `not pickable: ${why}`;
+    const problem = accountProblem(a);
+    return problem ?? `not pickable: ${a.eligibility.reason ?? "unknown"}`;
   }
   const pace = paceWords(a.pace, formatWeekdayTime);
   return a.weeklyResetsAt === null

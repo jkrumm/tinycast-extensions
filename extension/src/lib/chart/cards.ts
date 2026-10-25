@@ -370,10 +370,13 @@ function gaugeMarkup(opts: {
     0,
     100,
   );
+  // A muted fill is the greyed-out state: the full 0.6 → 1 ramp of the grey
+  // token resolves to near-black in light mode, so it stays under the track.
+  const quiet = color === THEME.color.muted;
   const gradient = fadeGradient({
     color,
-    from: 0.6,
-    to: 1,
+    from: quiet ? 0.35 : 0.6,
+    to: quiet ? 0.6 : 1,
     direction: "right",
   });
   const parts: string[] = [];

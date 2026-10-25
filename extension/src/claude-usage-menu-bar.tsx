@@ -28,7 +28,7 @@ import { divergences } from "./usage/routing";
 import {
   AccountSummary,
   UsageSummary,
-  flagWords,
+  accountProblem,
   menuBarTitle,
   paceWords,
   summarize,
@@ -269,11 +269,8 @@ function accountLine(a: AccountSummary): string {
   const week = `${formatPercent(a.weeklyPct)} week (${paceWords(a.pace, formatWeekdayTime)})`;
   const session = `5h ${formatPercent(a.fiveHourPct)} · ${formatRelativeReset(a.fiveHourResetsAt)}`;
   const problem =
-    a.flags.length > 0
-      ? a.flags.map(flagWords).join(", ")
-      : a.eligibility.eligible
-        ? null
-        : `not pickable: ${a.eligibility.reason}`;
+    accountProblem(a) ??
+    (a.eligibility.eligible ? null : `not pickable: ${a.eligibility.reason}`);
   return `${a.id}${plan} — ${week} · ${session}${problem ? ` — ${problem}` : ""}`;
 }
 

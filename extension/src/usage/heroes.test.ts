@@ -165,7 +165,7 @@ describe("capacityPanel", () => {
         ]),
       ),
     );
-    expect(svg).toContain("not pickable: login expired");
+    expect(svg).toContain("login expired");
     expect(svg).toContain("raycast-secondary-text");
   });
 

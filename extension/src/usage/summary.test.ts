@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   STALE_ACCOUNT_SECONDS,
+  accountProblem,
   laneGroups,
   menuBarTitle,
   paceWords,
@@ -107,7 +108,7 @@ describe("working account and severity", () => {
       NOW,
     );
     expect(s.severity).toBe("spill");
-    expect(menuBarTitle(s)).toBe("⊘ spill");
+    expect(menuBarTitle(s)).toBe("⊘spill");
     expect(s.headline).toContain("No account has room");
   });
 
@@ -118,7 +119,7 @@ describe("working account and severity", () => {
       NOW,
     );
     expect(s.severity).toBe("broken");
-    expect(menuBarTitle(s)).toBe("⚠ iu 10%");
+    expect(menuBarTitle(s)).toBe("⚠iu 10");
     expect(s.headline).toContain("me: login expired");
   });
 
@@ -129,7 +130,7 @@ describe("working account and severity", () => {
       NOW,
     );
     expect(s.severity).toBe("broken");
-    expect(s.headline).toContain("stale sample");
+    expect(s.headline).toContain("sample 1h old");
   });
 
   it("flags low pool headroom", () => {
@@ -139,7 +140,7 @@ describe("working account and severity", () => {
       NOW,
     );
     expect(s.severity).toBe("low");
-    expect(menuBarTitle(s)).toBe("▾ iu 86%");
+    expect(menuBarTitle(s)).toBe("▾iu 86");
   });
 });
 
@@ -180,5 +181,31 @@ describe("laneGroups", () => {
       { account: "me", reason: "home", lanes: ["wave", "headless"] },
       { account: null, reason: "spill", lanes: ["fan"] },
     ]);
+  });
+});
+
+describe("an account whose sample is past the picker's limit", () => {
+  const stale = summarize(
+    [iu({ sevenDayPct: 89 }), me({ updatedAt: NOW - 7 * 3600 })],
+    routing([pick("interactive", "iu", "home")]),
+    NOW,
+  );
+
+  it("is named, aged and said to be skipped", () => {
+    expect(accountProblem(stale.accounts[1])).toBe("sample 7h old — skipped");
+    expect(stale.headline).toBe(
+      "Working on iu · me: sample 7h old — skipped · pool 73% used",
+    );
+    expect(stale.severity).toBe("broken");
+    expect(menuBarTitle(stale)).toBe("⚠iu 89");
+  });
+
+  it("is only aged, not skipped, between 1 h and the 6 h limit", () => {
+    const s = summarize(
+      [iu(), me({ updatedAt: NOW - 2 * 3600 })],
+      routing([pick("interactive", "iu", "home")]),
+      NOW,
+    );
+    expect(accountProblem(s.accounts[1])).toBe("sample 2h old");
   });
 });
