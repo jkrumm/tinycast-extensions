@@ -42,6 +42,19 @@ import {
   UsageQuotaOk,
   SpendAggregate,
 } from "./usage/types";
+import {
+  IuBudgetReading,
+  IuBudgetView,
+  ageLine,
+  canSpendLine,
+  freesLine,
+  iuBudgetView,
+  loadIuBudget,
+  titleMark,
+  unavailableText,
+  usageLine,
+  usd0,
+} from "./usage/iu-budget";
 import { menuBarRing, toDataUri } from "./lib/svg";
 import { RoutingView } from "./usage/routing";
 
@@ -83,9 +96,13 @@ function useUsage() {
 
   return useCachedPromise(
     async () => {
-      const [quotaResult, spendResult] = await Promise.allSettled([
-        getQuota(),
-        withTimeout(getTimeseries("7d"), SPEND_TIMEOUT_MS),
+      // A local file read that never rejects — it cannot hold up the run.
+      const [[quotaResult, spendResult], iu] = await Promise.all([
+        Promise.allSettled([
+          getQuota(),
+          withTimeout(getTimeseries("7d"), SPEND_TIMEOUT_MS),
+        ]),
+        loadIuBudget(),
       ]);
       const quota: UsageQuota =
         quotaResult.status === "fulfilled"
@@ -94,12 +111,13 @@ function useUsage() {
 
       if (spendResult.status === "fulfilled") {
         lastSpendRef.current = aggregateSpend(spendResult.value);
-        return { quota, spend: lastSpendRef.current, spendError: null };
+        return { quota, spend: lastSpendRef.current, spendError: null, iu };
       }
       return {
         quota,
         spend: lastSpendRef.current ?? null,
         spendError: spendErrorText(spendResult.reason),
+        iu,
       };
     },
     [],
@@ -165,18 +183,23 @@ export default function ClaudeUsageMenuBar() {
   const quotaStale =
     !!data && !isQuotaError(data.quota) && isStaleHint(data.quota.fetched_at);
 
+  const iuView = data?.iu.kind === "ok" ? iuBudgetView(data.iu.data) : null;
+  const mark = iuView ? titleMark(iuView) : "";
+  const quotaTitle = summary
+    ? menuBarTitle(summary)
+    : data && !isQuotaError(data.quota)
+      ? menuBarTitleWithFreshness(data.quota, quotaStale)
+      : undefined;
+  const title = mark
+    ? [quotaTitle, mark].filter(Boolean).join(" · ")
+    : quotaTitle;
+
   return (
     <MenuBarExtra
       icon={icon}
       // Several accounts: the account work goes to + its weekly use, with a
       // mark when something needs attention. One account: the bare weekly %.
-      title={
-        summary
-          ? menuBarTitle(summary)
-          : data && !isQuotaError(data.quota)
-            ? menuBarTitleWithFreshness(data.quota, quotaStale)
-            : undefined
-      }
+      title={title}
       isLoading={isLoading}
       tooltip={summary ? summary.headline : "Claude Usage"}
     >
@@ -202,6 +225,8 @@ export default function ClaudeUsageMenuBar() {
           <MenuBarExtra.Item title={`⚠ ${data.quota.error}`} />
         </MenuBarExtra.Section>
       )}
+
+      {data && <IuBudgetSection reading={data.iu} view={iuView} />}
 
       {data && data.spend && (
         <MenuBarExtra.Section>
@@ -334,6 +359,47 @@ function QuotaSection({ quota }: { quota: UsageQuotaOk }) {
       {models.map((model) =>
         windowItem(modelLimitLabel(model), model, resetText(model)),
       )}
+    </MenuBarExtra.Section>
+  );
+}
+
+// The IU API cap over the rolling 30 days, from IU's own portal figure.
+function IuBudgetSection({
+  reading,
+  view,
+}: {
+  reading: IuBudgetReading;
+  view: IuBudgetView | null;
+}) {
+  const unavailable = unavailableText(reading);
+  if (!view)
+    return (
+      <MenuBarExtra.Section title="IU API · 30 days">
+        <MenuBarExtra.Item title={unavailable ?? ""} />
+      </MenuBarExtra.Section>
+    );
+  const tint =
+    view.state === "ok"
+      ? Color.Green
+      : view.state === "warn"
+        ? Color.Orange
+        : Color.Red;
+  const frees = freesLine(view);
+  return (
+    <MenuBarExtra.Section title="IU API · 30 days">
+      <MenuBarExtra.Item
+        icon={{ source: Icon.Circle, tintColor: tint }}
+        title={usageLine(view)}
+      />
+      <MenuBarExtra.Item title={canSpendLine(view)} />
+      {frees && <MenuBarExtra.Item title={frees} />}
+      {view.data.topModels.slice(0, 3).map((m, i) => (
+        <MenuBarExtra.Item key={i} title={`${m.label}: ${usd0(m.usd)}`} />
+      ))}
+      <MenuBarExtra.Item
+        icon={view.freshness === "fresh" ? undefined : Icon.Warning}
+        title={ageLine(view)}
+      />
     </MenuBarExtra.Section>
   );
 }

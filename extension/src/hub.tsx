@@ -17,6 +17,8 @@ import { hasMultipleAccounts, isQuotaError } from "./usage/types";
 import { summarize, summaryTileStatus } from "./usage/summary";
 import { quotaLimits } from "./usage/limits";
 import { usageTileStatus } from "./usage/format";
+import { iuBudgetView, loadIuBudget, tileFragment } from "./usage/iu-budget";
+import { BUDGET_COLOR } from "./usage/heroes";
 import { getClient } from "./netgear/session";
 import { collectBatterySnapshot } from "./battery/collect";
 import { loadHistory } from "./speed-test/history";
@@ -98,6 +100,7 @@ const TILES: TileConfig[] = [
 interface TileData {
   status: string;
   trend?: number[];
+  color?: RaycastColor; // overrides the tile colour (state)
 }
 
 async function tasksStatus(): Promise<TileData> {
@@ -110,13 +113,18 @@ async function tasksStatus(): Promise<TileData> {
 }
 
 async function usageStatus(): Promise<TileData> {
-  const quota = await getQuota();
+  const [quota, iu] = await Promise.all([getQuota(), loadIuBudget()]);
   if (isQuotaError(quota)) return { status: "Error" };
-  if (hasMultipleAccounts(quota))
-    return {
-      status: summaryTileStatus(summarize(quota.accounts, quota.routing)),
-    };
-  return { status: usageTileStatus(quotaLimits(quota)) };
+  const fragment = tileFragment(iu);
+  const view = iu.kind === "ok" ? iuBudgetView(iu.data) : null;
+  const color =
+    view && view.state !== "ok" && view.freshness !== "dead"
+      ? BUDGET_COLOR[view.state]
+      : undefined;
+  const base = hasMultipleAccounts(quota)
+    ? summaryTileStatus(summarize(quota.accounts, quota.routing))
+    : usageTileStatus(quotaLimits(quota));
+  return { status: `${base} · ${fragment}`, color };
 }
 
 async function netgearStatus(): Promise<TileData> {
@@ -201,7 +209,7 @@ function HubTile({ config }: { config: TileConfig }) {
     glyph: config.glyph,
     name: config.name,
     status: error ? "Offline" : (data?.status ?? "…"),
-    color: config.color,
+    color: data?.color ?? config.color,
     iconMarkup,
     trend: error ? undefined : data?.trend,
   });

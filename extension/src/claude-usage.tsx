@@ -25,6 +25,19 @@ import {
   formatSpend,
   overflowModelsLine,
 } from "./usage/format";
+import {
+  IuBudgetReading,
+  ageLine,
+  canSpendLine,
+  freesLine,
+  iuBudgetView,
+  loadIuBudget,
+  modelShare,
+  unavailableText,
+  usageLine,
+  usd0,
+} from "./usage/iu-budget";
+import { iuBudgetChart } from "./usage/heroes";
 import { freshnessBanner, updatingLine } from "./lib/freshness";
 
 const ARGO_DASHBOARD_URL = "https://argo.jkrumm.com";
@@ -33,6 +46,7 @@ interface UsageData {
   spend: SpendAggregate | null;
   spendFetchedAt: number | undefined;
   spendError: unknown;
+  iu: IuBudgetReading;
 }
 
 // getQuota() never rejects (it has its own error shape) and getTimeseries()
@@ -48,9 +62,9 @@ function useUsage() {
 
   return useCachedPromise(
     async (): Promise<UsageData> => {
-      const [quotaResult, spendResult] = await Promise.allSettled([
-        getQuota(),
-        getTimeseries(),
+      const [[quotaResult, spendResult], iu] = await Promise.all([
+        Promise.allSettled([getQuota(), getTimeseries()]),
+        loadIuBudget(),
       ]);
       const quota: UsageQuota =
         quotaResult.status === "fulfilled"
@@ -61,13 +75,14 @@ function useUsage() {
         const spend = aggregateSpend(spendResult.value);
         const spendFetchedAt = Date.now();
         lastSpendRef.current = { spend, fetchedAt: spendFetchedAt };
-        return { quota, spend, spendFetchedAt, spendError: null };
+        return { quota, spend, spendFetchedAt, spendError: null, iu };
       }
       return {
         quota,
         spend: lastSpendRef.current?.spend ?? null,
         spendFetchedAt: lastSpendRef.current?.fetchedAt,
         spendError: spendResult.reason,
+        iu,
       };
     },
     [],
@@ -111,7 +126,7 @@ function renderMarkdown(
   isLoading: boolean,
 ): string {
   if (!data) return "Loading…";
-  const { quota, spend, spendFetchedAt, spendError } = data;
+  const { quota, spend, spendFetchedAt, spendError, iu } = data;
   // Stale-while-revalidate: cached data paints instantly, this line is the
   // only sign a refresh is still in flight — kept last so it never shifts
   // the hero images above (Tinycast never re-decodes an unchanged data URI).
@@ -168,6 +183,8 @@ function renderMarkdown(
   const extra = extraUsageLine(quota.extra_usage);
   if (extra) lines.push(extra, "");
 
+  lines.push(...iuBudgetBlock(iu));
+
   if (!spend) {
     lines.push(spendBanner ?? "_Spend unavailable — argo request failed._", "");
     return [...lines, ...updatingLines].join("\n");
@@ -192,4 +209,37 @@ function renderMarkdown(
   lines.push(`![Daily spend](${days})`);
 
   return [...lines, ...updatingLines].join("\n");
+}
+
+// The IU API cap over the rolling 30 days: the figure, the daily chart against
+// the even per-day share, and where the money went.
+function iuBudgetBlock(reading: IuBudgetReading): string[] {
+  const unavailable = unavailableText(reading);
+  if (reading.kind !== "ok")
+    return ["## IU API · 30 days", "", `_${unavailable}_`, ""];
+
+  const view = iuBudgetView(reading.data);
+  const lines = [`## IU API · 30 days · ${usageLine(view)}`, ""];
+  lines.push(
+    `**${canSpendLine(view)}**`,
+    ...[freesLine(view)].filter((l): l is string => l !== null),
+    "",
+  );
+  lines.push(`![IU daily spend](${iuBudgetChart(view)})`, "");
+  lines.push(
+    view.freshness === "fresh" ? `_${ageLine(view)}_` : `**${ageLine(view)}**`,
+    "",
+  );
+  if (view.data.topModels.length > 0) {
+    lines.push("| Model | Spend | Share |", "|-|-|-|");
+    for (const m of view.data.topModels) {
+      const share = modelShare(view, m.usd);
+      const label = m.label.replace(/[|\r\n]+/g, " ");
+      lines.push(
+        `| ${label} | ${usd0(m.usd)} | ${share === null ? "—" : `${share} %`} |`,
+      );
+    }
+    lines.push("");
+  }
+  return lines;
 }

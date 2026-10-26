@@ -42,7 +42,7 @@ extension/
                            divergence, lane/machine tables), summary (pure: THE reading every surface
                            uses — working account, weighted pool, pace, severity, title, lane groups),
                            heroes (capacity panel + metrics row, spend charts), spend (argo),
-                           aggregate (pure), format
+                           aggregate (pure), iu-budget (the IU portal file: read + pure derivations), format
     netgear/              feature code: client, transport (curl), types, fixtures, live-smoke,
                            pin-store, flows (incl. ensureRouterReachable self-heal), wifi
                            (rejoiner), wifi-creds-store (persisted router Wi-Fi creds), errors
@@ -357,6 +357,22 @@ run make secrets" while still reading the battery.
   the **7-day** spend series (~65 KB; the 30-day one the detail view needs is
   ~360 KB, 7–15 s over the mobile router) and a failed spend fetch is one
   dropdown line saying why, never a title marker.
+- **Claude usage (IU API budget)** — the IU employee cap: **$500 over a rolling
+  30 days**, judged on IU's portal (cost-overview), not on our estimates. Source is
+  a local file, `~/.local/share/iu-portal/latest.json` (schema 1: `fetched_at`,
+  `limit_usd`, `window_days`, `rolling30_usd`, `can_spend_today_usd`, `daily` (31
+  days ascending), `top_models` (top 10), `dropoff_next7`), written by
+  usage-tracker's portal scraper (headless Chrome on this Mac, triggered from the
+  mini about every 4 h). `usage/iu-budget.ts` reads + validates it (fs only, hand
+  validation, never throws) and derives percent, state (`ok` < 80 %, `warn`
+  80–100 %, `over` > 100 %) and freshness (`stale` > 8 h, `dead` > 48 h).
+  **Staleness means the portal session expired** — the old file stays, so age is
+  the only failure signal; a `stale` percent renders `IU ~116%`, a `dead` one `IU ?` (no number claimed).
+  Missing file → "run `make iu-portal-login` in usage-tracker"; another `schema` →
+  "unknown format". Surfaces: menu-bar section "IU API · 30 days" (title gets
+  `IU 116%` only in warn/over), a Detail block (daily chart against the cap/30
+  line in `usage/heroes.ts` `iuBudgetChart`, top-models table) and the hub tile
+  (percent, state colour).
 - **Claude usage (spend)** — argo proxy (`{baseUrl}/usage/timeseries`,
   `{baseUrl}/usage/summary`), bearer token from the secrets chain.
 - **Netgear** — the router's own HTTP API at `netgearHost` (default

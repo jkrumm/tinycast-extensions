@@ -36,6 +36,7 @@ import {
   accountProblem,
   paceWords,
 } from "./summary";
+import { IuBudgetView, BudgetState, usd0 } from "./iu-budget";
 import { SpendAggregate } from "./types";
 
 // Keeps the lane chart to 6 rows max (5 lanes + "other") — argo tracks ~60
@@ -336,5 +337,41 @@ export function capacityMetrics(opts: {
   }
   return toDataUri(
     statCards({ cards, size: "compact", columns: Math.min(cards.length, 6) }),
+  );
+}
+
+export const BUDGET_COLOR: Record<BudgetState, RaycastColor> = {
+  ok: RAYCAST_COLOR.green,
+  warn: RAYCAST_COLOR.orange,
+  over: RAYCAST_COLOR.red,
+};
+
+// The IU budget's daily spend (31 days from the portal). Days older than the
+// 30-day window are drawn quieter; the dashed line is the even share of the
+// cap per day, so a bar above it is a day that ate into the budget.
+export function iuBudgetChart(view: IuBudgetView): string {
+  const { daily, windowDays } = view.data;
+  const outside = Math.max(0, daily.length - windowDays);
+  return toDataUri(
+    barChart({
+      items: daily.map((d, i) => {
+        const date = parseDay(d.day);
+        return {
+          label: date ? weekday(date) : d.day,
+          sublabel: date ? dayOfMonth(date) : undefined,
+          value: d.usd,
+          opacity: i < outside ? BEFORE_WEEK_STRENGTH : undefined,
+        };
+      }),
+      color: BUDGET_COLOR[view.state],
+      format: usd0,
+      highlight: "last",
+      dim: false,
+      labelMode: "extremes",
+      threshold: {
+        value: view.perDayUsd,
+        label: `${usd0(view.data.limitUsd)}/${windowDays} = ${formatSpend(view.perDayUsd)}/day`,
+      },
+    }),
   );
 }

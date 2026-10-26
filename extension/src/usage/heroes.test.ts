@@ -2,10 +2,12 @@ import { describe, expect, it } from "vitest";
 import {
   capacityMetrics,
   capacityPanel,
+  iuBudgetChart,
   quotaPanel,
   spendHeroes,
   usageMetrics,
 } from "./heroes";
+import { iuBudgetView, parseIuBudget } from "./iu-budget";
 import { summarize } from "./summary";
 import { QuotaLimits, WEEK_SECONDS } from "./limits";
 import { AccountQuota, SpendAggregate } from "./types";
@@ -121,6 +123,33 @@ describe("spendHeroes", () => {
     const svg = decode(days);
     expect(svg).not.toMatch(/NaN|undefined/);
     expect(svg).toContain("avg $");
+  });
+});
+
+describe("iuBudgetChart", () => {
+  it("draws 31 days against the cap/30 line without NaN", () => {
+    const daily = Array.from({ length: 31 }, (_, i) => ({
+      day: `2026-09-${String(26 + i).padStart(2, "0")}`.replace(
+        /2026-09-(3[1-9]|[4-9]\d)/,
+        (_m, d) => `2026-10-${String(Number(d) - 30).padStart(2, "0")}`,
+      ),
+      usd: 10 + i,
+    }));
+    const r = parseIuBudget({
+      schema: 1,
+      fetched_at: new Date().toISOString(),
+      limit_usd: 500,
+      window_days: 30,
+      rolling30_usd: 578,
+      can_spend_today_usd: -60,
+      daily,
+      top_models: [],
+      dropoff_next7: [],
+    });
+    if (r.kind !== "ok") throw new Error("fixture");
+    const svg = decode(iuBudgetChart(iuBudgetView(r.data)));
+    expect(svg).not.toMatch(/NaN|undefined/);
+    expect(svg).toContain("$500/30 = $16.67/day");
   });
 });
 
