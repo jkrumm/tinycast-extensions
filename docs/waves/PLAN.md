@@ -27,19 +27,27 @@ the MacBook; the mini checkout is for editing and committing only.
   format", never guess.
 - Build against a fixture until the real file exists. If it exists when you reach the live step, use it.
 
-## Wave 1 — IU budget surfaces            <!-- status: active -->
-- [ ] `extension/src/usage/iu-budget.ts`: read + validate (zod or the repo's existing validation idiom) +
+## Wave 1 — IU budget surfaces            <!-- status: done -->
+- [x] `extension/src/usage/iu-budget.ts`: read + validate (zod or the repo's existing validation idiom) +
       pure derivations: percent of limit, a state (`ok` < 80 %, `warn` 80–100 %, `over` > 100 %), freshness
       (`stale` > 8 h, `dead` > 48 h), and the "frees up" summary from `dropoff_next7`. Tests with
       fixtures for ok/warn/over/stale/missing/bad-schema.
-- [ ] Menu bar (`claude-usage-menu-bar.tsx`): an "IU API · 30 days" section with `$578 / $500 (116 %)`,
+- [x] Menu bar (`claude-usage-menu-bar.tsx`): an "IU API · 30 days" section with `$578 / $500 (116 %)`,
       "can spend today", "frees $X over the next 7 days", top 3 models and the age. Change the menu-bar title
       only in `warn`/`over` (one short mark, repo's colour/ring idiom). The existing title stays primary.
       The file read must stay well inside the 60 s Tinycast budget; it is a local read.
-- [ ] Detail (`claude-usage.tsx`): an IU budget block with a 31-day daily bar chart, the 30-day window
+- [x] Detail (`claude-usage.tsx`): an IU budget block with a 31-day daily bar chart, the 30-day window
       marked, a $500/30 ≈ $16.7/day reference line in the repo's chart idiom, and the top-10 models table.
       Hub tile (`hub.tsx`): the percent plus state colour.
-- [ ] AGENTS.md "Data sources per feature" entry: file path, contract, producer repo, staleness meaning.
-- [ ] `make check`, commit, push, deploy on the MacBook (Gate), and confirm in `make status`. If
+- [x] AGENTS.md "Data sources per feature" entry: file path, contract, producer repo, staleness meaning.
+- [x] `make check`, commit, push, deploy on the MacBook (Gate), and confirm in `make status`. If
       `latest.json` exists by then, put the rendered numbers into Left behind.
-**Left behind:**
+**Left behind:** Shipped in `b97adc0`, pushed, deployed on the MacBook (`make status`: deployed up to date).
+`make check` green (1092 unit, 44 e2e); agent-gateway review: no blockers, its improvements applied
+(`IU ~N%` stale / `IU ?` dead marks, zero-total share guard, table-label sanitising, error wording).
+The real `latest.json` existed, so the numbers are live: `$573 / $500 (115 %)`, over the cap by $66,
+frees $64 over the next 7 days, top models Deepseek V4.1 Flash $270, Gpt 5.6 Terra $83, Claude Haiku 5 5 Eu $68.
+Not verified by eye: the rendered Detail/menu bar/hub tile (no GUI session). Open risks: the hub tile line
+`<claude status> · IU 115%` may be too long for the tile and clip; the 31-bar chart label density.
+Check both in Tinycast, then `make previews` if either looks off. Deferred review suggestion (not done):
+one `budgetTone` presenter and a text/IO file split in `usage/iu-budget.ts`.
