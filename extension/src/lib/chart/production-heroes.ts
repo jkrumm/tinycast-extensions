@@ -156,13 +156,17 @@ export function productionHeroes(now: number): ProductionHero[] {
     },
     now / 1000,
   );
-  add("usage", "usage-capacity", capacityPanel(summary));
+  capacityPanel(summary).forEach((svg, i) =>
+    add("usage", `usage-capacity${i > 0 ? `-${i + 1}` : ""}`, svg),
+  );
   const broken = summarize(
     [account("iu", "max20x", 62), account("me", "max5x", 8, false)],
     undefined,
     now / 1000,
   );
-  add("usage", "usage-capacity-broken", capacityPanel(broken));
+  capacityPanel(broken).forEach((svg, i) =>
+    add("usage", `usage-capacity-broken${i > 0 ? `-${i + 1}` : ""}`, svg),
+  );
 
   const totals = dailySpend({ days: 30 });
   const spend = aggregateSpend({

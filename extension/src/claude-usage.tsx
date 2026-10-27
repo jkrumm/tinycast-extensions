@@ -197,7 +197,9 @@ function renderMarkdown(
       `**${summary.headline}**${summary.hasPicks ? "" : " _(estimated — this Mac's picker did not answer)_"}`,
       "",
     );
-    lines.push(`![Capacity](${capacityPanel(summary)})`, "");
+    capacityPanel(summary).forEach((panel, i) =>
+      lines.push(`![Capacity${i > 0 ? ` ${i + 1}` : ""}](${panel})`, ""),
+    );
     lines.push(
       `![5h windows and spend](${capacityMetrics({ summary, spend, nowMs: now })})`,
       "",
