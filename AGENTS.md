@@ -28,8 +28,8 @@ extension/
     my-tasks.tsx         command — TickTick task list
     quick-add.tsx        command — TickTick quick add
     ticktick-menu-bar.tsx command — TickTick menu bar
-    claude-usage.tsx      command — Claude usage Detail: working account, pool + per-account weekly pace, lane routing, spend
-    claude-usage-menu-bar.tsx command — Claude working account + status mark, accounts, routing, spend; menu bar (2m interval)
+    claude-usage.tsx      command — Claude usage Detail: working account, pool + per-account weekly pace, lane routing, Sessions health, spend
+    claude-usage-menu-bar.tsx command — Claude working account + status mark, accounts, routing, Sessions health, spend; menu bar (2m interval)
     netgear.tsx           command — Netgear MR2100 status + actions + sub-views
     battery.tsx            command — MacBook charge/health + charge-limit control
     speed-test.tsx          command — networkQuality speed/latency/data-used + history
@@ -42,6 +42,9 @@ extension/
                            divergence, lane/machine tables), summary (pure: THE reading every surface
                            uses — working account, weighted pool, pace, severity, title, lane groups),
                            heroes (capacity panel + metrics row, spend charts), spend (argo),
+                           health (pure: Sessions rows from `claude-account health --json` — parse,
+                           worst state, titles, per-machine groups, the `fix` allowlist),
+                           health-local (impure: runner, 5 min LocalStorage cache, `claude-relogin` spawn),
                            aggregate (pure), iu-budget (the IU portal file: read + pure derivations), format
     netgear/              feature code: client, transport (curl), types, fixtures, live-smoke,
                            pin-store, flows (incl. ensureRouterReachable self-heal), wifi
@@ -321,6 +324,20 @@ run make secrets" while still reading the battery.
   without the field the views fall back to eligibility-only comparison and say so.
   A pick's `reason=spill` with a real account means *home was full and the other account
   took it*; only `picked=spill` (reason `no-eligible-account`) is no room (`routing.isSpill`).
+- **Claude usage (Sessions health)** — `claude-account health --json` (dotfiles) →
+  `{state, rows[{machine, id, check, state, detail, fix}]}`: logins, quota-sample
+  freshness, reach and queue on this Mac and the mini. It ssh-es to the peer (≤ ~10 s) and
+  exits 1 when a row fails, stdout still the JSON — `usage/local.ts`'s runner resolves on any
+  stdout; health gets a 30 s timeout. `usage/health-local.ts loadHealth` caches the last
+  reading in LocalStorage (`claude-health`) and asks again only after 5 min, so the menu bar's
+  2 m runs mostly read the cache; a failed ask keeps the last reading. The menu bar's
+  Sessions section lists non-ok rows (or "All sessions healthy") and appends `!`/`✕` to the
+  title (routing's marks unchanged); the Detail has a `## Sessions` table per machine. A row
+  with a `fix` is clickable (menu bar) / an action (Detail): `launchRelogin` spawns
+  `~/.local/bin/claude-relogin` with the split args, detached, then HUD "Login started,
+  approve in the browser". **Only `claude-relogin <id> [--machine mini|macbook]` is
+  accepted** (`parseFixCommand`, id `[a-z0-9-]+`); anything else is rejected, never run
+  through a shell.
 - **Claude usage (summary + layout)** — `usage/summary.ts` turns merged accounts +
   `routing` into one `UsageSummary`: the **working account** (this Mac's `interactive`
   pick; without the picker, the eligible account with most capacity left, flagged

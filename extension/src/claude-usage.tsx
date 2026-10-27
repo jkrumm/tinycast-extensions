@@ -1,4 +1,11 @@
-import { Detail, ActionPanel, Action, Icon, Keyboard } from "@raycast/api";
+import {
+  Detail,
+  ActionPanel,
+  Action,
+  Icon,
+  Keyboard,
+  showHUD,
+} from "@raycast/api";
 import { useCachedPromise } from "@raycast/utils";
 import { useMemo, useRef } from "react";
 import { getQuota, isStaleHint } from "./usage/quota";
@@ -38,6 +45,15 @@ import {
   usd0,
 } from "./usage/iu-budget";
 import { iuBudgetChart } from "./usage/heroes";
+import {
+  HealthRow,
+  StampedHealth,
+  healthMarkdown,
+  parseFixCommand,
+  problemRows,
+  rowTitle,
+} from "./usage/health";
+import { launchRelogin, loadHealth } from "./usage/health-local";
 import { freshnessBanner, updatingLine } from "./lib/freshness";
 
 const ARGO_DASHBOARD_URL = "https://argo.jkrumm.com";
@@ -47,6 +63,7 @@ interface UsageData {
   spendFetchedAt: number | undefined;
   spendError: unknown;
   iu: IuBudgetReading;
+  health: StampedHealth | null;
 }
 
 // getQuota() never rejects (it has its own error shape) and getTimeseries()
@@ -62,9 +79,10 @@ function useUsage() {
 
   return useCachedPromise(
     async (): Promise<UsageData> => {
-      const [[quotaResult, spendResult], iu] = await Promise.all([
+      const [[quotaResult, spendResult], iu, health] = await Promise.all([
         Promise.allSettled([getQuota(), getTimeseries()]),
         loadIuBudget(),
+        loadHealth(),
       ]);
       const quota: UsageQuota =
         quotaResult.status === "fulfilled"
@@ -75,7 +93,7 @@ function useUsage() {
         const spend = aggregateSpend(spendResult.value);
         const spendFetchedAt = Date.now();
         lastSpendRef.current = { spend, fetchedAt: spendFetchedAt };
-        return { quota, spend, spendFetchedAt, spendError: null, iu };
+        return { quota, spend, spendFetchedAt, spendError: null, iu, health };
       }
       return {
         quota,
@@ -83,6 +101,7 @@ function useUsage() {
         spendFetchedAt: lastSpendRef.current?.fetchedAt,
         spendError: spendResult.reason,
         iu,
+        health,
       };
     },
     [],
@@ -110,6 +129,17 @@ export default function ClaudeUsage() {
             shortcut={Keyboard.Shortcut.Common.Refresh}
             onAction={revalidate}
           />
+          {data?.health &&
+            problemRows(data.health.report)
+              .filter((row) => parseFixCommand(row.fix))
+              .map((row) => (
+                <Action
+                  key={`${row.machine}-${row.id}-${row.check}`}
+                  title={`Re-Login: ${rowTitle(row)}`}
+                  icon={Icon.Key}
+                  onAction={() => startRelogin(row)}
+                />
+              ))}
           <Action.OpenInBrowser
             title="Open Argo Usage Dashboard"
             url={ARGO_DASHBOARD_URL}
@@ -121,12 +151,17 @@ export default function ClaudeUsage() {
   );
 }
 
+async function startRelogin(row: HealthRow) {
+  if (!launchRelogin(row.fix)) return;
+  await showHUD("Login started, approve in the browser");
+}
+
 function renderMarkdown(
   data: UsageData | undefined,
   isLoading: boolean,
 ): string {
   if (!data) return "Loading…";
-  const { quota, spend, spendFetchedAt, spendError, iu } = data;
+  const { quota, spend, spendFetchedAt, spendError, iu, health } = data;
   // Stale-while-revalidate: cached data paints instantly, this line is the
   // only sign a refresh is still in flight — kept last so it never shifts
   // the hero images above (Tinycast never re-decodes an unchanged data URI).
@@ -184,6 +219,8 @@ function renderMarkdown(
   if (extra) lines.push(extra, "");
 
   lines.push(...iuBudgetBlock(iu));
+
+  if (health) lines.push(...healthMarkdown(health.report));
 
   if (!spend) {
     lines.push(spendBanner ?? "_Spend unavailable — argo request failed._", "");

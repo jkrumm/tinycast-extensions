@@ -10,7 +10,7 @@ import { LANES, LanePick, parseLocalUsage, parsePickOutput } from "./routing";
 
 const BIN = `${homedir()}/.local/bin/claude-account`;
 // The script's shebang is `env bun`; Tinycast's environment has no Homebrew.
-const PATH = `/opt/homebrew/bin:${homedir()}/.local/bin:/usr/bin:/bin`;
+export const PATH = `/opt/homebrew/bin:${homedir()}/.local/bin:/usr/bin:/bin`;
 const TIMEOUT_MS = 8_000;
 
 // Port: resolves with stdout even when the command exits non-zero (a bulk
@@ -18,18 +18,22 @@ const TIMEOUT_MS = 8_000;
 // only when nothing came back (missing binary, timeout).
 export type RunClaudeAccount = (args: string[]) => Promise<string>;
 
-export const runClaudeAccount: RunClaudeAccount = (args) =>
-  new Promise((resolve, reject) => {
-    execFile(
-      BIN,
-      args,
-      { timeout: TIMEOUT_MS, env: { ...process.env, PATH } },
-      (error, stdout) => {
-        if (stdout) resolve(stdout);
-        else reject(error ?? new Error("no output"));
-      },
-    );
-  });
+export const claudeAccountRunner =
+  (timeoutMs: number): RunClaudeAccount =>
+  (args) =>
+    new Promise((resolve, reject) => {
+      execFile(
+        BIN,
+        args,
+        { timeout: timeoutMs, env: { ...process.env, PATH } },
+        (error, stdout) => {
+          if (stdout) resolve(stdout);
+          else reject(error ?? new Error("no output"));
+        },
+      );
+    });
+
+export const runClaudeAccount = claudeAccountRunner(TIMEOUT_MS);
 
 export interface LocalRouting {
   accounts: AccountQuota[] | null;

@@ -4,6 +4,7 @@ import {
   Color,
   launchCommand,
   LaunchType,
+  showHUD,
 } from "@raycast/api";
 import { useCachedPromise } from "@raycast/utils";
 import { useMemo, useRef } from "react";
@@ -55,6 +56,16 @@ import {
   usageLine,
   usd0,
 } from "./usage/iu-budget";
+import {
+  HealthRow,
+  HealthState,
+  StampedHealth,
+  healthMark,
+  parseFixCommand,
+  problemRows,
+  rowTitle,
+} from "./usage/health";
+import { launchRelogin, loadHealth } from "./usage/health-local";
 import { menuBarRing, toDataUri } from "./lib/svg";
 import { RoutingView } from "./usage/routing";
 
@@ -97,12 +108,15 @@ function useUsage() {
   return useCachedPromise(
     async () => {
       // A local file read that never rejects — it cannot hold up the run.
-      const [[quotaResult, spendResult], iu] = await Promise.all([
+      // The health reading is slow (ssh to the peer) and cached for 5 min,
+      // so most 2 m runs return it from LocalStorage. It never rejects.
+      const [[quotaResult, spendResult], iu, health] = await Promise.all([
         Promise.allSettled([
           getQuota(),
           withTimeout(getTimeseries("7d"), SPEND_TIMEOUT_MS),
         ]),
         loadIuBudget(),
+        loadHealth(),
       ]);
       const quota: UsageQuota =
         quotaResult.status === "fulfilled"
@@ -111,13 +125,20 @@ function useUsage() {
 
       if (spendResult.status === "fulfilled") {
         lastSpendRef.current = aggregateSpend(spendResult.value);
-        return { quota, spend: lastSpendRef.current, spendError: null, iu };
+        return {
+          quota,
+          spend: lastSpendRef.current,
+          spendError: null,
+          iu,
+          health,
+        };
       }
       return {
         quota,
         spend: lastSpendRef.current ?? null,
         spendError: spendErrorText(spendResult.reason),
         iu,
+        health,
       };
     },
     [],
@@ -190,9 +211,12 @@ export default function ClaudeUsageMenuBar() {
     : data && !isQuotaError(data.quota)
       ? menuBarTitleWithFreshness(data.quota, quotaStale)
       : undefined;
-  const title = mark
-    ? [quotaTitle, mark].filter(Boolean).join(" · ")
-    : quotaTitle;
+  // A session problem adds its own mark; routing's marks are untouched.
+  const sessionMark = data?.health ? healthMark(data.health.report.state) : "";
+  const title =
+    mark || sessionMark
+      ? [quotaTitle, mark, sessionMark].filter(Boolean).join(" · ")
+      : quotaTitle;
 
   return (
     <MenuBarExtra
@@ -225,6 +249,8 @@ export default function ClaudeUsageMenuBar() {
           <MenuBarExtra.Item title={`⚠ ${data.quota.error}`} />
         </MenuBarExtra.Section>
       )}
+
+      {data && <SessionsSection health={data.health} />}
 
       {data && <IuBudgetSection reading={data.iu} view={iuView} />}
 
@@ -400,6 +426,53 @@ function IuBudgetSection({
         icon={view.freshness === "fresh" ? undefined : Icon.Warning}
         title={ageLine(view)}
       />
+    </MenuBarExtra.Section>
+  );
+}
+
+function healthTint(state: HealthState): Color {
+  return state === "ok"
+    ? Color.Green
+    : state === "warn"
+      ? Color.Orange
+      : Color.Red;
+}
+
+async function startRelogin(row: HealthRow) {
+  if (!launchRelogin(row.fix)) return;
+  await showHUD("Login started, approve in the browser");
+}
+
+// Logins and quota samples on both machines: only what needs attention. A row
+// with a re-login command is clickable; anything else is rejected before it
+// could reach a process (usage/health.ts parseFixCommand).
+function SessionsSection({ health }: { health: StampedHealth | null }) {
+  if (!health)
+    return (
+      <MenuBarExtra.Section title="Sessions">
+        <MenuBarExtra.Item title="Session health unavailable" />
+      </MenuBarExtra.Section>
+    );
+  const problems = problemRows(health.report);
+  return (
+    <MenuBarExtra.Section title="Sessions">
+      {problems.length === 0 && (
+        <MenuBarExtra.Item
+          icon={{ source: Icon.Circle, tintColor: Color.Green }}
+          title="All sessions healthy"
+        />
+      )}
+      {problems.map((row) => (
+        <MenuBarExtra.Item
+          key={`${row.machine}-${row.id}-${row.check}`}
+          icon={{ source: Icon.Circle, tintColor: healthTint(row.state) }}
+          title={rowTitle(row)}
+          subtitle={parseFixCommand(row.fix) ? "Re-login" : undefined}
+          onAction={
+            parseFixCommand(row.fix) ? () => startRelogin(row) : undefined
+          }
+        />
+      ))}
     </MenuBarExtra.Section>
   );
 }
