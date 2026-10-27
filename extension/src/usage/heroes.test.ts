@@ -170,14 +170,14 @@ describe("capacityPanel", () => {
     summarize(accounts, undefined, NOW / 1000);
 
   it("draws the pool first, then one column per account", () => {
-    const svg = decode(
-      capacityPanel(
-        summary([
-          account({ sevenDayPct: 89 }),
-          account({ id: "me", plan: "max5x", sevenDayPct: 9 }),
-        ]),
-      ),
+    const panels = capacityPanel(
+      summary([
+        account({ sevenDayPct: 89 }),
+        account({ id: "me", plan: "max5x", sevenDayPct: 9 }),
+      ]),
     );
+    expect(panels).toHaveLength(1); // pool + 2 accounts fits one row
+    const svg = decode(panels[0]);
     expect(svg.indexOf("POOL")).toBeLessThan(svg.indexOf("IU"));
     expect(svg.indexOf("IU")).toBeLessThan(svg.indexOf("ME"));
     expect(svg).toContain(">73<"); // (20·89 + 5·9) / 25
@@ -192,10 +192,26 @@ describe("capacityPanel", () => {
           account({ authOk: false, sevenDayPct: 8 }),
           account({ id: "me", plan: "max5x" }),
         ]),
-      ),
+      )[0],
     );
     expect(svg).toContain("login expired");
     expect(svg).toContain("raycast-secondary-text");
+  });
+
+  it("wraps a third account into a second panel row instead of dropping it", () => {
+    const panels = capacityPanel(
+      summary([
+        account({ sevenDayPct: 89 }),
+        account({ id: "me", plan: "max5x", sevenDayPct: 9 }),
+        account({ id: "me2", plan: "max5x", sevenDayPct: 20 }),
+      ]),
+    );
+    expect(panels).toHaveLength(2); // pool + 3 accounts: 3 fit, 1 wraps
+    const [first, second] = panels.map(decode);
+    expect(first).toContain("POOL");
+    expect(first).toContain("IU");
+    expect(first).toContain("ME · MAX5X"); // not "ME2 · MAX5X"
+    expect(second).toContain("ME2");
   });
 
   it("shows each account's 5h window next to spend", () => {

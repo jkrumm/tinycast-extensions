@@ -43,6 +43,8 @@ import { SpendAggregate } from "./types";
 // lanes, almost all zero on a given day; a handful of big rows reads better
 // than a dense list of small ones.
 const SPEND_LANE_LIMIT = 5;
+// `statusPanel` itself hard-caps at 3 columns (lib/chart/cards.ts) — a row
+// wider than that would just get silently truncated there too.
 const PANEL_COLUMNS = 3;
 
 const PACE_COLOR: Record<PaceStatus, RaycastColor | null> = {
@@ -246,8 +248,10 @@ export function periodTotal(spend: SpendAggregate): number {
 // across every account, with how much capacity is left in plan units), then
 // one column per account — weekly use with the week-elapsed tick (fill past it
 // = ahead of pace), and under it where the week is heading, or why this Mac's
-// picker would skip the account.
-export function capacityPanel(summary: UsageSummary): string {
+// picker would skip the account. More columns than fit one panel row wrap
+// into additional rows — one `statusPanel` image each — rather than dropping
+// an account.
+export function capacityPanel(summary: UsageSummary): string[] {
   const columns: PanelColumn[] = [];
   const { pool } = summary;
   if (pool) {
@@ -288,7 +292,14 @@ export function capacityPanel(summary: UsageSummary): string {
       sub: accountSub(a, flagged),
     });
   }
-  return toDataUri(statusPanel({ columns: columns.slice(0, PANEL_COLUMNS) }));
+  if (columns.length === 0) return [toDataUri(statusPanel({ columns: [] }))];
+  const rows: string[] = [];
+  for (let i = 0; i < columns.length; i += PANEL_COLUMNS) {
+    rows.push(
+      toDataUri(statusPanel({ columns: columns.slice(i, i + PANEL_COLUMNS) })),
+    );
+  }
+  return rows;
 }
 
 function accountSub(a: AccountSummary, flagged: boolean): string {

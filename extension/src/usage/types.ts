@@ -33,7 +33,7 @@ export interface ExtraUsage {
 // One Claude Max account as the views show it — mapped from Argo's
 // `quota.accounts` entry (usage/accounts.ts) or built from the local file.
 export interface AccountQuota {
-  id: string; // "iu" | "me" | "iu (local)"
+  id: string; // one of N configured accounts (e.g. "iu", "me", "me2"), or "iu (local)"
   plan: string | null;
   fiveHourPct: number | null; // 0-100
   sevenDayPct: number | null; // 0-100

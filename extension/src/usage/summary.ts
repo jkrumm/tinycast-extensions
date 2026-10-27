@@ -165,7 +165,7 @@ export function summarize(
 
 // What is wrong with an account, in words, or null. A sample past the picker's
 // 6 h limit names the age and says the account is skipped — that is the case
-// that silently routes everything to the other account.
+// that silently routes everything to the other accounts.
 export function accountProblem(a: AccountSummary): string | null {
   if (a.flags.includes("auth")) return "login expired";
   if (a.flags.includes("exhausted")) return "exhausted";
