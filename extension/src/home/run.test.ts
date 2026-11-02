@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   HomeStore,
+  NamiWriteMarker,
   StatusStore,
   fetchDoctor,
   loadMenuBar,
@@ -88,16 +89,29 @@ describe("fetchDoctor + triggerScene", () => {
 const statusOut =
   '{"climate":{"sensor":"Eve","reachable":true,"temperature_c":21.9,"humidity_pct":42,"battery_pct":100},"nami_home":true,"someone_home":true}';
 
-function memoryStatusStore(initial: StatusCache | null) {
+function memoryStatusStore(
+  initial: StatusCache | null,
+  initialMarker: NamiWriteMarker | null = null,
+) {
   let value = initial;
+  let marker = initialMarker;
   const store: StatusStore = {
     read: async () => value,
     write: vi.fn(async (v: StatusCache) => {
       value = v;
     }),
+    readMarker: async () => marker,
+    writeMarker: async (m: NamiWriteMarker) => {
+      marker = m;
+    },
   };
   return store;
 }
+
+const clock = (...times: number[]) => {
+  let i = 0;
+  return () => times[Math.min(i++, times.length - 1)];
+};
 
 describe("refreshStatus + namiPresence", () => {
   it("parses and caches one status call", async () => {
@@ -170,19 +184,19 @@ describe("refreshStatus + namiPresence", () => {
     const store = memoryStatusStore(null);
     const slow = deferred();
     const a = refreshStatus(store, () => slow.promise, 10);
-    await namiPresence(false, async () => "", store, 11);
-    const b = await refreshStatus(store, async () => out(false), 12);
+    await namiPresence(false, async () => "", store, clock(11, 12));
+    const b = await refreshStatus(store, async () => out(false), 13);
     slow.resolve(out(true));
     const aResult = await a;
     expect(b?.status.namiHome).toBe(false);
     expect(aResult).toBe(await store.read());
-    expect(aResult?.fetchedAt).toBe(12);
+    expect(aResult?.fetchedAt).toBe(13);
   });
 
-  it("discards a read started during a write, whether it resolves before or after the write settles", async () => {
+  it("discards a read in flight while a write runs, resolving before or after it settles", async () => {
     const store = memoryStatusStore(null);
     const set = deferred();
-    const setting = namiPresence(true, () => set.promise, store, 20);
+    const setting = namiPresence(true, () => set.promise, store, clock(20, 25));
 
     const early = refreshStatus(store, async () => out(false), 21);
     expect(await early).toBeNull();
@@ -195,7 +209,54 @@ describe("refreshStatus + namiPresence", () => {
     lateGate.resolve(out(false));
     const lateResult = await late;
     expect(lateResult?.status.namiHome).toBe(true);
-    expect(lateResult?.fetchedAt).toBe(20);
+    expect(lateResult?.fetchedAt).toBe(25);
+  });
+
+  it("discards reads during either of two overlapping writes (double tap)", async () => {
+    const store = memoryStatusStore(null);
+    const first = deferred();
+    const second = deferred();
+    const a = namiPresence(true, () => first.promise, store, clock(30, 35));
+    const b = namiPresence(false, () => second.promise, store, clock(31, 36));
+    first.resolve("");
+    await a;
+    // the first write settled, the second still runs
+    expect(await refreshStatus(store, async () => out(true), 40)).toMatchObject(
+      { status: { namiHome: true } },
+    );
+    expect((await store.read())?.status.namiHome).toBe(true);
+    second.resolve("");
+    await b;
+    expect((await store.read())?.status.namiHome).toBe(false);
+    expect(await store.readMarker()).toEqual({ startedAt: 31, settledAt: 36 });
+  });
+
+  it("discards an in-flight read when another runtime's marker says a write ran", async () => {
+    const store = memoryStatusStore({
+      status: { climate: null, namiHome: false, someoneHome: true },
+      fetchedAt: 1,
+      climateAt: 1,
+    });
+    const slow = deferred();
+    const read = refreshStatus(store, () => slow.promise, 50);
+    // another command started and settled a write after this read began
+    await store.writeMarker({ startedAt: 51, settledAt: 52 });
+    slow.resolve(out(true));
+    expect((await read)?.status.namiHome).toBe(false);
+    expect(store.write).not.toHaveBeenCalled();
+  });
+
+  it("discards a read while another runtime's write is unsettled", async () => {
+    const store = memoryStatusStore(null, { startedAt: 40, settledAt: null });
+    expect(await refreshStatus(store, async () => out(true), 60)).toBeNull();
+    expect(store.write).not.toHaveBeenCalled();
+  });
+
+  it("applies a read that starts after the last write settled", async () => {
+    const store = memoryStatusStore(null, { startedAt: 70, settledAt: 71 });
+    const got = await refreshStatus(store, async () => out(true), 72);
+    expect(got?.status.namiHome).toBe(true);
+    expect(store.write).toHaveBeenCalledTimes(1);
   });
 
   it("writes the set value to the cache immediately", async () => {
@@ -205,7 +266,7 @@ describe("refreshStatus + namiPresence", () => {
       climateAt: 1,
     });
     const run = vi.fn(async () => "");
-    const written = await namiPresence(false, run, store, 5);
+    const written = await namiPresence(false, run, store, () => 5);
     expect(run).toHaveBeenCalledWith([
       "set",
       "Nami zu Hause",
@@ -236,7 +297,7 @@ describe("refreshStatus + namiPresence", () => {
           throw new Error("timed out");
         },
         store,
-        31,
+        clock(31, 32),
       ),
     ).rejects.toThrow("timed out");
     slow.resolve(out(false));

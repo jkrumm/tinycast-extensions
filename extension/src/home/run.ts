@@ -22,6 +22,7 @@ const BIN = `${homedir()}/.local/bin/home`;
 const TIMEOUT_MS = 20_000;
 const CACHE_KEY = "home-cache";
 const STATUS_KEY = "home-status";
+const NAMI_WRITE_KEY = "home-nami-write";
 const NAMI_SWITCH = "Nami zu Hause";
 // The menu bar only re-fetches the scene list this often (it rarely changes).
 const SCENES_MAX_AGE_MS = 6 * 60 * 60_000;
@@ -98,10 +99,26 @@ export const triggerScene = async (
 
 // ─── Status (climate + Nami) ────────────────────────────────────────────────
 
+// Marks a Nami write across runtimes (menu bar, list and the launcher
+// commands share only LocalStorage). `settledAt` is null while it is running.
+export interface NamiWriteMarker {
+  startedAt: number;
+  settledAt: number | null;
+}
+
 export interface StatusStore {
   read(): Promise<StatusCache | null>;
   write(value: StatusCache): Promise<void>;
+  readMarker(): Promise<NamiWriteMarker | null>;
+  writeMarker(value: NamiWriteMarker): Promise<void>;
 }
+
+const isMarker = (v: unknown): v is NamiWriteMarker =>
+  typeof v === "object" &&
+  v !== null &&
+  typeof (v as NamiWriteMarker).startedAt === "number" &&
+  ((v as NamiWriteMarker).settledAt === null ||
+    typeof (v as NamiWriteMarker).settledAt === "number");
 
 export const localStorageStatus: StatusStore = {
   async read() {
@@ -110,14 +127,39 @@ export const localStorageStatus: StatusStore = {
   },
   write: (value) =>
     LocalStorage.setItem(STATUS_KEY, serializeStatusCache(value)),
+  async readMarker() {
+    const raw = await LocalStorage.getItem<string>(NAMI_WRITE_KEY);
+    if (!raw) return null;
+    try {
+      const parsed: unknown = JSON.parse(raw);
+      return isMarker(parsed) ? parsed : null;
+    } catch {
+      return null;
+    }
+  },
+  writeMarker: (value) =>
+    LocalStorage.setItem(NAMI_WRITE_KEY, JSON.stringify(value)),
 };
 
-// Seqlock over Nami writes. `writeEpoch` is odd while a `home set` is in
-// flight and even when settled. A read captures the epoch at its start and is
-// valid only if the epoch is even and unchanged when it resolves; an invalid
-// read is discarded (never written, never returned), because it may predate
-// the write.
-let writeEpoch = 0;
+// A status read can predate a Nami write and must not overwrite it. Two
+// guards: `pendingWrites` (this process, fast path) and the `home-nami-write`
+// marker in LocalStorage (other runtimes). A read is valid only if no write
+// was running or started during it: no marker, or one that started and
+// settled strictly before the read began. Invalid reads are discarded: never
+// written, the stored cache is returned instead.
+let pendingWrites = 0;
+let writesStarted = 0;
+
+async function readIsValid(store: StatusStore, readStart: number) {
+  if (pendingWrites > 0) return false;
+  const marker = await store.readMarker().catch(() => null);
+  if (!marker) return true;
+  return (
+    marker.settledAt !== null &&
+    marker.startedAt < readStart &&
+    marker.settledAt < readStart
+  );
+}
 
 // One ssh round trip. A sensor that is unreachable keeps its last-known
 // climate numbers (with their own `climateAt`); the switches are never
@@ -126,14 +168,13 @@ let writeEpoch = 0;
 async function fetchStatus(
   store: StatusStore,
   run: RunHome,
-  nowMs: number,
-  epoch: number,
+  readStart: number,
 ): Promise<StatusCache | null> {
   const [raw, cached] = await Promise.all([
     run(["status", "--json"]),
     store.read().catch(() => null),
   ]);
-  if (epoch % 2 !== 0 || writeEpoch !== epoch)
+  if (!(await readIsValid(store, readStart)))
     return store.read().catch(() => null);
   const fresh = parseStatus(raw);
   if (!fresh) throw new Error("home status returned unreadable output");
@@ -143,28 +184,30 @@ async function fetchStatus(
   );
   const next: StatusCache = {
     status: { ...fresh, climate },
-    fetchedAt: nowMs,
-    climateAt: lastKnown && cached ? cached.climateAt : nowMs,
+    fetchedAt: readStart,
+    climateAt: lastKnown && cached ? cached.climateAt : readStart,
   };
   await store.write(next).catch(() => undefined);
   return next;
 }
 
 // Single-flight: overlapping callers (mount, Refresh, menu tick) share one
-// request, but only when it started in the same settled epoch.
-let inFlight: { epoch: number; promise: Promise<StatusCache | null> } | null =
-  null;
+// request, but only if no write has started since it began.
+let inFlight: {
+  writes: number;
+  promise: Promise<StatusCache | null>;
+} | null = null;
 
 export function refreshStatus(
   store: StatusStore = localStorageStatus,
   run: RunHome = runHome,
   nowMs = Date.now(),
 ): Promise<StatusCache | null> {
-  if (inFlight && inFlight.epoch === writeEpoch && writeEpoch % 2 === 0)
+  if (inFlight && inFlight.writes === writesStarted && pendingWrites === 0)
     return inFlight.promise;
   const entry = {
-    epoch: writeEpoch,
-    promise: fetchStatus(store, run, nowMs, writeEpoch).finally(() => {
+    writes: writesStarted,
+    promise: fetchStatus(store, run, nowMs).finally(() => {
       if (inFlight === entry) inFlight = null;
     }),
   };
@@ -179,23 +222,34 @@ export async function namiPresence(
   home: boolean,
   run: RunHome = runHome,
   store: StatusStore = localStorageStatus,
-  nowMs = Date.now(),
+  now: () => number = Date.now,
 ): Promise<StatusCache> {
-  writeEpoch += 1;
+  const startedAt = now();
+  pendingWrites += 1;
+  writesStarted += 1;
   try {
+    await store
+      .writeMarker({ startedAt, settledAt: null })
+      .catch(() => undefined);
     await run(["set", NAMI_SWITCH, "power", String(home)]);
     const cached = await store.read().catch(() => null);
     const next: StatusCache = {
       status: cached
         ? { ...cached.status, namiHome: home }
         : { climate: null, namiHome: home, someoneHome: null },
-      fetchedAt: nowMs,
-      climateAt: cached?.climateAt ?? nowMs,
+      fetchedAt: now(),
+      climateAt: cached?.climateAt ?? now(),
     };
     await store.write(next).catch(() => undefined);
     return next;
   } finally {
-    writeEpoch += 1;
+    // Last writer wins: only settle the marker if it is still ours.
+    const marker = await store.readMarker().catch(() => null);
+    if (marker?.startedAt === startedAt)
+      await store
+        .writeMarker({ startedAt, settledAt: now() })
+        .catch(() => undefined);
+    pendingWrites -= 1;
   }
 }
 
