@@ -16,14 +16,7 @@ import {
   serializeCache,
   serializeStatusCache,
 } from "./parse";
-import {
-  Doctor,
-  HomeCache,
-  HomeStatus,
-  MenuBarData,
-  Scene,
-  StatusCache,
-} from "./types";
+import { Doctor, HomeCache, MenuBarData, Scene, StatusCache } from "./types";
 
 const BIN = `${homedir()}/.local/bin/home`;
 const TIMEOUT_MS = 20_000;
@@ -119,39 +112,31 @@ export const localStorageStatus: StatusStore = {
     LocalStorage.setItem(STATUS_KEY, serializeStatusCache(value)),
 };
 
-// Ordering state. `seq` numbers every read at its start; `appliedSeq` is the
-// newest one that has landed. A switch write bumps `generation`, which also
-// stops a read that started before (or during) it from being reused/written.
-let seq = 0;
-let appliedSeq = 0;
-let latest: StatusCache | null = null;
-let generation = 0;
+// Seqlock over Nami writes. `writeEpoch` is odd while a `home set` is in
+// flight and even when settled. A read captures the epoch at its start and is
+// valid only if the epoch is even and unchanged when it resolves; an invalid
+// read is discarded (never written, never returned), because it may predate
+// the write.
+let writeEpoch = 0;
 
 // One ssh round trip. A sensor that is unreachable keeps its last-known
 // climate numbers (with their own `climateAt`); the switches are never
-// back-filled, so a null stays null.
+// back-filled, so a null stays null. Resolves with the cache as it stands
+// (null when empty) if the read was invalidated by a write.
 async function fetchStatus(
   store: StatusStore,
   run: RunHome,
   nowMs: number,
-  seq: number,
-  startGeneration: number,
-): Promise<StatusCache> {
+  epoch: number,
+): Promise<StatusCache | null> {
   const [raw, cached] = await Promise.all([
     run(["status", "--json"]),
     store.read().catch(() => null),
   ]);
+  if (epoch % 2 !== 0 || writeEpoch !== epoch)
+    return store.read().catch(() => null);
   const fresh = parseStatus(raw);
   if (!fresh) throw new Error("home status returned unreadable output");
-  // Superseded: a newer read already landed, or a switch write happened since
-  // this read started. Never write or return this (possibly pre-write) value.
-  if (seq < appliedSeq || startGeneration !== generation)
-    return (
-      latest ??
-      cached ??
-      (await store.read().catch(() => null)) ??
-      stampNow(fresh, nowMs)
-    );
   const { climate, lastKnown } = mergeClimate(
     fresh.climate,
     cached?.status.climate ?? null,
@@ -161,56 +146,58 @@ async function fetchStatus(
     fetchedAt: nowMs,
     climateAt: lastKnown && cached ? cached.climateAt : nowMs,
   };
-  appliedSeq = seq;
-  latest = next;
   await store.write(next).catch(() => undefined);
   return next;
 }
 
-const stampNow = (status: HomeStatus, nowMs: number): StatusCache => ({
-  status,
-  fetchedAt: nowMs,
-  climateAt: nowMs,
-});
-
 // Single-flight: overlapping callers (mount, Refresh, menu tick) share one
-// request so an older response can't overwrite a newer one. A switch write
-// bumps `generation`, so a read that started before it is never reused.
-let inFlight: { generation: number; promise: Promise<StatusCache> } | null =
+// request, but only when it started in the same settled epoch.
+let inFlight: { epoch: number; promise: Promise<StatusCache | null> } | null =
   null;
 
 export function refreshStatus(
   store: StatusStore = localStorageStatus,
   run: RunHome = runHome,
   nowMs = Date.now(),
-): Promise<StatusCache> {
-  if (inFlight && inFlight.generation === generation) return inFlight.promise;
+): Promise<StatusCache | null> {
+  if (inFlight && inFlight.epoch === writeEpoch && writeEpoch % 2 === 0)
+    return inFlight.promise;
   const entry = {
-    generation,
-    promise: fetchStatus(store, run, nowMs, (seq += 1), generation).finally(
-      () => {
-        if (inFlight === entry) inFlight = null;
-      },
-    ),
+    epoch: writeEpoch,
+    promise: fetchStatus(store, run, nowMs, writeEpoch).finally(() => {
+      if (inFlight === entry) inFlight = null;
+    }),
   };
   inFlight = entry;
   return entry.promise;
 }
 
-// `true` = Nami stays home, `false` = Nami comes along.
-export const namiPresence = async (
+// `true` = Nami stays home, `false` = Nami comes along. On success the cache
+// holds the written value immediately and is returned; on failure the cache
+// is untouched and the error propagates. Either way in-flight reads are void.
+export async function namiPresence(
   home: boolean,
   run: RunHome = runHome,
-): Promise<void> => {
-  // Bump before the write (reads started during it are void) and after, in a
-  // finally, so a failed or timed-out write invalidates too.
-  generation += 1;
+  store: StatusStore = localStorageStatus,
+  nowMs = Date.now(),
+): Promise<StatusCache> {
+  writeEpoch += 1;
   try {
     await run(["set", NAMI_SWITCH, "power", String(home)]);
+    const cached = await store.read().catch(() => null);
+    const next: StatusCache = {
+      status: cached
+        ? { ...cached.status, namiHome: home }
+        : { climate: null, namiHome: home, someoneHome: null },
+      fetchedAt: nowMs,
+      climateAt: cached?.climateAt ?? nowMs,
+    };
+    await store.write(next).catch(() => undefined);
+    return next;
   } finally {
-    generation += 1;
+    writeEpoch += 1;
   }
-};
+}
 
 // The menu bar's one loader. Never rejects: a failed status keeps the
 // last-known reading and reports the friendly error beside it.
@@ -239,7 +226,7 @@ export async function loadMenuBar(
       .catch(() => undefined);
   if (status.status === "fulfilled")
     return {
-      status: status.value,
+      status: status.value ?? (await statusStore.read().catch(() => null)),
       scenes:
         scenes.status === "fulfilled"
           ? scenes.value

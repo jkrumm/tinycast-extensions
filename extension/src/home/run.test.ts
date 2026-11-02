@@ -105,8 +105,8 @@ describe("refreshStatus + namiPresence", () => {
     const run = vi.fn(route({ status: statusOut }));
     const got = await refreshStatus(store, run, 5);
     expect(run).toHaveBeenCalledWith(["status", "--json"]);
-    expect(got.fetchedAt).toBe(5);
-    expect(got.status.climate?.temperatureC).toBe(21.9);
+    expect(got?.fetchedAt).toBe(5);
+    expect(got?.status.climate?.temperatureC).toBe(21.9);
     expect(store.write).toHaveBeenCalledWith(got);
   });
 
@@ -134,18 +134,18 @@ describe("refreshStatus + namiPresence", () => {
       }),
       2,
     );
-    expect(got.status.climate).toMatchObject({
+    expect(got?.status.climate).toMatchObject({
       reachable: false,
       temperatureC: 20,
       humidityPct: 50,
     });
-    expect(got.fetchedAt).toBe(2);
-    expect(got.climateAt).toBe(1);
-    expect(got.status.namiHome).toBeNull();
-    expect(got.status.someoneHome).toBeNull();
+    expect(got?.fetchedAt).toBe(2);
+    expect(got?.climateAt).toBe(1);
+    expect(got?.status.namiHome).toBeNull();
+    expect(got?.status.someoneHome).toBeNull();
   });
 
-  it("shares one in-flight request, but not across a switch write", async () => {
+  it("shares one in-flight request within a settled epoch", async () => {
     const store = memoryStatusStore(null);
     const run = vi.fn(route({ status: statusOut }));
     const [a, b] = await Promise.all([
@@ -154,64 +154,95 @@ describe("refreshStatus + namiPresence", () => {
     ]);
     expect(a).toBe(b);
     expect(run).toHaveBeenCalledTimes(1);
-
-    const slow = refreshStatus(store, run, 3);
-    await namiPresence(
-      false,
-      vi.fn(async () => ""),
-    );
-    const after = refreshStatus(store, run, 4);
-    expect(after).not.toBe(slow);
-    await Promise.all([slow, after]);
   });
+
+  const out = (nami: boolean) =>
+    `{"climate":null,"nami_home":${nami},"someone_home":true}`;
+  const deferred = () => {
+    let resolve!: (v: string) => void;
+    const promise = new Promise<string>((r) => {
+      resolve = r;
+    });
+    return { promise, resolve };
+  };
 
   it("keeps the newer read when an older one lands last", async () => {
     const store = memoryStatusStore(null);
-    const out = (nami: boolean) =>
-      `{"climate":null,"nami_home":${nami},"someone_home":true}`;
-    let releaseA!: (v: string) => void;
-    const slowA = new Promise<string>((r) => {
-      releaseA = r;
-    });
-    const a = refreshStatus(store, () => slowA, 10);
-    await namiPresence(false, async () => "");
-    const b = await refreshStatus(store, async () => out(false), 11);
-    releaseA(out(true));
+    const slow = deferred();
+    const a = refreshStatus(store, () => slow.promise, 10);
+    await namiPresence(false, async () => "", store, 11);
+    const b = await refreshStatus(store, async () => out(false), 12);
+    slow.resolve(out(true));
     const aResult = await a;
-    expect(b.status.namiHome).toBe(false);
-    expect(aResult.status.namiHome).toBe(false);
-    expect((await store.read())?.status.namiHome).toBe(false);
+    expect(b?.status.namiHome).toBe(false);
+    expect(aResult).toBe(await store.read());
+    expect(aResult?.fetchedAt).toBe(12);
   });
 
-  it("does not reuse or write a read started during an in-flight set", async () => {
+  it("discards a read started during a write, whether it resolves before or after the write settles", async () => {
     const store = memoryStatusStore(null);
-    let finishSet!: () => void;
-    const setDone = new Promise<string>((r) => {
-      finishSet = () => r("");
-    });
-    const setting = namiPresence(true, () => setDone);
-    const during = refreshStatus(store, async () => statusOut, 20);
-    finishSet();
+    const set = deferred();
+    const setting = namiPresence(true, () => set.promise, store, 20);
+
+    const early = refreshStatus(store, async () => out(false), 21);
+    expect(await early).toBeNull();
+    expect(store.write).not.toHaveBeenCalled();
+
+    const lateGate = deferred();
+    const late = refreshStatus(store, () => lateGate.promise, 22);
+    set.resolve("");
     await setting;
-    const run = vi.fn(route({ status: statusOut }));
-    const after = refreshStatus(store, run, 21);
-    expect(after).not.toBe(during);
-    expect(run).toHaveBeenCalledTimes(1);
-    await Promise.all([during, after]);
-    expect((await store.read())?.fetchedAt).toBe(21);
+    lateGate.resolve(out(false));
+    const lateResult = await late;
+    expect(lateResult?.status.namiHome).toBe(true);
+    expect(lateResult?.fetchedAt).toBe(20);
   });
 
-  it("invalidates in-flight reads even when the set fails", async () => {
-    const store = memoryStatusStore(null);
-    const before = refreshStatus(store, async () => statusOut, 30);
+  it("writes the set value to the cache immediately", async () => {
+    const store = memoryStatusStore({
+      status: { climate: null, namiHome: true, someoneHome: true },
+      fetchedAt: 1,
+      climateAt: 1,
+    });
+    const run = vi.fn(async () => "");
+    const written = await namiPresence(false, run, store, 5);
+    expect(run).toHaveBeenCalledWith([
+      "set",
+      "Nami zu Hause",
+      "power",
+      "false",
+    ]);
+    expect(written).toEqual({
+      status: { climate: null, namiHome: false, someoneHome: true },
+      fetchedAt: 5,
+      climateAt: 1,
+    });
+    expect(await store.read()).toEqual(written);
+  });
+
+  it("leaves the cache untouched when the set fails, and still voids in-flight reads", async () => {
+    const initial = {
+      status: { climate: null, namiHome: true, someoneHome: true },
+      fetchedAt: 1,
+      climateAt: 1,
+    };
+    const store = memoryStatusStore(initial);
+    const slow = deferred();
+    const before = refreshStatus(store, () => slow.promise, 30);
     await expect(
-      namiPresence(true, async () => {
-        throw new Error("timed out");
-      }),
+      namiPresence(
+        false,
+        async () => {
+          throw new Error("timed out");
+        },
+        store,
+        31,
+      ),
     ).rejects.toThrow("timed out");
-    const after = refreshStatus(store, async () => statusOut, 31);
-    expect(after).not.toBe(before);
-    await Promise.all([before, after]);
+    slow.resolve(out(false));
+    expect(await before).toBe(initial);
+    expect(store.write).not.toHaveBeenCalled();
+    expect(await store.read()).toBe(initial);
   });
 
   it("rejects, writing nothing, on failure or unreadable output", async () => {

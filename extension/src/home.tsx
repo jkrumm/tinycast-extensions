@@ -100,13 +100,17 @@ function useHome() {
 function useStatus() {
   const [status, setStatus] = useState<StatusCache | null>(null);
 
+  // Ignore a result older than the one already on screen.
+  const apply = useCallback((next: StatusCache | null) => {
+    if (!next) return;
+    setStatus((current) =>
+      current && current.fetchedAt > next.fetchedAt ? current : next,
+    );
+  }, []);
+
   const refresh = useCallback(async () => {
     try {
-      const next = await refreshStatus();
-      // Ignore a result older than the one already on screen.
-      setStatus((current) =>
-        current && current.fetchedAt > next.fetchedAt ? current : next,
-      );
+      apply(await refreshStatus());
     } catch (e) {
       await showToast({
         style: Toast.Style.Failure,
@@ -114,7 +118,7 @@ function useStatus() {
         message: friendlyError(messageOf(e)),
       });
     }
-  }, []);
+  }, [apply]);
 
   useEffect(() => {
     let live = true;
@@ -130,19 +134,21 @@ function useStatus() {
     };
   }, [refresh]);
 
-  return { status, refresh };
+  return { status, refresh, apply };
 }
 
-async function toggleNami(target: boolean, onDone: () => Promise<void>) {
+async function toggleNami(
+  target: boolean,
+  apply: (written: StatusCache) => void,
+) {
   const toast = await showToast({
     style: Toast.Style.Animated,
     title: target ? "Nami stays home" : "Nami comes along",
   });
   try {
-    await namiPresence(target);
+    apply(await namiPresence(target));
     toast.style = Toast.Style.Success;
     toast.title = target ? "Nami stays home" : "Nami comes along";
-    await onDone();
   } catch (error) {
     toast.style = Toast.Style.Failure;
     toast.title = "Could not update Nami";
@@ -191,7 +197,11 @@ function AttentionItem({
 export default function Home() {
   const { cache, isLoading, error, refresh } = useHome();
   const attention = attentionRows(cache?.doctor ?? null);
-  const { status: statusCache, refresh: refreshStatusNow } = useStatus();
+  const {
+    status: statusCache,
+    refresh: refreshStatusNow,
+    apply: applyStatus,
+  } = useStatus();
   const status = statusCache?.status ?? null;
   const climate = status?.climate ?? null;
   const namiHome = status?.namiHome ?? null;
@@ -260,7 +270,7 @@ export default function Home() {
                   <Action
                     title={namiToggleTitle(namiHome)}
                     icon={Icon.Switch}
-                    onAction={() => toggleNami(namiTarget, refreshStatusNow)}
+                    onAction={() => toggleNami(namiTarget, applyStatus)}
                   />
                 ) : null}
                 <RefreshAction onRefresh={refreshAll} />

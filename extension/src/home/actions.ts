@@ -46,7 +46,9 @@ export const runNamiPresence = (
   run: RunHome = runHome,
 ) =>
   report(
-    () => namiPresence(home, run),
+    async () => {
+      await namiPresence(home, run);
+    },
     home ? "Nami stays home" : "Nami comes along",
     "Could not update Nami",
     hud,
