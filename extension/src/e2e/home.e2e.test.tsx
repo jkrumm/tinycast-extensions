@@ -43,6 +43,7 @@ vi.mock("../home/run", () => ({
   localStorageHome: { read: () => Promise.resolve(null) },
   localStorageStatus: { read: () => Promise.resolve(null) },
   refreshStatus: () => statusMock(),
+  loadClimate: () => Promise.resolve({ status: null, points: [], at: 0 }),
   namiPresence: (home: boolean) => namiMock(home),
   refreshHome: () => refreshMock(),
   triggerScene: (id: string) => triggerMock(id),
