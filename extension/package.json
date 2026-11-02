@@ -84,8 +84,160 @@
     {
       "name": "home",
       "title": "Home",
-      "description": "Trigger Apple Home scenes by name, with unreachable accessories and low batteries",
+      "description": "Apple Home status (climate, Nami), trigger scenes by name, and see unreachable accessories and low batteries",
       "mode": "view",
+      "icon": "home.png"
+    },
+    {
+      "name": "home-menu-bar",
+      "title": "Home",
+      "subtitle": "Home",
+      "description": "Room climate, Nami presence and Home scenes in the menu bar",
+      "mode": "menu-bar",
+      "interval": "5m",
+      "icon": "home.png"
+    },
+    {
+      "name": "scene-arbeit",
+      "title": "Arbeit",
+      "subtitle": "Home Scene",
+      "description": "Run the Apple Home scene Arbeit",
+      "mode": "no-view",
+      "keywords": [
+        "home",
+        "scene",
+        "szene"
+      ],
+      "icon": "home.png"
+    },
+    {
+      "name": "scene-aus",
+      "title": "Aus",
+      "subtitle": "Home Scene",
+      "description": "Run the Apple Home scene Aus",
+      "mode": "no-view",
+      "keywords": [
+        "home",
+        "scene",
+        "szene"
+      ],
+      "icon": "home.png"
+    },
+    {
+      "name": "scene-bett-dunkel",
+      "title": "Bett Dunkel",
+      "subtitle": "Home Scene",
+      "description": "Run the Apple Home scene Bett Dunkel",
+      "mode": "no-view",
+      "keywords": [
+        "home",
+        "scene",
+        "szene"
+      ],
+      "icon": "home.png"
+    },
+    {
+      "name": "scene-bett-hell",
+      "title": "Bett Hell",
+      "subtitle": "Home Scene",
+      "description": "Run the Apple Home scene Bett Hell",
+      "mode": "no-view",
+      "keywords": [
+        "home",
+        "scene",
+        "szene"
+      ],
+      "icon": "home.png"
+    },
+    {
+      "name": "scene-chill",
+      "title": "Chill",
+      "subtitle": "Home Scene",
+      "description": "Run the Apple Home scene Chill",
+      "mode": "no-view",
+      "keywords": [
+        "home",
+        "scene",
+        "szene"
+      ],
+      "icon": "home.png"
+    },
+    {
+      "name": "scene-gute-nacht",
+      "title": "Gute Nacht",
+      "subtitle": "Home Scene",
+      "description": "Run the Apple Home scene Gute Nacht",
+      "mode": "no-view",
+      "keywords": [
+        "home",
+        "scene",
+        "szene"
+      ],
+      "icon": "home.png"
+    },
+    {
+      "name": "scene-guten-morgen",
+      "title": "Guten Morgen",
+      "subtitle": "Home Scene",
+      "description": "Run the Apple Home scene Guten Morgen",
+      "mode": "no-view",
+      "keywords": [
+        "home",
+        "scene",
+        "szene"
+      ],
+      "icon": "home.png"
+    },
+    {
+      "name": "scene-hell",
+      "title": "Hell",
+      "subtitle": "Home Scene",
+      "description": "Run the Apple Home scene Hell",
+      "mode": "no-view",
+      "keywords": [
+        "home",
+        "scene",
+        "szene"
+      ],
+      "icon": "home.png"
+    },
+    {
+      "name": "scene-tv",
+      "title": "TV",
+      "subtitle": "Home Scene",
+      "description": "Run the Apple Home scene TV",
+      "mode": "no-view",
+      "keywords": [
+        "home",
+        "scene",
+        "szene"
+      ],
+      "icon": "home.png"
+    },
+    {
+      "name": "nami-comes-along",
+      "title": "Nami Comes Along",
+      "subtitle": "Home",
+      "description": "Turn off the Nami-at-home switch so the dog-alone automations stand down",
+      "mode": "no-view",
+      "keywords": [
+        "home",
+        "nami",
+        "dog"
+      ],
+      "icon": "home.png"
+    },
+    {
+      "name": "nami-stays-home",
+      "title": "Nami Stays Home",
+      "subtitle": "Home",
+      "description": "Turn on the Nami-at-home switch for the dog-alone automations",
+      "mode": "no-view",
+      "keywords": [
+        "home",
+        "nami",
+        "dog"
+      ],
       "icon": "home.png"
     },
     {

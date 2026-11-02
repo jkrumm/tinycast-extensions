@@ -9,14 +9,30 @@ import {
   showToast,
 } from "@raycast/api";
 import { useCallback, useEffect, useState } from "react";
+import { formatAge } from "./lib/freshness";
 import {
   AttentionRow,
   attentionRows,
+  climateSummary,
+  formatTemperature,
   friendlyError,
+  humidityHint,
+  namiTitle,
+  namiToggleTarget,
+  namiToggleTitle,
   sceneSubtitle,
+  sensorUnreachable,
+  someoneHomeTitle,
 } from "./home/format";
-import { localStorageHome, refreshHome, triggerScene } from "./home/run";
-import { HomeCache, Scene } from "./home/types";
+import {
+  localStorageHome,
+  localStorageStatus,
+  namiPresence,
+  refreshHome,
+  refreshStatus,
+  triggerScene,
+} from "./home/run";
+import { HomeCache, Scene, StatusCache } from "./home/types";
 
 const messageOf = (error: unknown): string =>
   error instanceof Error ? error.message : String(error);
@@ -79,6 +95,53 @@ function useHome() {
   return { cache, isLoading, error, refresh };
 }
 
+// Same stale-while-revalidate for the climate/Nami reading; a failure keeps
+// the last known value and only the scenes toast reports it.
+function useStatus() {
+  const [status, setStatus] = useState<StatusCache | null>(null);
+
+  const refresh = useCallback(async () => {
+    try {
+      setStatus(await refreshStatus());
+    } catch {
+      // keep last known
+    }
+  }, []);
+
+  useEffect(() => {
+    let live = true;
+    localStorageStatus
+      .read()
+      .catch(() => null)
+      .then((stored) => {
+        if (live && stored) setStatus((current) => current ?? stored);
+      })
+      .then(refresh);
+    return () => {
+      live = false;
+    };
+  }, [refresh]);
+
+  return { status, refresh };
+}
+
+async function toggleNami(target: boolean, onDone: () => Promise<void>) {
+  const toast = await showToast({
+    style: Toast.Style.Animated,
+    title: target ? "Nami stays home" : "Nami comes along",
+  });
+  try {
+    await namiPresence(target);
+    toast.style = Toast.Style.Success;
+    toast.title = target ? "Nami stays home" : "Nami comes along";
+    await onDone();
+  } catch (error) {
+    toast.style = Toast.Style.Failure;
+    toast.title = "Could not update Nami";
+    toast.message = friendlyError(messageOf(error));
+  }
+}
+
 function RefreshAction({ onRefresh }: { onRefresh: () => void }) {
   return (
     <Action
@@ -120,6 +183,15 @@ function AttentionItem({
 export default function Home() {
   const { cache, isLoading, error, refresh } = useHome();
   const attention = attentionRows(cache?.doctor ?? null);
+  const { status: statusCache, refresh: refreshStatusNow } = useStatus();
+  const status = statusCache?.status ?? null;
+  const climate = status?.climate ?? null;
+  const namiHome = status?.namiHome ?? null;
+  const namiTarget = namiToggleTarget(namiHome);
+  const refreshAll = () => {
+    refresh();
+    refreshStatusNow();
+  };
 
   return (
     <List isLoading={isLoading} searchBarPlaceholder="Trigger a scene">
@@ -134,6 +206,69 @@ export default function Home() {
             </ActionPanel>
           }
         />
+      ) : null}
+      {statusCache ? (
+        <List.Section title="Status">
+          {climate ? (
+            <List.Item
+              title={climateSummary(climate)}
+              subtitle={
+                sensorUnreachable(climate)
+                  ? "Sensor unreachable — last known"
+                  : (humidityHint(climate.humidityPct) ?? "")
+              }
+              icon={Icon.Temperature}
+              accessories={[
+                ...(climate.batteryPct !== null
+                  ? [{ tag: `Battery ${Math.round(climate.batteryPct)}%` }]
+                  : []),
+                { text: formatAge(statusCache.fetchedAt) },
+              ]}
+              actions={
+                <ActionPanel>
+                  <Action.CopyToClipboard
+                    title="Copy Temperature"
+                    content={
+                      climate.temperatureC !== null
+                        ? formatTemperature(climate.temperatureC)
+                        : ""
+                    }
+                  />
+                  <RefreshAction onRefresh={refreshAll} />
+                </ActionPanel>
+              }
+            />
+          ) : null}
+          <List.Item
+            title={namiTitle(namiHome)}
+            icon={
+              namiHome
+                ? { source: Icon.Checkmark, tintColor: Color.Green }
+                : Icon.Person
+            }
+            actions={
+              <ActionPanel>
+                {namiTarget !== null ? (
+                  <Action
+                    title={namiToggleTitle(namiHome)}
+                    icon={Icon.Switch}
+                    onAction={() => toggleNami(namiTarget, refreshStatusNow)}
+                  />
+                ) : null}
+                <RefreshAction onRefresh={refreshAll} />
+              </ActionPanel>
+            }
+          />
+          <List.Item
+            title={someoneHomeTitle(status?.someoneHome ?? null)}
+            icon={Icon.House}
+            actions={
+              <ActionPanel>
+                <RefreshAction onRefresh={refreshAll} />
+              </ActionPanel>
+            }
+          />
+        </List.Section>
       ) : null}
       {cache ? (
         <List.Section title="Scenes">

@@ -2,7 +2,14 @@
 // `home doctor --json`). Malformed input yields null, never a throw — the
 // caller decides whether that means "keep the cache" or "show an error".
 
-import { Doctor, HomeCache, Scene } from "./types";
+import {
+  Climate,
+  Doctor,
+  HomeCache,
+  HomeStatus,
+  Scene,
+  StatusCache,
+} from "./types";
 
 type Json = Record<string, unknown>;
 
@@ -83,4 +90,43 @@ export function parseCache(raw: string): HomeCache | null {
 }
 
 export const serializeCache = (cache: HomeCache): string =>
+  JSON.stringify(cache);
+
+const num = (v: unknown): number | null =>
+  typeof v === "number" && Number.isFinite(v) ? v : null;
+const bool = (v: unknown): boolean | null =>
+  typeof v === "boolean" ? v : null;
+
+function toClimate(value: unknown): Climate | null {
+  if (!isObject(value)) return null;
+  return {
+    sensor: str(value.sensor),
+    reachable: bool(value.reachable),
+    temperatureC: num(value.temperature_c ?? value.temperatureC),
+    humidityPct: num(value.humidity_pct ?? value.humidityPct),
+    batteryPct: num(value.battery_pct ?? value.batteryPct),
+  };
+}
+
+function toStatus(value: unknown): HomeStatus | null {
+  if (!isObject(value)) return null;
+  return {
+    climate: toClimate(value.climate),
+    namiHome: bool(value.nami_home ?? value.namiHome),
+    someoneHome: bool(value.someone_home ?? value.someoneHome),
+  };
+}
+
+export const parseStatus = (raw: string): HomeStatus | null =>
+  toStatus(parseJson(raw));
+
+// The LocalStorage entry written by `serializeStatusCache` (camelCase).
+export function parseStatusCache(raw: string): StatusCache | null {
+  const value = parseJson(raw);
+  if (!isObject(value) || typeof value.fetchedAt !== "number") return null;
+  const status = toStatus(value.status);
+  return status ? { status, fetchedAt: value.fetchedAt } : null;
+}
+
+export const serializeStatusCache = (cache: StatusCache): string =>
   JSON.stringify(cache);

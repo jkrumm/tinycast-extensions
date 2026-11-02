@@ -27,7 +27,7 @@ import { tileStatus } from "./van/format";
 import { hubStatus } from "./shortcuts/format";
 import { loadHotkeyCount } from "./shortcuts/load";
 import { tileStatus as homeTileStatus } from "./home/format";
-import { localStorageHome } from "./home/run";
+import { localStorageHome, localStorageStatus } from "./home/run";
 import { RAYCAST_COLOR, RaycastColor, tile, toDataUri } from "./lib/svg";
 
 interface TileConfig {
@@ -177,11 +177,18 @@ async function shortcutsStatus(): Promise<TileData> {
   return { status: hubStatus(await loadHotkeyCount()) };
 }
 
-// Last cached reading only — the ssh round trip belongs to the Home command.
+// Last cached reading only — the ssh round trip belongs to the Home commands.
 async function homeStatus(): Promise<TileData> {
-  const cache = await localStorageHome.read().catch(() => null);
+  const [cache, status] = await Promise.all([
+    localStorageHome.read().catch(() => null),
+    localStorageStatus.read().catch(() => null),
+  ]);
   return {
-    status: homeTileStatus(cache?.scenes ?? null, cache?.doctor ?? null),
+    status: homeTileStatus(
+      cache?.scenes ?? null,
+      cache?.doctor ?? null,
+      status?.status ?? null,
+    ),
   };
 }
 

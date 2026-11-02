@@ -1,6 +1,6 @@
 // Pure display text for the Home command and its dashboard tile.
 
-import { Doctor, Scene } from "./types";
+import { Climate, Doctor, HomeStatus, Scene } from "./types";
 
 export type AttentionKind = "unreachable" | "battery";
 
@@ -57,9 +57,125 @@ export function friendlyError(message: string): string {
 export function tileStatus(
   scenes: Scene[] | null,
   doctor: Doctor | null,
+  status: HomeStatus | null = null,
 ): string {
-  if (!scenes) return "No scenes yet";
   const attention = attentionRows(doctor).length;
   if (attention > 0) return `${attention} need attention`;
+  const temp = status?.climate?.temperatureC;
+  if (temp != null) {
+    const nami =
+      status?.namiHome == null
+        ? ""
+        : ` · Nami ${status.namiHome ? "home" : "out"}`;
+    return `${formatTemperature(temp)}${nami}`;
+  }
+  if (!scenes) return "No scenes yet";
   return `${scenes.length} scenes`;
+}
+
+// ─── Status (climate + Nami) ────────────────────────────────────────────────
+
+const HUMID_AT = 60;
+const DRY_AT = 35;
+
+export const formatTemperature = (c: number): string => `${c.toFixed(1)}°`;
+
+// Compact status-item title: `21.9° 42%`. Parts that are unknown are left out.
+export function menuBarTitle(status: HomeStatus | null): string {
+  const climate = status?.climate;
+  const parts = [
+    climate?.temperatureC != null
+      ? formatTemperature(climate.temperatureC)
+      : null,
+    climate?.humidityPct != null ? `${Math.round(climate.humidityPct)}%` : null,
+  ].filter(Boolean);
+  return parts.length > 0 ? parts.join(" ") : "--";
+}
+
+// `21.9° · 42%` for the list row.
+export const climateSummary = (climate: Climate): string =>
+  menuBarTitle({ climate, namiHome: null, someoneHome: null }).replace(
+    " ",
+    " · ",
+  );
+
+export function humidityHint(pct: number | null): string | null {
+  if (pct === null) return null;
+  if (pct >= HUMID_AT) return "ventilate";
+  if (pct <= DRY_AT) return "dry air";
+  return null;
+}
+
+export interface ClimateLine {
+  id: "temperature" | "humidity" | "battery";
+  title: string;
+}
+
+// The known climate readings as display lines (unknown ones are skipped).
+export function climateLines(climate: Climate | null): ClimateLine[] {
+  if (!climate) return [];
+  const lines: ClimateLine[] = [];
+  if (climate.temperatureC !== null)
+    lines.push({
+      id: "temperature",
+      title: `Temperature: ${climate.temperatureC.toFixed(1)} °C`,
+    });
+  if (climate.humidityPct !== null) {
+    const hint = humidityHint(climate.humidityPct);
+    lines.push({
+      id: "humidity",
+      title: `Humidity: ${Math.round(climate.humidityPct)} %${hint ? ` — ${hint}` : ""}`,
+    });
+  }
+  if (climate.batteryPct !== null)
+    lines.push({
+      id: "battery",
+      title: `Eve Room battery: ${Math.round(climate.batteryPct)} %`,
+    });
+  return lines;
+}
+
+export const sensorUnreachable = (climate: Climate | null): boolean =>
+  climate?.reachable === false;
+
+export const namiTitle = (namiHome: boolean | null): string =>
+  namiHome === null
+    ? "Nami: unknown"
+    : namiHome
+      ? "Nami is home"
+      : "Nami is with you";
+
+// The value a toggle sets; null when the state is unknown (nothing to flip).
+export const namiToggleTarget = (namiHome: boolean | null): boolean | null =>
+  namiHome === null ? null : !namiHome;
+
+export const namiToggleTitle = (namiHome: boolean | null): string =>
+  namiHome === false ? "Nami Stays Home" : "Nami Comes Along";
+
+export const someoneHomeTitle = (someoneHome: boolean | null): string =>
+  `Someone home: ${someoneHome === null ? "unknown" : someoneHome ? "yes" : "no"}`;
+
+// A fresh reading can have holes (unreachable sensor, flaky read); keep the
+// last known value for each hole so the UI never blanks a working reading.
+export function mergeStatus(
+  fresh: HomeStatus,
+  cached: HomeStatus | null,
+): HomeStatus {
+  if (!cached) return fresh;
+  const c = fresh.climate;
+  const old = cached.climate;
+  return {
+    climate:
+      c && old
+        ? {
+            sensor: c.sensor ?? old.sensor,
+            reachable: c.reachable,
+            temperatureC: c.temperatureC ?? old.temperatureC,
+            humidityPct: c.humidityPct ?? old.humidityPct,
+            batteryPct: c.batteryPct ?? old.batteryPct,
+          }
+        : (c ?? old),
+    namiHome: fresh.namiHome ?? cached.namiHome,
+    someoneHome: fresh.someoneHome ?? cached.someoneHome,
+  };
 }

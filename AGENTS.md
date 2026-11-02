@@ -35,7 +35,10 @@ extension/
     speed-test.tsx          command — networkQuality speed/latency/data-used + history
     van-power.tsx           command — Van Power: Ective battery + Victron solar over BLE, 72 h charts
     shortcuts.tsx           command — List of every global hotkey, launcher alias and favorite (Enter launches it), read live from Tinycast's defaults
-    home.tsx                command — Apple Home: scenes (type a name, Enter triggers) + Needs attention (unreachable, low battery), LocalStorage stale-while-revalidate
+    home.tsx                command — Apple Home: Status (climate, Nami toggle, someone home) + scenes (type a name, Enter triggers) + Needs attention (unreachable, low battery), LocalStorage stale-while-revalidate
+    home-menu-bar.tsx       command — Home menu bar (5m): `21.9° 42%` title, climate + hints, Nami toggle, scenes, Open Home; beta only
+    scene-<name>.tsx        9 no-view commands (arbeit, aus, bett-dunkel, bett-hell, chill, gute-nacht, guten-morgen, hell, tv) — one-liners over `home/scene-command.ts`, so the launcher runs a scene by its name
+    nami-comes-along.tsx, nami-stays-home.tsx  no-view commands — set the "Nami zu Hause" switch false / true
     hub.tsx                 command — Grid dashboard, one tile per command
     ticktick/             feature code: client, types, format, parse, search, create-task
     usage/                feature code: quota (argo + local picker + fs read), local (spawns `claude-account`,
@@ -84,8 +87,11 @@ extension/
                            sampler-runner (one run), sampler-storage (file-backed `sampler.json` + `paused` flag, via `store.ts`),
                            notify (osascript notification), types, fixtures
     home/                 feature code: run (spawns `~/.local/bin/home`, which ssh-es to the mini; LocalStorage
-                           `home-cache`, the only impure bit), parse (pure: scenes/doctor JSON, cache), format
-                           (pure: attention rows, friendly errors, tile status), types
+                           `home-cache` + `home-status`, the only impure bit; `loadMenuBar` is the menu bar's never-rejecting
+                           loader), parse (pure: scenes/doctor/status JSON, caches), format
+                           (pure: attention rows, friendly errors, tile status, status title/hints/Nami
+                           wording, `mergeStatus` last-known fill), actions (no-view core: run + one HUD
+                           line, injected `RunHome` + HUD), scene-command (binds actions to showHUD), types
     apple-llm/            feature code: run (spawns the helper, the only impure bit), parse (pure)
     lib/                  shared: argo.ts (fetch client), secrets.ts (Keychain/1Password chain),
                            action-log.ts (persistent log file), svg.ts + chart/ (hero/chart library, see svg-charts skill), preferences.ts (Preferences type),
@@ -1060,10 +1066,10 @@ panel-vs-cards-vs-table rule.
 
 ## Menu-bar commands — beta only
 
-`ticktick-menu-bar` and `claude-usage-menu-bar` need Tinycast's native
+`ticktick-menu-bar`, `claude-usage-menu-bar` and `home-menu-bar` need Tinycast's native
 menu-bar rendering (`NSStatusItem`), which landed in `0.11.4-beta.100`
 (PR #963) — **stable 0.11.3 ships the JS shims but not the native drawing,
-so both commands are invisible there.** This repo's target channel is
+so these commands are invisible there.** This repo's target channel is
 already beta (`com.tinycast.app.beta`) for exactly this reason — see the
 top of this file. `claude-usage-menu-bar` uses `lib/svg.ts`'s
 `menuBarRing()` for a live, no-text ring icon (18×18pt, nothing reads at

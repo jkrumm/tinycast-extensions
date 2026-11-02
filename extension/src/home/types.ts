@@ -30,3 +30,31 @@ export interface HomeCache {
   doctor: Doctor | null;
   fetchedAt: number;
 }
+
+export interface Climate {
+  sensor: string | null;
+  reachable: boolean | null;
+  temperatureC: number | null;
+  humidityPct: number | null;
+  batteryPct: number | null;
+}
+
+// `home status --json`, every field nullable.
+export interface HomeStatus {
+  climate: Climate | null;
+  namiHome: boolean | null;
+  someoneHome: boolean | null;
+}
+
+// What the status surfaces keep in LocalStorage between opens.
+export interface StatusCache {
+  status: HomeStatus;
+  fetchedAt: number;
+}
+
+// Everything the menu-bar command renders.
+export interface MenuBarData {
+  status: StatusCache | null;
+  scenes: Scene[];
+  error: string | null;
+}

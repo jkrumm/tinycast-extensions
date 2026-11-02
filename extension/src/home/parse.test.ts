@@ -1,5 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { parseCache, parseDoctor, parseScenes, serializeCache } from "./parse";
+import {
+  parseCache,
+  parseDoctor,
+  parseScenes,
+  parseStatus,
+  parseStatusCache,
+  serializeCache,
+  serializeStatusCache,
+} from "./parse";
 
 const scenes = JSON.stringify([
   { name: "Chill", id: "9695FBEB", rooms: ["Wohnzimmer"], action_count: 29 },
@@ -69,5 +77,45 @@ describe("cache", () => {
   it("rejects garbage", () => {
     expect(parseCache("x")).toBeNull();
     expect(parseCache('{"scenes":[]}')).toBeNull();
+  });
+});
+
+describe("parseStatus", () => {
+  const raw =
+    '{"climate":{"sensor":"Eve Room CF8D","reachable":true,"temperature_c":21.9,"humidity_pct":42,"battery_pct":100},"nami_home":true,"someone_home":false}';
+
+  it("maps the CLI shape", () => {
+    expect(parseStatus(raw)).toEqual({
+      climate: {
+        sensor: "Eve Room CF8D",
+        reachable: true,
+        temperatureC: 21.9,
+        humidityPct: 42,
+        batteryPct: 100,
+      },
+      namiHome: true,
+      someoneHome: false,
+    });
+  });
+
+  it("turns missing or null fields into null", () => {
+    expect(
+      parseStatus('{"climate":null,"nami_home":null,"someone_home":true}'),
+    ).toEqual({ climate: null, namiHome: null, someoneHome: true });
+    expect(parseStatus('{"climate":{"temperature_c":"x"}}')?.climate).toEqual({
+      sensor: null,
+      reachable: null,
+      temperatureC: null,
+      humidityPct: null,
+      batteryPct: null,
+    });
+  });
+
+  it("rejects non-objects and round-trips the cache", () => {
+    expect(parseStatus("oops")).toBeNull();
+    expect(parseStatus("[]")).toBeNull();
+    const cache = { status: parseStatus(raw)!, fetchedAt: 9 };
+    expect(parseStatusCache(serializeStatusCache(cache))).toEqual(cache);
+    expect(parseStatusCache('{"status":{}}')).toBeNull();
   });
 });
