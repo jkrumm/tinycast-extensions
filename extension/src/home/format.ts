@@ -75,8 +75,9 @@ export function tileStatus(
 
 // ─── Status (climate + Nami) ────────────────────────────────────────────────
 
-const HUMID_AT = 60;
-const DRY_AT = 35;
+export const HUMID_AT = 60;
+export const DRY_AT = 35;
+export const COLD_C = 17;
 
 export const formatTemperature = (c: number): string => `${c.toFixed(1)}°`;
 

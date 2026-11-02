@@ -47,6 +47,14 @@ import type { SpeedTestRecord } from "../../speed-test/types";
 import type { BatterySnapshot } from "../../battery/types";
 import type { RouterStatus } from "../../netgear/types";
 import type { Sample, VanView } from "../../van/types";
+import { shapeForRange } from "../../home/climate";
+import { climateFixture, statusCacheFixture } from "../../home/fixtures";
+import {
+  humidityChartImage as homeHumidity,
+  metricsImage as homeMetrics,
+  panelImage as homePanel,
+  temperatureChartImage as homeTemperature,
+} from "../../home/heroes";
 import { dailySpend, speedFixture, vanFixture } from "./fixtures";
 
 export interface ProductionHero {
@@ -437,6 +445,34 @@ export function productionHeroes(now: number): ProductionHero[] {
   add("netgear", "signal-panel", signalPanel(meterNow));
   add("netgear", "signal-panel-poor", signalPanel(sinrSamples[0]));
   add("netgear", "signal-trend", signalTrend(sinrSamples)!);
+
+  // Home: a cold-snap November flat. 48 h as recorded, 30 d averaged to 4 h.
+  const homeStatus = statusCacheFixture(now);
+  const recent = climateFixture({ end: now, hours: 48 });
+  const month = climateFixture({ end: now, hours: 720, seed: 9 });
+  const homeInput = { status: homeStatus, points: recent, now };
+  add("home", "home-panel", homePanel(homeInput));
+  add("home", "home-metrics", homeMetrics(homeInput));
+  add(
+    "home",
+    "home-temperature",
+    homeTemperature(shapeForRange(recent, "48h", now), "48h", now)!,
+  );
+  add(
+    "home",
+    "home-humidity",
+    homeHumidity(shapeForRange(recent, "48h", now), "48h", now)!,
+  );
+  add(
+    "home",
+    "home-temperature-30d",
+    homeTemperature(shapeForRange(month, "30d", now), "30d", now)!,
+  );
+  add(
+    "home",
+    "home-humidity-30d",
+    homeHumidity(shapeForRange(month, "30d", now), "30d", now)!,
+  );
 
   return heroes;
 }

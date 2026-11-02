@@ -1,8 +1,7 @@
-// Pure: the recorded climate history (`home climate --json`) -> parsed points,
-// summaries and the Detail markdown. Charts come from lib/svg; nothing here
-// touches @raycast/api.
-
-import { RAYCAST_COLOR, lineChart, toDataUri } from "../lib/svg";
+// Pure: the recorded climate history (`home climate <hours> --json`) -> parsed
+// points, range windows, downsampling, min/max and the absolute-humidity
+// "does airing help" rule. Drawing lives in heroes.ts; nothing here touches
+// @raycast/api.
 
 export interface ClimatePoint {
   at: number; // epoch ms
@@ -13,8 +12,6 @@ export interface ClimatePoint {
 }
 
 const HOUR_MS = 3_600_000;
-// Fewer points than this (10 min apart) and a chart would be a stub.
-const MIN_CHART_POINTS = 6;
 
 const num = (v: unknown): number | null =>
   typeof v === "number" && Number.isFinite(v) ? v : null;
@@ -44,128 +41,159 @@ export function parseClimate(raw: string): ClimatePoint[] | null {
   });
 }
 
+// ─── Ranges ─────────────────────────────────────────────────────────────────
+
+export const CLIMATE_RANGES = ["24h", "48h", "7d", "30d"] as const;
+export type ClimateRange = (typeof CLIMATE_RANGES)[number];
+export const DEFAULT_RANGE: ClimateRange = "48h";
+
+const RANGE_HOURS: Record<ClimateRange, number> = {
+  "24h": 24,
+  "48h": 48,
+  "7d": 168,
+  "30d": 720,
+};
+// The history is one point per 10 min; longer windows are averaged to stay
+// around 150–180 points.
+const RANGE_BUCKET_MS: Record<ClimateRange, number | null> = {
+  "24h": null,
+  "48h": null,
+  "7d": HOUR_MS,
+  "30d": 4 * HOUR_MS,
+};
+
+export const rangeHours = (range: ClimateRange): number => RANGE_HOURS[range];
+export const rangeLabel = (range: ClimateRange): string =>
+  range === "7d" || range === "30d"
+    ? `${RANGE_HOURS[range] / 24} days`
+    : `${RANGE_HOURS[range]} h`;
+
+const mean = (values: Array<number | null>): number | null => {
+  const known = values.filter((v): v is number => v !== null);
+  return known.length === 0
+    ? null
+    : known.reduce((a, b) => a + b, 0) / known.length;
+};
+
+// Averages points into fixed buckets (ascending, empty buckets skipped); a
+// bucket's time is the mean of its points'.
+export function downsample(
+  points: ClimatePoint[],
+  bucketMs: number,
+): ClimatePoint[] {
+  const buckets = new Map<number, ClimatePoint[]>();
+  for (const p of points) {
+    const key = Math.floor(p.at / bucketMs);
+    const bucket = buckets.get(key);
+    if (bucket) bucket.push(p);
+    else buckets.set(key, [p]);
+  }
+  return [...buckets.entries()]
+    .sort(([a], [b]) => a - b)
+    .map(([, bucket]) => ({
+      at: Math.round(bucket.reduce((sum, p) => sum + p.at, 0) / bucket.length),
+      inT: mean(bucket.map((p) => p.inT)),
+      inH: mean(bucket.map((p) => p.inH)),
+      outT: mean(bucket.map((p) => p.outT)),
+      outH: mean(bucket.map((p) => p.outH)),
+    }));
+}
+
+// The points inside the range's window, downsampled for the long ranges.
+export function shapeForRange(
+  points: ClimatePoint[],
+  range: ClimateRange,
+  now: number,
+): ClimatePoint[] {
+  const from = now - RANGE_HOURS[range] * HOUR_MS;
+  const inside = points.filter((p) => p.at >= from && p.at <= now);
+  const bucket = RANGE_BUCKET_MS[range];
+  return bucket ? downsample(inside, bucket) : inside;
+}
+
+// ─── Stats ──────────────────────────────────────────────────────────────────
+
+export interface Extent {
+  min: number;
+  max: number;
+}
+
 const known = (values: Array<number | null>): number[] =>
   values.filter((v): v is number => v !== null);
 
-const range = (values: number[], digits: number): string | null =>
-  values.length === 0
-    ? null
-    : `${Math.min(...values).toFixed(digits)}–${Math.max(...values).toFixed(digits)}`;
+const extent = (values: Array<number | null>): Extent | null => {
+  const k = known(values);
+  return k.length === 0 ? null : { min: Math.min(...k), max: Math.max(...k) };
+};
 
-const last24h = (points: ClimatePoint[], now: number): ClimatePoint[] =>
-  points.filter((p) => p.at >= now - 24 * HOUR_MS);
+const latest = (values: Array<number | null>): number | null =>
+  known(values.slice().reverse())[0] ?? null;
 
-// Menu bar line: `24 h: 21.4–22.6 °C · 40–45 %`; null with no inside data.
+export interface ClimateStats {
+  inT: Extent | null; // last 24 h
+  inH: Extent | null;
+  inTNow: number | null; // latest recorded
+  inHNow: number | null;
+  outTNow: number | null;
+  outHNow: number | null;
+}
+
+export function climateStats(
+  points: ClimatePoint[],
+  now: number,
+): ClimateStats {
+  const recent = points.filter((p) => p.at >= now - 24 * HOUR_MS);
+  return {
+    inT: extent(recent.map((p) => p.inT)),
+    inH: extent(recent.map((p) => p.inH)),
+    inTNow: latest(points.map((p) => p.inT)),
+    inHNow: latest(points.map((p) => p.inH)),
+    outTNow: latest(points.map((p) => p.outT)),
+    outHNow: latest(points.map((p) => p.outH)),
+  };
+}
+
+// ─── Absolute humidity (Magnus) ─────────────────────────────────────────────
+
+// Outdoor air must hold at least this much less water (g/m³) than indoor air
+// for airing to dry the flat — the same threshold as the mini's alert job.
+export const DRY_DELTA = 1;
+
+export function absoluteHumidity(tempC: number, rhPct: number): number {
+  const saturation = 6.112 * Math.exp((17.67 * tempC) / (tempC + 243.5));
+  return (saturation * rhPct * 2.1674) / (273.15 + tempC);
+}
+
+export interface Airing {
+  inside: number; // g/m³
+  outside: number;
+  helps: boolean;
+}
+
+export function airing(
+  inT: number | null,
+  inH: number | null,
+  outT: number | null,
+  outH: number | null,
+): Airing | null {
+  if (inT === null || inH === null || outT === null || outH === null)
+    return null;
+  const inside = absoluteHumidity(inT, inH);
+  const outside = absoluteHumidity(outT, outH);
+  return { inside, outside, helps: outside <= inside - DRY_DELTA };
+}
+
+// ─── Menu bar ───────────────────────────────────────────────────────────────
+
+// `24 h: 21.4–22.6 °C · 40–45 %`; null with no inside data.
 export function menuClimateLine(
   points: ClimatePoint[] | null,
   now: number,
 ): string | null {
   if (!points) return null;
-  const recent = last24h(points, now);
-  const t = range(known(recent.map((p) => p.inT)), 1);
-  const h = range(known(recent.map((p) => p.inH)), 0);
-  const parts = [t && `${t} °C`, h && `${h} %`].filter(Boolean);
+  const { inT, inH } = climateStats(points, now);
+  const t = inT && `${inT.min.toFixed(1)}–${inT.max.toFixed(1)} °C`;
+  const h = inH && `${Math.round(inH.min)}–${Math.round(inH.max)} %`;
+  const parts = [t, h].filter(Boolean);
   return parts.length > 0 ? `24 h: ${parts.join(" · ")}` : null;
-}
-
-const latest = (values: Array<number | null>): number | null =>
-  known(values.slice().reverse())[0] ?? null;
-
-// Three plain lines under the charts.
-export function climateSummaryLines(
-  points: ClimatePoint[],
-  now: number,
-): string[] {
-  const recent = last24h(points, now);
-  const t = range(known(recent.map((p) => p.inT)), 1);
-  const h = range(known(recent.map((p) => p.inH)), 0);
-  const outT = latest(points.map((p) => p.outT));
-  const outH = latest(points.map((p) => p.outH));
-  return [
-    `Inside temperature, 24 h: ${t ? `${t} °C` : "no data"}`,
-    `Inside humidity, 24 h: ${h ? `${h} %` : "no data"}`,
-    `Outside now: ${
-      [
-        outT !== null ? `${outT.toFixed(1)} °C` : null,
-        outH !== null ? `${Math.round(outH)} %` : null,
-      ]
-        .filter(Boolean)
-        .join(" · ") || "no data"
-    }`,
-  ];
-}
-
-const startedText = (at: number): string =>
-  new Date(at).toLocaleString("en-GB", {
-    day: "numeric",
-    month: "short",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-
-function chart(
-  points: ClimatePoint[],
-  inside: (p: ClimatePoint) => number | null,
-  outside: (p: ClimatePoint) => number | null,
-  format: (v: number) => string,
-): string {
-  return toDataUri(
-    lineChart({
-      times: points.map((p) => p.at),
-      series: [
-        {
-          label: "Inside",
-          color: RAYCAST_COLOR.orange,
-          values: points.map(inside),
-          axis: "left",
-          format,
-        },
-        {
-          label: "Outside",
-          color: RAYCAST_COLOR.blue,
-          values: points.map(outside),
-          axis: "left",
-          format,
-        },
-      ],
-    }),
-  );
-}
-
-export function climateHistoryMarkdown(
-  points: ClimatePoint[],
-  now: number,
-): string {
-  const lines = ["# Climate history", ""];
-  if (points.length === 0) {
-    lines.push("No climate recorded yet.");
-    return lines.join("\n");
-  }
-  if (points.length < MIN_CHART_POINTS) {
-    lines.push(
-      `Recording started at ${startedText(points[0].at)}, the chart fills in over the next hours.`,
-    );
-  } else {
-    lines.push(
-      "### Temperature · last 48 h",
-      "",
-      `![Temperature](${chart(
-        points,
-        (p) => p.inT,
-        (p) => p.outT,
-        (v) => `${v.toFixed(0)}°`,
-      )})`,
-      "",
-      "### Humidity · last 48 h",
-      "",
-      `![Humidity](${chart(
-        points,
-        (p) => p.inH,
-        (p) => p.outH,
-        (v) => `${v.toFixed(0)}%`,
-      )})`,
-    );
-  }
-  lines.push("", ...climateSummaryLines(points, now).map((l) => `- ${l}`));
-  return lines.join("\n");
 }

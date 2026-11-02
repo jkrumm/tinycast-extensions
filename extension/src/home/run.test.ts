@@ -5,6 +5,7 @@ import {
   StatusStore,
   fetchClimate,
   fetchDoctor,
+  loadClimate,
   loadMenuBar,
   namiPresence,
   refreshHome,
@@ -439,5 +440,44 @@ describe("climate history", () => {
     );
     expect(failed.climate).toBeNull();
     expect(failed.error).toBeNull();
+  });
+});
+
+describe("loadClimate", () => {
+  const climateOut =
+    '[{"at":"2026-11-02T21:41:44.265Z","in_t":22.2,"in_h":42,"out_t":4.3,"out_h":81}]';
+
+  it("asks for the range's hours and pairs it with the status", async () => {
+    const run = vi.fn(route({ status: statusOut, climate: climateOut }));
+    const got = await loadClimate("7d", memoryStatusStore(null), run, 9);
+    expect(run).toHaveBeenCalledWith(["climate", "168", "--json"]);
+    expect(got.points).toHaveLength(1);
+    expect(got.status?.status.namiHome).toBe(true);
+    expect(got.at).toBe(9);
+  });
+
+  it("keeps the last-known status when the status call fails", async () => {
+    const cached: StatusCache = {
+      status: { climate: null, namiHome: false, someoneHome: true },
+      fetchedAt: 1,
+      climateAt: 1,
+    };
+    const got = await loadClimate(
+      "48h",
+      memoryStatusStore(cached),
+      route({ status: new Error("ssh"), climate: climateOut }),
+      9,
+    );
+    expect(got.status).toBe(cached);
+  });
+
+  it("rejects when the history cannot be read", async () => {
+    await expect(
+      loadClimate(
+        "48h",
+        memoryStatusStore(null),
+        route({ status: statusOut, climate: new Error("ssh") }),
+      ),
+    ).rejects.toThrow("ssh");
   });
 });

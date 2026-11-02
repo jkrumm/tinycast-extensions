@@ -6,7 +6,12 @@ import { LocalStorage } from "@raycast/api";
 import { execFile } from "child_process";
 import { homedir } from "os";
 import { PATH } from "../usage/local";
-import { ClimatePoint, parseClimate } from "./climate";
+import {
+  ClimatePoint,
+  ClimateRange,
+  parseClimate,
+  rangeHours,
+} from "./climate";
 import { friendlyError, mergeClimate } from "./format";
 import {
   parseCache,
@@ -225,6 +230,32 @@ export async function fetchClimate(
   const points = parseClimate(await run(["climate", String(hours), "--json"]));
   if (!points) throw new Error("home climate returned unreadable output");
   return points;
+}
+
+export interface ClimateData {
+  status: StatusCache | null;
+  points: ClimatePoint[];
+  at: number;
+}
+
+// The Climate History view's one loader: the history for the range (a failure
+// rejects, so the view can say so) beside the live status (a failure keeps
+// the last-known status).
+export async function loadClimate(
+  range: ClimateRange,
+  statusStore: StatusStore = localStorageStatus,
+  run: RunHome = runHome,
+  nowMs = Date.now(),
+): Promise<ClimateData> {
+  const [points, status] = await Promise.all([
+    fetchClimate(run, rangeHours(range)),
+    refreshStatus(statusStore, run, nowMs).catch(() => null),
+  ]);
+  return {
+    points,
+    status: status ?? (await statusStore.read().catch(() => null)),
+    at: nowMs,
+  };
 }
 
 // `true` = Nami stays home, `false` = Nami comes along. On success the cache

@@ -912,7 +912,14 @@ describe("production heroes", () => {
 
   it("covers every command that draws charts", () => {
     const groups = new Set(heroes.map((h) => h.group));
-    for (const group of ["usage", "speed", "battery", "van", "netgear"]) {
+    for (const group of [
+      "usage",
+      "speed",
+      "battery",
+      "van",
+      "netgear",
+      "home",
+    ]) {
       expect(groups.has(group), group).toBe(true);
     }
     expect(heroes.map((h) => h.name)).toEqual(
