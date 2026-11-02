@@ -155,27 +155,22 @@ export const namiToggleTitle = (namiHome: boolean | null): string =>
 export const someoneHomeTitle = (someoneHome: boolean | null): string =>
   `Someone home: ${someoneHome === null ? "unknown" : someoneHome ? "yes" : "no"}`;
 
-// A fresh reading can have holes (unreachable sensor, flaky read); keep the
-// last known value for each hole so the UI never blanks a working reading.
-export function mergeStatus(
-  fresh: HomeStatus,
-  cached: HomeStatus | null,
-): HomeStatus {
-  if (!cached) return fresh;
-  const c = fresh.climate;
-  const old = cached.climate;
-  return {
-    climate:
-      c && old
-        ? {
-            sensor: c.sensor ?? old.sensor,
-            reachable: c.reachable,
-            temperatureC: c.temperatureC ?? old.temperatureC,
-            humidityPct: c.humidityPct ?? old.humidityPct,
-            batteryPct: c.batteryPct ?? old.batteryPct,
-          }
-        : (c ?? old),
-    namiHome: fresh.namiHome ?? cached.namiHome,
-    someoneHome: fresh.someoneHome ?? cached.someoneHome,
+// An unreachable sensor reports holes; fill the climate numbers from the last
+// reading. The switches (Nami, someone home) are never back-filled: a stale
+// switch state shown as current would offer the wrong toggle.
+export function mergeClimate(
+  fresh: Climate | null,
+  cached: Climate | null,
+): { climate: Climate | null; lastKnown: boolean } {
+  if (!fresh) return { climate: cached, lastKnown: cached !== null };
+  if (fresh.reachable !== false || !cached)
+    return { climate: fresh, lastKnown: false };
+  const merged: Climate = {
+    sensor: fresh.sensor ?? cached.sensor,
+    reachable: false,
+    temperatureC: fresh.temperatureC ?? cached.temperatureC,
+    humidityPct: fresh.humidityPct ?? cached.humidityPct,
+    batteryPct: fresh.batteryPct ?? cached.batteryPct,
   };
+  return { climate: merged, lastKnown: true };
 }

@@ -90,7 +90,7 @@ extension/
                            `home-cache` + `home-status`, the only impure bit; `loadMenuBar` is the menu bar's never-rejecting
                            loader), parse (pure: scenes/doctor/status JSON, caches), format
                            (pure: attention rows, friendly errors, tile status, status title/hints/Nami
-                           wording, `mergeStatus` last-known fill), actions (no-view core: run + one HUD
+                           wording, `mergeClimate` last-known climate fill (switches never back-filled)), actions (no-view core: run + one HUD
                            line, injected `RunHome` + HUD), scene-command (binds actions to showHUD), types
     apple-llm/            feature code: run (spawns the helper, the only impure bit), parse (pure)
     lib/                  shared: argo.ts (fetch client), secrets.ts (Keychain/1Password chain),

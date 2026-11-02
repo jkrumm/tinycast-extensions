@@ -6,7 +6,7 @@ import { LocalStorage } from "@raycast/api";
 import { execFile } from "child_process";
 import { homedir } from "os";
 import { PATH } from "../usage/local";
-import { friendlyError, mergeStatus } from "./format";
+import { friendlyError, mergeClimate } from "./format";
 import {
   parseCache,
   parseDoctor,
@@ -112,11 +112,13 @@ export const localStorageStatus: StatusStore = {
     LocalStorage.setItem(STATUS_KEY, serializeStatusCache(value)),
 };
 
-// One ssh round trip. Holes in the reading keep the last known value.
-export async function refreshStatus(
-  store: StatusStore = localStorageStatus,
-  run: RunHome = runHome,
-  nowMs = Date.now(),
+// One ssh round trip. A sensor that is unreachable keeps its last-known
+// climate numbers (with their own `climateAt`); the switches are never
+// back-filled, so a null stays null.
+async function fetchStatus(
+  store: StatusStore,
+  run: RunHome,
+  nowMs: number,
 ): Promise<StatusCache> {
   const [raw, cached] = await Promise.all([
     run(["status", "--json"]),
@@ -124,12 +126,40 @@ export async function refreshStatus(
   ]);
   const fresh = parseStatus(raw);
   if (!fresh) throw new Error("home status returned unreadable output");
-  const next = {
-    status: mergeStatus(fresh, cached?.status ?? null),
+  const { climate, lastKnown } = mergeClimate(
+    fresh.climate,
+    cached?.status.climate ?? null,
+  );
+  const next: StatusCache = {
+    status: { ...fresh, climate },
     fetchedAt: nowMs,
+    climateAt: lastKnown && cached ? cached.climateAt : nowMs,
   };
   await store.write(next).catch(() => undefined);
   return next;
+}
+
+// Single-flight: overlapping callers (mount, Refresh, menu tick) share one
+// request so an older response can't overwrite a newer one. A switch write
+// bumps `generation`, so a read that started before it is never reused.
+let generation = 0;
+let inFlight: { generation: number; promise: Promise<StatusCache> } | null =
+  null;
+
+export function refreshStatus(
+  store: StatusStore = localStorageStatus,
+  run: RunHome = runHome,
+  nowMs = Date.now(),
+): Promise<StatusCache> {
+  if (inFlight && inFlight.generation === generation) return inFlight.promise;
+  const entry = {
+    generation,
+    promise: fetchStatus(store, run, nowMs).finally(() => {
+      if (inFlight === entry) inFlight = null;
+    }),
+  };
+  inFlight = entry;
+  return entry.promise;
 }
 
 // `true` = Nami stays home, `false` = Nami comes along.
@@ -138,6 +168,7 @@ export const namiPresence = async (
   run: RunHome = runHome,
 ): Promise<void> => {
   await run(["set", NAMI_SWITCH, "power", String(home)]);
+  generation += 1;
 };
 
 // The menu bar's one loader. Never rejects: a failed status keeps the
@@ -168,7 +199,10 @@ export async function loadMenuBar(
   if (status.status === "fulfilled")
     return {
       status: status.value,
-      scenes: scenes.status === "fulfilled" ? scenes.value : [],
+      scenes:
+        scenes.status === "fulfilled"
+          ? scenes.value
+          : (cachedHome?.scenes ?? []),
       error: null,
     };
   return {

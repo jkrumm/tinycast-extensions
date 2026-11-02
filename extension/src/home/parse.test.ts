@@ -114,7 +114,7 @@ describe("parseStatus", () => {
   it("rejects non-objects and round-trips the cache", () => {
     expect(parseStatus("oops")).toBeNull();
     expect(parseStatus("[]")).toBeNull();
-    const cache = { status: parseStatus(raw)!, fetchedAt: 9 };
+    const cache = { status: parseStatus(raw)!, fetchedAt: 9, climateAt: 4 };
     expect(parseStatusCache(serializeStatusCache(cache))).toEqual(cache);
     expect(parseStatusCache('{"status":{}}')).toBeNull();
   });

@@ -125,7 +125,13 @@ export function parseStatusCache(raw: string): StatusCache | null {
   const value = parseJson(raw);
   if (!isObject(value) || typeof value.fetchedAt !== "number") return null;
   const status = toStatus(value.status);
-  return status ? { status, fetchedAt: value.fetchedAt } : null;
+  return status
+    ? {
+        status,
+        fetchedAt: value.fetchedAt,
+        climateAt: num(value.climateAt) ?? value.fetchedAt,
+      }
+    : null;
 }
 
 export const serializeStatusCache = (cache: StatusCache): string =>

@@ -32,6 +32,7 @@ const statusCache: StatusCache = {
     someoneHome: true,
   },
   fetchedAt: Date.now(),
+  climateAt: Date.now(),
 };
 
 const refreshMock = vi.fn<() => Promise<HomeCache>>();

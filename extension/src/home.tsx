@@ -95,16 +95,20 @@ function useHome() {
   return { cache, isLoading, error, refresh };
 }
 
-// Same stale-while-revalidate for the climate/Nami reading; a failure keeps
-// the last known value and only the scenes toast reports it.
+// Same stale-while-revalidate for the climate/Nami reading; a failed refresh
+// keeps the last known value on screen and raises its own failure toast.
 function useStatus() {
   const [status, setStatus] = useState<StatusCache | null>(null);
 
   const refresh = useCallback(async () => {
     try {
       setStatus(await refreshStatus());
-    } catch {
-      // keep last known
+    } catch (e) {
+      await showToast({
+        style: Toast.Style.Failure,
+        title: "Could not refresh Home status",
+        message: friendlyError(messageOf(e)),
+      });
     }
   }, []);
 
@@ -222,7 +226,7 @@ export default function Home() {
                 ...(climate.batteryPct !== null
                   ? [{ tag: `Battery ${Math.round(climate.batteryPct)}%` }]
                   : []),
-                { text: formatAge(statusCache.fetchedAt) },
+                { text: formatAge(statusCache.climateAt) },
               ]}
               actions={
                 <ActionPanel>

@@ -49,4 +49,14 @@ describe("runNamiPresence", () => {
     });
     expect(hud.mock.calls[0][0]).toMatch(/^Could not update Nami: /);
   });
+
+  it("does not blame the command when only the HUD fails", async () => {
+    const hud = vi.fn<Hud>(async () => {
+      throw new Error("hud broke");
+    });
+    await expect(runNamiPresence(true, hud, async () => "")).rejects.toThrow(
+      "hud broke",
+    );
+    expect(hud).toHaveBeenCalledTimes(1);
+  });
 });

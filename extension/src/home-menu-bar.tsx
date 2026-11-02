@@ -59,7 +59,7 @@ export default function HomeMenuBar() {
         )}
         {data?.status && (
           <MenuBarExtra.Item
-            title={`Updated ${formatAge(data.status.fetchedAt)}`}
+            title={`Updated ${formatAge(data.status.climateAt)}`}
           />
         )}
         {data?.error && lines.length > 0 && (

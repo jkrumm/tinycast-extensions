@@ -50,6 +50,9 @@ export interface HomeStatus {
 export interface StatusCache {
   status: HomeStatus;
   fetchedAt: number;
+  // When the climate numbers were actually read; older than `fetchedAt` while
+  // the sensor is unreachable and last-known values are shown.
+  climateAt: number;
 }
 
 // Everything the menu-bar command renders.

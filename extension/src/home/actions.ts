@@ -18,10 +18,11 @@ async function report(
 ): Promise<void> {
   try {
     await task();
-    await hud(success);
   } catch (error) {
     await hud(`${failure}: ${friendlyError(messageOf(error))}`);
+    return;
   }
+  await hud(success);
 }
 
 // `target` is what the CLI is given (name or id); `name` is what the HUD says.

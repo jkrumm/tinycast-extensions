@@ -110,7 +110,7 @@ describe("refreshStatus + namiPresence", () => {
     expect(store.write).toHaveBeenCalledWith(got);
   });
 
-  it("fills holes from the cached reading", async () => {
+  it("fills climate holes from an unreachable sensor with its old timestamp, never the switches", async () => {
     const store = memoryStatusStore({
       status: {
         climate: {
@@ -120,10 +120,11 @@ describe("refreshStatus + namiPresence", () => {
           humidityPct: 50,
           batteryPct: 90,
         },
-        namiHome: false,
+        namiHome: true,
         someoneHome: true,
       },
       fetchedAt: 1,
+      climateAt: 1,
     });
     const got = await refreshStatus(
       store,
@@ -138,7 +139,30 @@ describe("refreshStatus + namiPresence", () => {
       temperatureC: 20,
       humidityPct: 50,
     });
-    expect(got.status.namiHome).toBe(false);
+    expect(got.fetchedAt).toBe(2);
+    expect(got.climateAt).toBe(1);
+    expect(got.status.namiHome).toBeNull();
+    expect(got.status.someoneHome).toBeNull();
+  });
+
+  it("shares one in-flight request, but not across a switch write", async () => {
+    const store = memoryStatusStore(null);
+    const run = vi.fn(route({ status: statusOut }));
+    const [a, b] = await Promise.all([
+      refreshStatus(store, run, 1),
+      refreshStatus(store, run, 2),
+    ]);
+    expect(a).toBe(b);
+    expect(run).toHaveBeenCalledTimes(1);
+
+    const slow = refreshStatus(store, run, 3);
+    await namiPresence(
+      false,
+      vi.fn(async () => ""),
+    );
+    const after = refreshStatus(store, run, 4);
+    expect(after).not.toBe(slow);
+    await Promise.all([slow, after]);
   });
 
   it("rejects, writing nothing, on failure or unreadable output", async () => {
@@ -200,6 +224,7 @@ describe("loadMenuBar", () => {
     const cached: StatusCache = {
       status: { climate: null, namiHome: true, someoneHome: true },
       fetchedAt: 1,
+      climateAt: 1,
     };
     const got = await loadMenuBar(
       memoryStatusStore(cached),
@@ -210,5 +235,17 @@ describe("loadMenuBar", () => {
     expect(got.status).toBe(cached);
     expect(got.scenes).toBe(scenes);
     expect(got.error).toMatch(/mini online/);
+  });
+
+  it("keeps cached scenes when only the scenes call fails", async () => {
+    const stale: HomeCache = { scenes, doctor: null, fetchedAt: 0 };
+    const got = await loadMenuBar(
+      memoryStatusStore(null),
+      memoryStore(stale),
+      route({ status: statusOut, scenes: new Error("ssh") }),
+      7 * 60 * 60_000,
+    );
+    expect(got.error).toBeNull();
+    expect(got.scenes).toBe(scenes);
   });
 });

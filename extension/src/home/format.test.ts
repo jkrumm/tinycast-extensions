@@ -6,7 +6,7 @@ import {
   friendlyError,
   humidityHint,
   menuBarTitle,
-  mergeStatus,
+  mergeClimate,
   namiTitle,
   namiToggleTarget,
   namiToggleTitle,
@@ -133,27 +133,27 @@ describe("status text", () => {
     expect(someoneHomeTitle(null)).toBe("Someone home: unknown");
   });
 
-  it("keeps last-known values for holes in a fresh reading", () => {
-    const hole: HomeStatus = {
-      climate: {
-        sensor: "Eve Room CF8D",
-        reachable: false,
-        temperatureC: null,
-        humidityPct: null,
-        batteryPct: null,
-      },
-      namiHome: null,
-      someoneHome: false,
-    };
-    const merged = mergeStatus(hole, status);
-    expect(merged.climate).toMatchObject({
+  it("back-fills climate only for an unreachable sensor", () => {
+    const hole: Climate = {
+      sensor: "Eve Room CF8D",
       reachable: false,
-      temperatureC: 21.94,
-      humidityPct: 42.4,
+      temperatureC: null,
+      humidityPct: null,
+      batteryPct: null,
+    };
+    expect(mergeClimate(hole, climate)).toEqual({
+      climate: { ...climate, reachable: false },
+      lastKnown: true,
     });
-    expect(merged.namiHome).toBe(true);
-    expect(merged.someoneHome).toBe(false);
-    expect(mergeStatus(hole, null)).toBe(hole);
+    expect(mergeClimate(climate, climate).lastKnown).toBe(false);
+    expect(mergeClimate({ ...hole, reachable: true }, climate)).toEqual({
+      climate: { ...hole, reachable: true },
+      lastKnown: false,
+    });
+    expect(mergeClimate(hole, null)).toEqual({
+      climate: hole,
+      lastKnown: false,
+    });
   });
 
   it("shows climate and Nami on the tile unless something needs attention", () => {
