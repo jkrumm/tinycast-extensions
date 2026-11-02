@@ -252,6 +252,20 @@ describe("refreshStatus + namiPresence", () => {
     expect(store.write).not.toHaveBeenCalled();
   });
 
+  it("treats an unsettled marker as settled after twice the timeout", async () => {
+    const bound = 40_000;
+    const stale = memoryStatusStore(null, { startedAt: 100, settledAt: null });
+    expect(
+      await refreshStatus(stale, async () => out(true), 100 + bound),
+    ).toBeNull();
+    const applied = await refreshStatus(
+      stale,
+      async () => out(true),
+      100 + bound + 1,
+    );
+    expect(applied?.status.namiHome).toBe(true);
+  });
+
   it("applies a read that starts after the last write settled", async () => {
     const store = memoryStatusStore(null, { startedAt: 70, settledAt: 71 });
     const got = await refreshStatus(store, async () => out(true), 72);

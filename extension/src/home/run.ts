@@ -146,7 +146,10 @@ export const localStorageStatus: StatusStore = {
 // marker in LocalStorage (other runtimes). A read is valid only if no write
 // was running or started during it: no marker, or one that started and
 // settled strictly before the read began. Invalid reads are discarded: never
-// written, the stored cache is returned instead.
+// written, the stored cache is returned instead. Known limit: overlapping
+// writes from two different runtimes within one timeout window can let a read
+// cache the pre-write state until the next refresh (display only; the switch
+// itself is correct).
 let pendingWrites = 0;
 let writesStarted = 0;
 
@@ -154,11 +157,10 @@ async function readIsValid(store: StatusStore, readStart: number) {
   if (pendingWrites > 0) return false;
   const marker = await store.readMarker().catch(() => null);
   if (!marker) return true;
-  return (
-    marker.settledAt !== null &&
-    marker.startedAt < readStart &&
-    marker.settledAt < readStart
-  );
+  // A write killed mid-flight (Tinycast ends a closed view's JS) never
+  // settles; past twice the spawn timeout it counts as settled.
+  const settledAt = marker.settledAt ?? marker.startedAt + 2 * TIMEOUT_MS;
+  return marker.startedAt < readStart && settledAt < readStart;
 }
 
 // One ssh round trip. A sensor that is unreachable keeps its last-known

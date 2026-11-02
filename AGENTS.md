@@ -92,6 +92,10 @@ extension/
                            (pure: attention rows, friendly errors, tile status, status title/hints/Nami
                            wording, `mergeClimate` last-known climate fill (switches never back-filled)), actions (no-view core: run + one HUD
                            line, injected `RunHome` + HUD), scene-command (binds actions to showHUD), types
+                           Nami writes are coordinated across runtimes by a `home-nami-write` LocalStorage marker
+                           (reads overlapping a write are discarded; a never-settled marker expires after 2 × the
+                           spawn timeout); known limit: overlapping writes from two runtimes within one timeout
+                           window can cache pre-write state until the next refresh (display only)
     apple-llm/            feature code: run (spawns the helper, the only impure bit), parse (pure)
     lib/                  shared: argo.ts (fetch client), secrets.ts (Keychain/1Password chain),
                            action-log.ts (persistent log file), svg.ts + chart/ (hero/chart library, see svg-charts skill), preferences.ts (Preferences type),
