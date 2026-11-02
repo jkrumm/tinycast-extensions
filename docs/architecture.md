@@ -22,6 +22,7 @@ usage) and the secrets chain (TickTick, Netgear, Victron) where useful.
 | `shortcuts` | view (List) | `src/shortcuts.tsx` | `shortcuts/{load,parse,format,fixtures}.ts` | `/usr/bin/defaults export com.tinycast.app.beta -` (hotkeys, `launcherAliases`, `favoriteApps`, Hyper Key settings) + `defaults read com.apple.HIToolbox` (keyboard layout) + an Info.plist scan of the app folders (bundle id → app name + path) + the installed `package.json` command titles and icons |
 | `home` | view (List) | `src/home.tsx` | `home/{run,parse,format,types}.ts` | `~/.local/bin/home scenes\|status\|trigger\|set\|doctor --json` (ssh to the mini → HomeClaw) + `LocalStorage` `home-cache`, `home-status` |
 | `home-menu-bar` | menu-bar, `interval: 5m` | `src/home-menu-bar.tsx` | `home/{run,actions,format,parse,types}.ts` | same `home` CLI + the two caches |
+| `home-climate` | view (Detail) | `src/home-climate.tsx` | `home/{run,climate}.ts`, `lib/svg.ts` | `~/.local/bin/home climate 48 --json` |
 | `scene-*`, `nami-comes-along`, `nami-stays-home` | no-view (11) | `src/scene-<name>.tsx`, `src/nami-*.tsx` | `home/{scene-command,actions,run}.ts` | `home trigger <name>` / `home set "Nami zu Hause" power <bool>` |
 | `hub` | view | `src/hub.tsx` | reads every feature module above, one tile each | all of the above, loaded independently per tile |
 

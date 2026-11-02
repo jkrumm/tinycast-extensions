@@ -6,6 +6,7 @@ import { LocalStorage } from "@raycast/api";
 import { execFile } from "child_process";
 import { homedir } from "os";
 import { PATH } from "../usage/local";
+import { ClimatePoint, parseClimate } from "./climate";
 import { friendlyError, mergeClimate } from "./format";
 import {
   parseCache,
@@ -217,6 +218,15 @@ export function refreshStatus(
   return entry.promise;
 }
 
+export async function fetchClimate(
+  run: RunHome = runHome,
+  hours = 48,
+): Promise<ClimatePoint[]> {
+  const points = parseClimate(await run(["climate", String(hours), "--json"]));
+  if (!points) throw new Error("home climate returned unreadable output");
+  return points;
+}
+
 // `true` = Nami stays home, `false` = Nami comes along. On success the cache
 // holds the written value immediately and is returned; on failure the cache
 // is untouched and the error propagates. Either way in-flight reads are void.
@@ -268,10 +278,12 @@ export async function loadMenuBar(
     cachedHome && nowMs - cachedHome.fetchedAt <= SCENES_MAX_AGE_MS
       ? cachedHome.scenes
       : null;
-  const [status, scenes] = await Promise.allSettled([
+  const [status, scenes, climate] = await Promise.allSettled([
     refreshStatus(statusStore, run, nowMs),
     freshScenes ? Promise.resolve(freshScenes) : fetchScenes(run),
+    fetchClimate(run, 24),
   ]);
+  const climatePoints = climate.status === "fulfilled" ? climate.value : null;
   if (scenes.status === "fulfilled" && !freshScenes)
     await homeStore
       .write({
@@ -287,9 +299,11 @@ export async function loadMenuBar(
         scenes.status === "fulfilled"
           ? scenes.value
           : (cachedHome?.scenes ?? []),
+      climate: climatePoints,
       error: null,
     };
   return {
+    climate: climatePoints,
     status: await statusStore.read().catch(() => null),
     scenes:
       scenes.status === "fulfilled" ? scenes.value : (cachedHome?.scenes ?? []),

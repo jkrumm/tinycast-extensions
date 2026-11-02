@@ -18,6 +18,7 @@ import {
   someoneHomeTitle,
 } from "./home/format";
 import { loadMenuBar } from "./home/run";
+import { menuClimateLine } from "./home/climate";
 
 export default function HomeMenuBar() {
   const { data, isLoading, revalidate } = useCachedPromise(
@@ -28,6 +29,7 @@ export default function HomeMenuBar() {
   const status = data?.status?.status ?? null;
   const climate = status?.climate ?? null;
   const lines = climateLines(climate);
+  const climateLine = menuClimateLine(data?.climate ?? null, Date.now());
   const namiHome = status?.namiHome ?? null;
   const target = namiToggleTarget(namiHome);
 
@@ -57,6 +59,7 @@ export default function HomeMenuBar() {
             title="Sensor unreachable — showing last known"
           />
         )}
+        {climateLine && <MenuBarExtra.Item title={climateLine} />}
         {data?.status && (
           <MenuBarExtra.Item
             title={`Updated ${formatAge(data.status.climateAt)}`}
@@ -102,6 +105,16 @@ export default function HomeMenuBar() {
           icon={Icon.Sidebar}
           onAction={() =>
             launchCommand({ name: "home", type: LaunchType.UserInitiated })
+          }
+        />
+        <MenuBarExtra.Item
+          title="Climate History…"
+          icon={Icon.LineChart}
+          onAction={() =>
+            launchCommand({
+              name: "home-climate",
+              type: LaunchType.UserInitiated,
+            })
           }
         />
         <MenuBarExtra.Item

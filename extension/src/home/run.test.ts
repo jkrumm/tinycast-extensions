@@ -3,6 +3,7 @@ import {
   HomeStore,
   NamiWriteMarker,
   StatusStore,
+  fetchClimate,
   fetchDoctor,
   loadMenuBar,
   namiPresence,
@@ -357,7 +358,9 @@ describe("loadMenuBar", () => {
       run,
       2000,
     );
-    expect(run).toHaveBeenCalledTimes(1);
+    expect(run).toHaveBeenCalledTimes(2);
+    expect(run).toHaveBeenCalledWith(["climate", "24", "--json"]);
+    expect(got.climate).toBeNull();
     expect(got.error).toBeNull();
     expect(got.scenes).toBe(scenes);
     expect(got.status?.status.namiHome).toBe(true);
@@ -402,5 +405,39 @@ describe("loadMenuBar", () => {
     );
     expect(got.error).toBeNull();
     expect(got.scenes).toBe(scenes);
+  });
+});
+
+describe("climate history", () => {
+  const climateOut =
+    '[{"at":"2026-11-02T21:41:44.265Z","in_t":22.2,"in_h":42,"out_t":4.3,"out_h":81}]';
+
+  it("fetchClimate asks for the hours and parses", async () => {
+    const run = vi.fn(route({ climate: climateOut }));
+    const points = await fetchClimate(run, 48);
+    expect(run).toHaveBeenCalledWith(["climate", "48", "--json"]);
+    expect(points).toHaveLength(1);
+    await expect(fetchClimate(route({ climate: "oops" }))).rejects.toThrow(
+      /unreadable/,
+    );
+  });
+
+  it("loadMenuBar carries the history, and omits it on failure", async () => {
+    const home: HomeCache = { scenes: [], doctor: null, fetchedAt: 1000 };
+    const ok = await loadMenuBar(
+      memoryStatusStore(null),
+      memoryStore(home),
+      route({ status: statusOut, climate: climateOut }),
+      2000,
+    );
+    expect(ok.climate).toHaveLength(1);
+    const failed = await loadMenuBar(
+      memoryStatusStore(null),
+      memoryStore(home),
+      route({ status: statusOut, climate: new Error("ssh") }),
+      2000,
+    );
+    expect(failed.climate).toBeNull();
+    expect(failed.error).toBeNull();
   });
 });

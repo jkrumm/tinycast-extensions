@@ -23,7 +23,7 @@ there.
 
 ```
 extension/
-  package.json          ← manifest: name "jkrumm", 24 commands, 9 preferences
+  package.json          ← manifest: name "jkrumm", 25 commands, 9 preferences
   src/
     my-tasks.tsx         command — TickTick task list
     quick-add.tsx        command — TickTick quick add
@@ -37,6 +37,7 @@ extension/
     shortcuts.tsx           command — List of every global hotkey, launcher alias and favorite (Enter launches it), read live from Tinycast's defaults
     home.tsx                command — Apple Home: Status (climate, Nami toggle, someone home) + scenes (type a name, Enter triggers) + Needs attention (unreachable, low battery), LocalStorage stale-while-revalidate
     home-menu-bar.tsx       command — Home menu bar (5m): `21.9° 42%` title, climate + hints, Nami toggle, scenes, Open Home; beta only
+    home-climate.tsx        command — Home Climate History Detail: 48 h inside vs outside temperature + humidity line charts, 24 h summary (`home climate 48 --json`); pushed from the Home list (⇧⌘Y) and launched from the menu bar
     scene-<name>.tsx        9 no-view commands (arbeit, aus, bett-dunkel, bett-hell, chill, gute-nacht, guten-morgen, hell, tv) — one-liners over `home/scene-command.ts`, so the launcher runs a scene by its name
     nami-comes-along.tsx, nami-stays-home.tsx  no-view commands — set the "Nami zu Hause" switch false / true
     hub.tsx                 command — Grid dashboard, one tile per command
@@ -88,7 +89,7 @@ extension/
                            notify (osascript notification), types, fixtures
     home/                 feature code: run (spawns `~/.local/bin/home`, which ssh-es to the mini; LocalStorage
                            `home-cache` + `home-status`, the only impure bit; `loadMenuBar` is the menu bar's never-rejecting
-                           loader), parse (pure: scenes/doctor/status JSON, caches), format
+                           loader), parse (pure: scenes/doctor/status JSON, caches), climate (pure: `home climate` history -> points, menu line, summary, Detail markdown with lib/svg line charts), format
                            (pure: attention rows, friendly errors, tile status, status title/hints/Nami
                            wording, `mergeClimate` last-known climate fill (switches never back-filled)), actions (no-view core: run + one HUD
                            line, injected `RunHome` + HUD), scene-command (binds actions to showHUD), types

@@ -1,3 +1,5 @@
+import { ClimatePoint } from "./climate";
+
 export interface Scene {
   id: string;
   name: string;
@@ -59,5 +61,6 @@ export interface StatusCache {
 export interface MenuBarData {
   status: StatusCache | null;
   scenes: Scene[];
+  climate: ClimatePoint[] | null; // null: unavailable, line omitted
   error: string | null;
 }

@@ -98,6 +98,20 @@
       "icon": "home.png"
     },
     {
+      "name": "home-climate",
+      "title": "Home Climate History",
+      "subtitle": "Home",
+      "description": "Inside vs outside temperature and humidity over the last 48 hours",
+      "mode": "view",
+      "keywords": [
+        "home",
+        "climate",
+        "temperature",
+        "humidity"
+      ],
+      "icon": "home.png"
+    },
+    {
       "name": "scene-arbeit",
       "title": "Arbeit",
       "subtitle": "Home Scene",

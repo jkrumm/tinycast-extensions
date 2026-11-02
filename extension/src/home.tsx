@@ -10,6 +10,7 @@ import {
 } from "@raycast/api";
 import { useCallback, useEffect, useState } from "react";
 import { formatAge } from "./lib/freshness";
+import HomeClimate from "./home-climate";
 import {
   AttentionRow,
   attentionRows,
@@ -251,6 +252,12 @@ export default function Home() {
                         ? formatTemperature(climate.temperatureC)
                         : ""
                     }
+                  />
+                  <Action.Push
+                    title="Show Climate History"
+                    icon={Icon.LineChart}
+                    shortcut={{ modifiers: ["cmd", "shift"], key: "y" }}
+                    target={<HomeClimate />}
                   />
                   <RefreshAction onRefresh={refreshAll} />
                 </ActionPanel>
