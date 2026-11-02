@@ -102,7 +102,11 @@ function useStatus() {
 
   const refresh = useCallback(async () => {
     try {
-      setStatus(await refreshStatus());
+      const next = await refreshStatus();
+      // Ignore a result older than the one already on screen.
+      setStatus((current) =>
+        current && current.fetchedAt > next.fetchedAt ? current : next,
+      );
     } catch (e) {
       await showToast({
         style: Toast.Style.Failure,

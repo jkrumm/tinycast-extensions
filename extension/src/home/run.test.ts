@@ -165,6 +165,55 @@ describe("refreshStatus + namiPresence", () => {
     await Promise.all([slow, after]);
   });
 
+  it("keeps the newer read when an older one lands last", async () => {
+    const store = memoryStatusStore(null);
+    const out = (nami: boolean) =>
+      `{"climate":null,"nami_home":${nami},"someone_home":true}`;
+    let releaseA!: (v: string) => void;
+    const slowA = new Promise<string>((r) => {
+      releaseA = r;
+    });
+    const a = refreshStatus(store, () => slowA, 10);
+    await namiPresence(false, async () => "");
+    const b = await refreshStatus(store, async () => out(false), 11);
+    releaseA(out(true));
+    const aResult = await a;
+    expect(b.status.namiHome).toBe(false);
+    expect(aResult.status.namiHome).toBe(false);
+    expect((await store.read())?.status.namiHome).toBe(false);
+  });
+
+  it("does not reuse or write a read started during an in-flight set", async () => {
+    const store = memoryStatusStore(null);
+    let finishSet!: () => void;
+    const setDone = new Promise<string>((r) => {
+      finishSet = () => r("");
+    });
+    const setting = namiPresence(true, () => setDone);
+    const during = refreshStatus(store, async () => statusOut, 20);
+    finishSet();
+    await setting;
+    const run = vi.fn(route({ status: statusOut }));
+    const after = refreshStatus(store, run, 21);
+    expect(after).not.toBe(during);
+    expect(run).toHaveBeenCalledTimes(1);
+    await Promise.all([during, after]);
+    expect((await store.read())?.fetchedAt).toBe(21);
+  });
+
+  it("invalidates in-flight reads even when the set fails", async () => {
+    const store = memoryStatusStore(null);
+    const before = refreshStatus(store, async () => statusOut, 30);
+    await expect(
+      namiPresence(true, async () => {
+        throw new Error("timed out");
+      }),
+    ).rejects.toThrow("timed out");
+    const after = refreshStatus(store, async () => statusOut, 31);
+    expect(after).not.toBe(before);
+    await Promise.all([before, after]);
+  });
+
   it("rejects, writing nothing, on failure or unreadable output", async () => {
     const store = memoryStatusStore(null);
     await expect(
