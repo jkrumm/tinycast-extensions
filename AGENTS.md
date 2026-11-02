@@ -23,7 +23,7 @@ there.
 
 ```
 extension/
-  package.json          ← manifest: name "jkrumm", 12 commands, 9 preferences
+  package.json          ← manifest: name "jkrumm", 24 commands, 9 preferences
   src/
     my-tasks.tsx         command — TickTick task list
     quick-add.tsx        command — TickTick quick add
