@@ -23,7 +23,7 @@ there.
 
 ```
 extension/
-  package.json          ← manifest: name "jkrumm", 13 commands, 9 preferences
+  package.json          ← manifest: name "jkrumm", 12 commands, 9 preferences
   src/
     my-tasks.tsx         command — TickTick task list
     quick-add.tsx        command — TickTick quick add
@@ -35,6 +35,7 @@ extension/
     speed-test.tsx          command — networkQuality speed/latency/data-used + history
     van-power.tsx           command — Van Power: Ective battery + Victron solar over BLE, 72 h charts
     shortcuts.tsx           command — List of every global hotkey, launcher alias and favorite (Enter launches it), read live from Tinycast's defaults
+    home.tsx                command — Apple Home: scenes (type a name, Enter triggers) + Needs attention (unreachable, low battery), LocalStorage stale-while-revalidate
     hub.tsx                 command — Grid dashboard, one tile per command
     ticktick/             feature code: client, types, format, parse, search, create-task
     usage/                feature code: quota (argo + local picker + fs read), local (spawns `claude-account`,
@@ -82,6 +83,9 @@ extension/
                            classification, low-battery alert state machine, subtitle/status words),
                            sampler-runner (one run), sampler-storage (file-backed `sampler.json` + `paused` flag, via `store.ts`),
                            notify (osascript notification), types, fixtures
+    home/                 feature code: run (spawns `~/.local/bin/home`, which ssh-es to the mini; LocalStorage
+                           `home-cache`, the only impure bit), parse (pure: scenes/doctor JSON, cache), format
+                           (pure: attention rows, friendly errors, tile status), types
     apple-llm/            feature code: run (spawns the helper, the only impure bit), parse (pure)
     lib/                  shared: argo.ts (fetch client), secrets.ts (Keychain/1Password chain),
                            action-log.ts (persistent log file), svg.ts + chart/ (hero/chart library, see svg-charts skill), preferences.ts (Preferences type),

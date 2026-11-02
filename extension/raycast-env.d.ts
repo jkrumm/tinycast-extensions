@@ -52,6 +52,8 @@ declare namespace Preferences {
   export type VanPower = ExtensionPreferences & {}
   /** Preferences accessible in the `shortcuts` command */
   export type Shortcuts = ExtensionPreferences & {}
+  /** Preferences accessible in the `home` command */
+  export type Home = ExtensionPreferences & {}
   /** Preferences accessible in the `hub` command */
   export type Hub = ExtensionPreferences & {}
 }
@@ -77,6 +79,8 @@ declare namespace Arguments {
   export type VanPower = {}
   /** Arguments passed to the `shortcuts` command */
   export type Shortcuts = {}
+  /** Arguments passed to the `home` command */
+  export type Home = {}
   /** Arguments passed to the `hub` command */
   export type Hub = {}
 }

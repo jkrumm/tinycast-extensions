@@ -82,6 +82,13 @@
       "icon": "shortcuts.png"
     },
     {
+      "name": "home",
+      "title": "Home",
+      "description": "Trigger Apple Home scenes by name, with unreachable accessories and low batteries",
+      "mode": "view",
+      "icon": "home.png"
+    },
+    {
       "name": "hub",
       "title": "Dashboard",
       "description": "One-glance grid over every command",

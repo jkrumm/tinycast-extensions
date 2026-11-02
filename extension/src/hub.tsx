@@ -26,6 +26,8 @@ import { loadVanHistory } from "./van/storage";
 import { tileStatus } from "./van/format";
 import { hubStatus } from "./shortcuts/format";
 import { loadHotkeyCount } from "./shortcuts/load";
+import { tileStatus as homeTileStatus } from "./home/format";
+import { localStorageHome } from "./home/run";
 import { RAYCAST_COLOR, RaycastColor, tile, toDataUri } from "./lib/svg";
 
 interface TileConfig {
@@ -92,6 +94,13 @@ const TILES: TileConfig[] = [
     glyph: "K",
     name: "Shortcuts",
     color: RAYCAST_COLOR.blue,
+  },
+  {
+    command: "home",
+    icon: "home",
+    glyph: "H",
+    name: "Home",
+    color: RAYCAST_COLOR.orange,
   },
 ];
 
@@ -168,6 +177,14 @@ async function shortcutsStatus(): Promise<TileData> {
   return { status: hubStatus(await loadHotkeyCount()) };
 }
 
+// Last cached reading only — the ssh round trip belongs to the Home command.
+async function homeStatus(): Promise<TileData> {
+  const cache = await localStorageHome.read().catch(() => null);
+  return {
+    status: homeTileStatus(cache?.scenes ?? null, cache?.doctor ?? null),
+  };
+}
+
 const STATUS_LOADERS: Record<string, () => Promise<TileData>> = {
   "my-tasks": tasksStatus,
   "quick-add": async () => ({ status: "" }),
@@ -177,6 +194,7 @@ const STATUS_LOADERS: Record<string, () => Promise<TileData>> = {
   battery: batteryStatus,
   "van-power": vanStatus,
   shortcuts: shortcutsStatus,
+  home: homeStatus,
 };
 
 // The icon SVGs ship in the build's assets/src; drop the outer <svg> so the
