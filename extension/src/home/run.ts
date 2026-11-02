@@ -233,6 +233,7 @@ export async function fetchClimate(
 }
 
 export interface ClimateData {
+  range: ClimateRange; // the range these points were fetched for
   status: StatusCache | null;
   points: ClimatePoint[];
   at: number;
@@ -252,6 +253,7 @@ export async function loadClimate(
     refreshStatus(statusStore, run, nowMs).catch(() => null),
   ]);
   return {
+    range,
     points,
     status: status ?? (await statusStore.read().catch(() => null)),
     at: nowMs,

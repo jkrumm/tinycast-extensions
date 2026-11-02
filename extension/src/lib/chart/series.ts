@@ -386,14 +386,48 @@ function timeChart(
         `<line x1="${n(plotL)}" y1="${y}" x2="${n(plotR)}" y2="${y}" stroke="${refColor}" stroke-opacity="0.75" stroke-width="${THEME.stroke.hairline}" stroke-dasharray="3 4" />`,
       );
       if (ref.label) {
+        // Left above the line unless a series runs through that spot; then the
+        // right end, then below the line, whichever is clear (else the least
+        // crossed).
+        const w = textWidth(ref.label, THEME.font.tick);
+        const crossings = (x0: number, x1: number, above: boolean): number => {
+          const [y0, y1] = above ? [y - 17, y] : [y, y + 17];
+          return layers.reduce((count, l) => {
+            const ax = axisOf(l);
+            return (
+              count +
+              l.points.filter((p) => {
+                if (p.v === null) return false;
+                const px = x(p.t);
+                const py = ax.y(p.v);
+                return px >= x0 && px <= x1 && py > y0 && py < y1;
+              }).length
+            );
+          }, 0);
+        };
+        const candidates = [
+          { right: false, above: true },
+          { right: true, above: true },
+          { right: false, above: false },
+          { right: true, above: false },
+        ]
+          .map((c) => ({
+            ...c,
+            hits: crossings(
+              c.right ? plotR - 4 - w : plotL + 4,
+              c.right ? plotR - 4 : plotL + 4 + w,
+              c.above,
+            ),
+          }))
+          .reduce((best, c) => (c.hits < best.hits ? c : best));
         references.push(
           text({
-            x: plotL + 4,
-            y: y - 4,
+            x: candidates.right ? plotR - 4 : plotL + 4,
+            y: candidates.above ? y - 4 : y + 13,
             content: ref.label,
             size: THEME.font.tick,
             color: THEME.color.muted,
-            anchor: "start",
+            anchor: candidates.right ? "end" : "start",
           }),
         );
       }

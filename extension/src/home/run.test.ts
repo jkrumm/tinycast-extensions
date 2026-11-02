@@ -454,6 +454,7 @@ describe("loadClimate", () => {
     expect(got.points).toHaveLength(1);
     expect(got.status?.status.namiHome).toBe(true);
     expect(got.at).toBe(9);
+    expect(got.range).toBe("7d");
   });
 
   it("keeps the last-known status when the status call fails", async () => {

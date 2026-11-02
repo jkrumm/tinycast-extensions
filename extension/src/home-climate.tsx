@@ -1,4 +1,12 @@
-import { Action, ActionPanel, Detail, Icon, Keyboard } from "@raycast/api";
+import {
+  Action,
+  ActionPanel,
+  Detail,
+  Icon,
+  Keyboard,
+  Toast,
+  showToast,
+} from "@raycast/api";
 import { useCachedPromise } from "@raycast/utils";
 import { useState } from "react";
 import {
@@ -16,17 +24,29 @@ export default function HomeClimate() {
   const { data, isLoading, error, revalidate } = useCachedPromise(
     (r: ClimateRange) => loadClimate(r),
     [range],
-    { keepPreviousData: true, onError: () => {} },
+    {
+      keepPreviousData: true,
+      // The previous range stays on screen with its own label.
+      onError: async (e) => {
+        await showToast({
+          style: Toast.Style.Failure,
+          title: "Could not load the climate history",
+          message: friendlyError(e.message),
+        });
+      },
+    },
   );
   const body = data
     ? climateMarkdown({
         status: data.status,
         points: data.points,
-        range,
+        range: data.range,
         now: data.at,
       })
     : "# Climate history";
-  const warning = error ? `> ⚠️ ${friendlyError(error.message)}\n\n` : "";
+  const warning = error
+    ? `> ⚠️ ${friendlyError(error.message)}${data ? ` — showing the last ${rangeLabel(data.range)}` : ""}\n\n`
+    : "";
   return (
     <Detail
       isLoading={isLoading}
@@ -38,7 +58,9 @@ export default function HomeClimate() {
               <Action
                 key={r}
                 title={`Last ${rangeLabel(r)}`}
-                icon={r === range ? Icon.CheckCircle : Icon.Circle}
+                icon={
+                  r === (data?.range ?? range) ? Icon.CheckCircle : Icon.Circle
+                }
                 shortcut={{ modifiers: ["cmd"], key: String(i + 1) as "1" }}
                 onAction={() => setRange(r)}
               />
