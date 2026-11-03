@@ -23,7 +23,7 @@ there.
 
 ```
 extension/
-  package.json          ← manifest: name "jkrumm", 25 commands, 9 preferences
+  package.json          ← manifest: name "jkrumm", 33 commands, 9 preferences
   src/
     my-tasks.tsx         command — TickTick task list
     quick-add.tsx        command — TickTick quick add
@@ -40,6 +40,8 @@ extension/
     home-climate.tsx        command — Home Climate History Detail: status panel (inside temp + humidity, outside), metrics grid (24 h ranges, absolute humidity, airing helps, Nami, presence), temperature + humidity charts; ranges 24 h / 48 h / 7 d / 30 d (⌘1–4, default 48 h); pushed from the Home list (⇧⌘Y), launched from the menu bar
     scene-<name>.tsx        9 no-view commands (arbeit, aus, bett-dunkel, bett-hell, chill, gute-nacht, guten-morgen, hell, tv) — one-liners over `home/scene-command.ts`, so the launcher runs a scene by its name
     nami-comes-along.tsx, nami-stays-home.tsx  no-view commands — set the "Nami zu Hause" switch false / true
+    spotify.tsx             command — Spotify on Mine Detail (cover, track, volume, output, active device): play/pause, next/previous, volume, Play on Mine / Play on MacBook; LocalStorage stale-while-revalidate
+    spotify-<name>.tsx      7 no-view commands (play-pause, next, previous, louder, quieter, play-on-mine, play-on-macbook) — one-liners over `spotify/command.ts`, HUD shows the resulting track + volume
     hub.tsx                 command — Grid dashboard, one tile per command
     ticktick/             feature code: client, types, format, parse, search, create-task
     usage/                feature code: quota (argo + local picker + fs read), local (spawns `claude-account`,
@@ -97,6 +99,8 @@ extension/
                            (reads overlapping a write are discarded; a never-settled marker expires after 2 × the
                            spawn timeout); known limit: overlapping writes from two runtimes within one timeout
                            window can cache pre-write state until the next refresh (display only)
+    spotify/              feature code: run (`home audio …` through home/run's spawn + osascript for the MacBook's Spotify + LocalStorage `spotify-state`, the impure bit), parse (pure: defensive `home audio` JSON, volume args, HUD line, Detail markdown), actions (no-view core: action → args, run + one HUD line, injected ports), command (binds to showHUD), types.
+                           Play on MacBook = `home audio release`, then `tell application "Spotify" to play`: UNVERIFIED that the desktop app resumes locally; macOS may ask once for Automation permission for Spotify
     apple-llm/            feature code: run (spawns the helper, the only impure bit), parse (pure)
     lib/                  shared: argo.ts (fetch client), secrets.ts (Keychain/1Password chain),
                            action-log.ts (persistent log file), svg.ts + chart/ (hero/chart library, see svg-charts skill), preferences.ts (Preferences type),

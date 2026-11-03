@@ -255,6 +255,117 @@
       "icon": "home.png"
     },
     {
+      "name": "spotify",
+      "title": "Spotify on Mine",
+      "description": "Control Spotify playing on Mine (the Mac mini): cover, track, volume, play/pause, skip, and move playback between Mine and this MacBook",
+      "mode": "view",
+      "keywords": [
+        "spotify",
+        "mine",
+        "music",
+        "musik"
+      ],
+      "icon": "spotify.png"
+    },
+    {
+      "name": "spotify-play-pause",
+      "title": "Spotify Play/Pause",
+      "subtitle": "Spotify",
+      "description": "Play or pause Spotify on Mine",
+      "mode": "no-view",
+      "keywords": [
+        "spotify",
+        "mine",
+        "pause",
+        "play"
+      ],
+      "icon": "spotify.png"
+    },
+    {
+      "name": "spotify-next",
+      "title": "Spotify Next",
+      "subtitle": "Spotify",
+      "description": "Skip to the next track on Mine",
+      "mode": "no-view",
+      "keywords": [
+        "spotify",
+        "mine",
+        "next",
+        "skip"
+      ],
+      "icon": "spotify.png"
+    },
+    {
+      "name": "spotify-previous",
+      "title": "Spotify Previous",
+      "subtitle": "Spotify",
+      "description": "Go to the previous track on Mine",
+      "mode": "no-view",
+      "keywords": [
+        "spotify",
+        "mine",
+        "previous",
+        "back"
+      ],
+      "icon": "spotify.png"
+    },
+    {
+      "name": "spotify-louder",
+      "title": "Spotify Louder",
+      "subtitle": "Spotify",
+      "description": "Raise Mine's volume by 10",
+      "mode": "no-view",
+      "keywords": [
+        "spotify",
+        "mine",
+        "volume",
+        "louder"
+      ],
+      "icon": "spotify.png"
+    },
+    {
+      "name": "spotify-quieter",
+      "title": "Spotify Quieter",
+      "subtitle": "Spotify",
+      "description": "Lower Mine's volume by 10",
+      "mode": "no-view",
+      "keywords": [
+        "spotify",
+        "mine",
+        "volume",
+        "quieter"
+      ],
+      "icon": "spotify.png"
+    },
+    {
+      "name": "spotify-play-on-mine",
+      "title": "Spotify Play on Mine",
+      "subtitle": "Spotify",
+      "description": "Make Mine the active Spotify device and play",
+      "mode": "no-view",
+      "keywords": [
+        "spotify",
+        "mine",
+        "take",
+        "mini"
+      ],
+      "icon": "spotify.png"
+    },
+    {
+      "name": "spotify-play-on-macbook",
+      "title": "Spotify Play on MacBook",
+      "subtitle": "Spotify",
+      "description": "Release Mine and play Spotify on this MacBook",
+      "mode": "no-view",
+      "keywords": [
+        "spotify",
+        "mine",
+        "release",
+        "macbook"
+      ],
+      "icon": "spotify.png"
+    },
+    {
       "name": "hub",
       "title": "Dashboard",
       "description": "One-glance grid over every command",

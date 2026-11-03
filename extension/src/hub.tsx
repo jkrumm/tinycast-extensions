@@ -28,6 +28,8 @@ import { hubStatus } from "./shortcuts/format";
 import { loadHotkeyCount } from "./shortcuts/load";
 import { tileStatus as homeTileStatus } from "./home/format";
 import { localStorageHome, localStorageStatus } from "./home/run";
+import { tileStatus as spotifyTileStatus } from "./spotify/parse";
+import { readCached as readSpotify } from "./spotify/run";
 import { RAYCAST_COLOR, RaycastColor, tile, toDataUri } from "./lib/svg";
 
 interface TileConfig {
@@ -101,6 +103,13 @@ const TILES: TileConfig[] = [
     glyph: "H",
     name: "Home",
     color: RAYCAST_COLOR.orange,
+  },
+  {
+    command: "spotify",
+    icon: "spotify",
+    glyph: "S",
+    name: "Spotify",
+    color: RAYCAST_COLOR.green,
   },
 ];
 
@@ -192,6 +201,11 @@ async function homeStatus(): Promise<TileData> {
   };
 }
 
+// Last cached reading only — the ssh round trip belongs to the Spotify commands.
+async function spotifyStatus(): Promise<TileData> {
+  return { status: spotifyTileStatus(await readSpotify()) };
+}
+
 const STATUS_LOADERS: Record<string, () => Promise<TileData>> = {
   "my-tasks": tasksStatus,
   "quick-add": async () => ({ status: "" }),
@@ -202,6 +216,7 @@ const STATUS_LOADERS: Record<string, () => Promise<TileData>> = {
   "van-power": vanStatus,
   shortcuts: shortcutsStatus,
   home: homeStatus,
+  spotify: spotifyStatus,
 };
 
 // The icon SVGs ship in the build's assets/src; drop the outer <svg> so the

@@ -24,6 +24,8 @@ usage) and the secrets chain (TickTick, Netgear, Victron) where useful.
 | `home-menu-bar` | menu-bar, `interval: 5m` | `src/home-menu-bar.tsx` | `home/{run,actions,format,parse,types}.ts` | same `home` CLI + the two caches |
 | `home-climate` | view (Detail) | `src/home-climate.tsx` | `home/{run,climate,climate-view,heroes}.ts`, `lib/svg.ts` | `~/.local/bin/home climate <hours> --json` + `home status --json` |
 | `scene-*`, `nami-comes-along`, `nami-stays-home` | no-view (11) | `src/scene-<name>.tsx`, `src/nami-*.tsx` | `home/{scene-command,actions,run}.ts` | `home trigger <name>` / `home set "Nami zu Hause" power <bool>` |
+| `spotify` | view (Detail) | `src/spotify.tsx` | `spotify/{run,parse,actions,types}.ts` | `~/.local/bin/home audio [now\|toggle\|next\|prev\|volume\|take\|release]` (ssh to the mini → Spotify Soloist "Mine") + `LocalStorage` `spotify-state`; Play on MacBook adds `osascript` |
+| `spotify-*` | no-view (7) | `src/spotify-<name>.tsx` | `spotify/{command,actions,run}.ts` | same `home audio` calls, HUD with the result |
 | `hub` | view | `src/hub.tsx` | reads every feature module above, one tile each | all of the above, loaded independently per tile |
 
 Shared: `lib/argo.ts` (bearer-authed fetch client, `prefs()`, `useAuthHeaders()`),
