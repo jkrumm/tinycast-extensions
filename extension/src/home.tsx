@@ -15,6 +15,7 @@ import {
   AttentionRow,
   attentionRows,
   climateSummary,
+  deviceStateText,
   formatTemperature,
   friendlyError,
   humidityHint,
@@ -31,9 +32,11 @@ import {
   namiPresence,
   refreshHome,
   refreshStatus,
+  setBrightness,
+  setPower,
   triggerScene,
 } from "./home/run";
-import { HomeCache, Scene, StatusCache } from "./home/types";
+import { Device, HomeCache, Scene, StatusCache } from "./home/types";
 
 const messageOf = (error: unknown): string =>
   error instanceof Error ? error.message : String(error);
@@ -93,7 +96,21 @@ function useHome() {
     };
   }, [refresh]);
 
-  return { cache, isLoading, error, refresh };
+  // Optimistic change to one Lights row (keyed by its first accessory id); the
+  // refresh that follows replaces it with what the lamp reports.
+  const patchDevice = useCallback((id: string, patch: Partial<Device>) => {
+    setCache(
+      (current) =>
+        current && {
+          ...current,
+          devices: current.devices.map((d) =>
+            d.ids[0] === id ? { ...d, ...patch } : d,
+          ),
+        },
+    );
+  }, []);
+
+  return { cache, isLoading, error, refresh, patchDevice };
 }
 
 // Same stale-while-revalidate for the climate/Nami reading; a failed refresh
@@ -195,8 +212,109 @@ function AttentionItem({
   );
 }
 
+const BRIGHTNESS_STEPS = [25, 50, 75, 100];
+
+interface LightCopy {
+  busy: string;
+  done: string;
+}
+
+type LightChange = (
+  device: Device,
+  patch: Partial<Device>,
+  copy: LightCopy,
+  change: () => Promise<void>,
+) => void;
+
+// Runs one write for a Lights row behind a toast; the caller refreshes after.
+async function runLightChange(
+  device: Device,
+  copy: LightCopy,
+  change: () => Promise<void>,
+) {
+  const toast = await showToast({
+    style: Toast.Style.Animated,
+    title: copy.busy,
+  });
+  try {
+    await change();
+    toast.style = Toast.Style.Success;
+    toast.title = copy.done;
+  } catch (error) {
+    toast.style = Toast.Style.Failure;
+    toast.title = `Could not change ${device.name}`;
+    toast.message = friendlyError(messageOf(error));
+  }
+}
+
+function LightItem({
+  device,
+  onChange,
+  onRefresh,
+}: {
+  device: Device;
+  onChange: LightChange;
+  onRefresh: () => void;
+}) {
+  const turnOn = !device.on;
+  return (
+    <List.Item
+      title={device.name}
+      subtitle={device.room}
+      icon={
+        device.on
+          ? { source: Icon.LightBulb, tintColor: Color.Yellow }
+          : Icon.LightBulb
+      }
+      accessories={[{ text: deviceStateText(device) }]}
+      actions={
+        <ActionPanel>
+          <Action
+            title="Toggle Power"
+            icon={Icon.Power}
+            onAction={() =>
+              onChange(
+                device,
+                { on: turnOn },
+                {
+                  busy: `${turnOn ? "Turning on" : "Turning off"} ${device.name}`,
+                  done: `${device.name} is ${turnOn ? "on" : "off"}`,
+                },
+                () => setPower(device.ids, turnOn),
+              )
+            }
+          />
+          {device.dimmable ? (
+            <ActionPanel.Submenu title="Set Brightness" icon={Icon.LightBulb}>
+              {BRIGHTNESS_STEPS.map((pct, i) => (
+                <Action
+                  key={pct}
+                  title={`${pct} %`}
+                  shortcut={{ modifiers: ["cmd"], key: String(i + 1) as "1" }}
+                  onAction={() =>
+                    onChange(
+                      device,
+                      { on: true, brightness: pct },
+                      {
+                        busy: `Setting ${device.name} to ${pct} %`,
+                        done: `${device.name} at ${pct} %`,
+                      },
+                      () => setBrightness(device.ids, pct),
+                    )
+                  }
+                />
+              ))}
+            </ActionPanel.Submenu>
+          ) : null}
+          <RefreshAction onRefresh={onRefresh} />
+        </ActionPanel>
+      }
+    />
+  );
+}
+
 export default function Home() {
-  const { cache, isLoading, error, refresh } = useHome();
+  const { cache, isLoading, error, refresh, patchDevice } = useHome();
   const attention = attentionRows(cache?.doctor ?? null);
   const {
     status: statusCache,
@@ -210,6 +328,10 @@ export default function Home() {
   const refreshAll = () => {
     refresh();
     refreshStatusNow();
+  };
+  const changeLight: LightChange = (device, patch, copy, change) => {
+    patchDevice(device.ids[0], patch);
+    runLightChange(device, copy, change).then(refresh);
   };
 
   return (
@@ -293,6 +415,18 @@ export default function Home() {
               </ActionPanel>
             }
           />
+        </List.Section>
+      ) : null}
+      {cache && cache.devices.length > 0 ? (
+        <List.Section title="Lights">
+          {cache.devices.map((device) => (
+            <LightItem
+              key={device.ids[0]}
+              device={device}
+              onChange={changeLight}
+              onRefresh={refresh}
+            />
+          ))}
         </List.Section>
       ) : null}
       {cache ? (

@@ -16,6 +16,26 @@ const cache: HomeCache = {
     ],
     lowBattery: [{ name: "Treppe", room: "Schlafzimmer", battery: 1 }],
   },
+  devices: [
+    {
+      ids: ["X1"],
+      name: "Christmas",
+      room: "Wohnzimmer",
+      on: false,
+      brightness: null,
+      dimmable: false,
+      reachable: true,
+    },
+    {
+      ids: ["E1", "E2"],
+      name: "Esstisch",
+      room: "Wohnzimmer",
+      on: true,
+      brightness: 70,
+      dimmable: true,
+      reachable: true,
+    },
+  ],
   fetchedAt: 1,
 };
 
@@ -39,6 +59,7 @@ const refreshMock = vi.fn<() => Promise<HomeCache>>();
 const statusMock = vi.fn<() => Promise<StatusCache>>();
 const namiMock = vi.fn<(home: boolean) => Promise<void>>();
 const triggerMock = vi.fn<(id: string) => Promise<void>>();
+const powerMock = vi.fn<(ids: string[], on: boolean) => Promise<void>>();
 vi.mock("../home/run", () => ({
   localStorageHome: { read: () => Promise.resolve(null) },
   localStorageStatus: { read: () => Promise.resolve(null) },
@@ -47,6 +68,8 @@ vi.mock("../home/run", () => ({
   namiPresence: (home: boolean) => namiMock(home),
   refreshHome: () => refreshMock(),
   triggerScene: (id: string) => triggerMock(id),
+  setPower: (ids: string[], on: boolean) => powerMock(ids, on),
+  setBrightness: () => Promise.resolve(),
 }));
 
 import Home from "../home";
@@ -60,9 +83,11 @@ describe("home command", () => {
     namiMock.mockResolvedValue(undefined);
     statusMock.mockResolvedValue(statusCache);
     triggerMock.mockResolvedValue(undefined);
+    powerMock.mockReset();
+    powerMock.mockResolvedValue(undefined);
   });
 
-  it("renders Status, scenes and the Needs attention section", async () => {
+  it("renders Status, Lights, scenes and the Needs attention section", async () => {
     refreshMock.mockResolvedValue(cache);
     const renderer = await renderCommand(<Home />);
     await waitFor(
@@ -74,18 +99,39 @@ describe("home command", () => {
     );
     expect(
       renderer.root.findAllByType(List.Section).map((s) => s.props.title),
-    ).toEqual(["Status", "Scenes", "Needs attention"]);
+    ).toEqual(["Status", "Lights", "Scenes", "Needs attention"]);
     expect(
       renderer.root.findAllByType(List.Item).map((i) => i.props.title),
     ).toEqual([
       "21.9° · 42%",
       "Nami is home",
       "Someone home: yes",
+      "Christmas",
+      "Esstisch",
       "Chill",
       "Aus",
       "Bildschirm",
       "Treppe",
     ]);
+  });
+
+  it("turns a light on from the Lights section", async () => {
+    refreshMock.mockResolvedValue(cache);
+    const renderer = await renderCommand(<Home />);
+    await waitFor(() =>
+      renderer.root
+        .findAllByType(List.Item)
+        .some((i) => i.props.title === "Christmas"),
+    );
+    const christmas = renderer.root
+      .findAllByType(List.Item)
+      .find((i) => i.props.title === "Christmas")!;
+    christmas
+      .findAllByType(Action)
+      .find((a) => a.props.title === "Toggle Power")!
+      .props.onAction();
+    await waitFor(() => powerMock.mock.calls.length > 0);
+    expect(powerMock).toHaveBeenCalledWith(["X1"], true);
   });
 
   it("toggles Nami to the opposite state", async () => {

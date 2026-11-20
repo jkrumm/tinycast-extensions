@@ -26,10 +26,23 @@ export interface Doctor {
   lowBattery: LowBatteryAccessory[];
 }
 
+// One row of the Lights section: a lamp or plug. Bulbs sharing a room and name
+// are one lamp, so a row can hold several accessory ids.
+export interface Device {
+  ids: string[];
+  name: string;
+  room: string;
+  on: boolean;
+  brightness: number | null; // highest member level, 0-100; null when unknown
+  dimmable: boolean;
+  reachable: boolean;
+}
+
 // What the command keeps in LocalStorage between opens.
 export interface HomeCache {
   scenes: Scene[];
   doctor: Doctor | null;
+  devices: Device[];
   fetchedAt: number;
 }
 

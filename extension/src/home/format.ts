@@ -1,6 +1,6 @@
 // Pure display text for the Home command and its dashboard tile.
 
-import { Climate, Doctor, HomeStatus, Scene } from "./types";
+import { Climate, Device, Doctor, HomeStatus, Scene } from "./types";
 
 export type AttentionKind = "unreachable" | "battery";
 
@@ -14,6 +14,15 @@ export interface AttentionRow {
 }
 
 export const sceneSubtitle = (scene: Scene): string => scene.rooms.join(", ");
+
+// ─── Lights ─────────────────────────────────────────────────────────────────
+
+// The accessory text of a Lights row: `On 70 %`, `On`, `Off` or `Unreachable`.
+export function deviceStateText(device: Device): string {
+  if (!device.reachable) return "Unreachable";
+  if (!device.on) return "Off";
+  return device.brightness === null ? "On" : `On ${device.brightness} %`;
+}
 
 const where = (room: string | null, extra: string | null): string =>
   [room, extra].filter(Boolean).join(" · ");

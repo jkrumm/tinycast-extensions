@@ -4,12 +4,15 @@ import {
   NamiWriteMarker,
   StatusStore,
   fetchClimate,
+  fetchDevices,
   fetchDoctor,
   loadClimate,
   loadMenuBar,
   namiPresence,
   refreshHome,
   refreshStatus,
+  setBrightness,
+  setPower,
   triggerScene,
 } from "./run";
 import { HomeCache, StatusCache } from "./types";
@@ -53,7 +56,12 @@ describe("refreshHome", () => {
 
   it("keeps the cached doctor when doctor fails", async () => {
     const doctor = { total: 3, unreachable: [], lowBattery: [] };
-    const store = memoryStore({ scenes: [], doctor, fetchedAt: 1 });
+    const store = memoryStore({
+      scenes: [],
+      doctor,
+      devices: [],
+      fetchedAt: 1,
+    });
     const got = await refreshHome(
       store,
       route({ scenes: scenesOut, doctor: new Error("ssh") }),
@@ -349,7 +357,12 @@ describe("refreshStatus + namiPresence", () => {
 
 describe("loadMenuBar", () => {
   const scenes = [{ id: "A1", name: "Chill", rooms: [], actionCount: 2 }];
-  const freshHome: HomeCache = { scenes, doctor: null, fetchedAt: 1000 };
+  const freshHome: HomeCache = {
+    scenes,
+    doctor: null,
+    devices: [],
+    fetchedAt: 1000,
+  };
 
   it("uses fresh cached scenes and fetches only status", async () => {
     const run = vi.fn(route({ status: statusOut }));
@@ -397,7 +410,12 @@ describe("loadMenuBar", () => {
   });
 
   it("keeps cached scenes when only the scenes call fails", async () => {
-    const stale: HomeCache = { scenes, doctor: null, fetchedAt: 0 };
+    const stale: HomeCache = {
+      scenes,
+      doctor: null,
+      devices: [],
+      fetchedAt: 0,
+    };
     const got = await loadMenuBar(
       memoryStatusStore(null),
       memoryStore(stale),
@@ -424,7 +442,12 @@ describe("climate history", () => {
   });
 
   it("loadMenuBar carries the history, and omits it on failure", async () => {
-    const home: HomeCache = { scenes: [], doctor: null, fetchedAt: 1000 };
+    const home: HomeCache = {
+      scenes: [],
+      doctor: null,
+      devices: [],
+      fetchedAt: 1000,
+    };
     const ok = await loadMenuBar(
       memoryStatusStore(null),
       memoryStore(home),
@@ -480,5 +503,67 @@ describe("loadClimate", () => {
         route({ status: statusOut, climate: new Error("ssh") }),
       ),
     ).rejects.toThrow("ssh");
+  });
+});
+
+describe("Lights", () => {
+  it("fetchDevices reads device-map as JSON", async () => {
+    const run = vi.fn(async () => '{"homes":[]}');
+    await expect(fetchDevices(run)).resolves.toEqual([]);
+    expect(run).toHaveBeenCalledWith(["device-map", "--json"]);
+  });
+
+  it("fetchDevices rejects on unreadable output", async () => {
+    await expect(fetchDevices(route({ "device-map": "oops" }))).rejects.toThrow(
+      /unreadable/,
+    );
+  });
+
+  it("refreshHome keeps the cached devices when device-map fails", async () => {
+    const devices = [
+      {
+        ids: ["x"],
+        name: "Christmas",
+        room: "Wohnzimmer",
+        on: false,
+        brightness: null,
+        dimmable: false,
+        reachable: true,
+      },
+    ];
+    const store = memoryStore({
+      scenes: [],
+      doctor: null,
+      devices,
+      fetchedAt: 1,
+    });
+    const got = await refreshHome(
+      store,
+      route({
+        scenes: scenesOut,
+        doctor: doctorOut,
+        "device-map": new Error("ssh"),
+      }),
+      2,
+    );
+    expect(got.devices).toBe(devices);
+  });
+
+  it("setPower sends one set per accessory of the lamp", async () => {
+    const run = vi.fn(async () => "");
+    await setPower(["e1", "e2"], false, run);
+    expect(run.mock.calls).toEqual([
+      [["set", "e1", "power", "false"]],
+      [["set", "e2", "power", "false"]],
+    ]);
+  });
+
+  it("setBrightness switches power on, then sets the level", async () => {
+    const run = vi.fn(async () => "");
+    await setBrightness(["e1"], 50, run);
+    expect(run.mock.calls).toEqual([
+      [["set", "e1", "power", "true"]],
+      [["set", "e1", "brightness", "50"]],
+    ]);
   });
 });

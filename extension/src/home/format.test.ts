@@ -3,6 +3,7 @@ import {
   attentionRows,
   climateLines,
   climateSummary,
+  deviceStateText,
   friendlyError,
   humidityHint,
   menuBarTitle,
@@ -162,5 +163,31 @@ describe("status text", () => {
       "21.9° · Nami out",
     );
     expect(tileStatus([], doctor, status)).toBe("3 need attention");
+  });
+});
+
+describe("deviceStateText", () => {
+  const lamp = {
+    ids: ["e1", "e2"],
+    name: "Esstisch",
+    room: "Wohnzimmer",
+    on: true,
+    brightness: 70,
+    dimmable: true,
+    reachable: true,
+  };
+  it("shows the level of a lit lamp", () => {
+    expect(deviceStateText(lamp)).toBe("On 70 %");
+  });
+  it("says On for a lit lamp without a level", () => {
+    expect(deviceStateText({ ...lamp, brightness: null })).toBe("On");
+  });
+  it("says Off for a lamp that is off", () => {
+    expect(deviceStateText({ ...lamp, on: false })).toBe("Off");
+  });
+  it("says Unreachable before anything else", () => {
+    expect(deviceStateText({ ...lamp, on: false, reachable: false })).toBe(
+      "Unreachable",
+    );
   });
 });

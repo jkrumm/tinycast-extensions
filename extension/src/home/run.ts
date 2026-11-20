@@ -15,6 +15,7 @@ import {
 import { friendlyError, mergeClimate } from "./format";
 import {
   parseCache,
+  parseDevices,
   parseDoctor,
   parseScenes,
   parseStatus,
@@ -22,7 +23,14 @@ import {
   serializeCache,
   serializeStatusCache,
 } from "./parse";
-import { Doctor, HomeCache, MenuBarData, Scene, StatusCache } from "./types";
+import {
+  Device,
+  Doctor,
+  HomeCache,
+  MenuBarData,
+  Scene,
+  StatusCache,
+} from "./types";
 
 const BIN = `${homedir()}/.local/bin/home`;
 const TIMEOUT_MS = 20_000;
@@ -75,21 +83,29 @@ export async function fetchScenes(run: RunHome = runHome): Promise<Scene[]> {
 export const fetchDoctor = (run: RunHome = runHome): Promise<Doctor | null> =>
   run(["doctor", "--json"]).then(parseDoctor, () => null);
 
-// Scenes and doctor in parallel. Scenes failing rejects (the caller keeps its
-// stale list); doctor failing keeps the cached doctor.
+export async function fetchDevices(run: RunHome = runHome): Promise<Device[]> {
+  const devices = parseDevices(await run(["device-map", "--json"]));
+  if (!devices) throw new Error("home device-map returned unreadable output");
+  return devices;
+}
+
+// Scenes, doctor and devices in parallel. Scenes failing rejects (the caller
+// keeps its stale list); doctor and devices failing keep the cached copy.
 export async function refreshHome(
   store: HomeStore = localStorageHome,
   run: RunHome = runHome,
   nowMs = Date.now(),
 ): Promise<HomeCache> {
-  const [scenes, doctor, cached] = await Promise.all([
+  const [scenes, doctor, devices, cached] = await Promise.all([
     fetchScenes(run),
     fetchDoctor(run),
+    fetchDevices(run).catch(() => null),
     store.read().catch(() => null),
   ]);
   const fresh = {
     scenes,
     doctor: doctor ?? cached?.doctor ?? null,
+    devices: devices ?? cached?.devices ?? [],
     fetchedAt: nowMs,
   };
   await store.write(fresh).catch(() => undefined);
@@ -102,6 +118,27 @@ export const triggerScene = async (
 ): Promise<void> => {
   await run(["trigger", id]);
 };
+
+// One `home set` per accessory, in parallel: a lamp row can be several bulbs.
+export const setPower = async (
+  ids: string[],
+  on: boolean,
+  run: RunHome = runHome,
+): Promise<void> => {
+  await Promise.all(ids.map((id) => run(["set", id, "power", String(on)])));
+};
+
+// Power on first, then the level, for every accessory of the lamp.
+export async function setBrightness(
+  ids: string[],
+  pct: number,
+  run: RunHome = runHome,
+): Promise<void> {
+  await setPower(ids, true, run);
+  await Promise.all(
+    ids.map((id) => run(["set", id, "brightness", String(pct)])),
+  );
+}
 
 // ─── Status (climate + Nami) ────────────────────────────────────────────────
 
@@ -322,6 +359,7 @@ export async function loadMenuBar(
       .write({
         scenes: scenes.value,
         doctor: cachedHome?.doctor ?? null,
+        devices: cachedHome?.devices ?? [],
         fetchedAt: nowMs,
       })
       .catch(() => undefined);
