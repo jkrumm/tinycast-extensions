@@ -27,23 +27,17 @@ export default function WalkingPad() {
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const connection = useRef<Promise<Connection> | null>(null);
-  // A rejected connect() (config unreadable, Keychain denied) is kept, so the
-  // 3 s poll does not respawn `security` and re-show its dialog; Refresh and
-  // the actions ask again.
-  const connectFailed = useRef(false);
   // The newest answer wins; a command in flight pauses polling.
   const latest = useRef(0);
   const busy = useRef(false);
 
-  const getConnection = () =>
-    (connection.current ??= connect().catch((e: unknown) => {
-      connectFailed.current = true;
-      throw e;
-    }));
+  // The config (URL, token) is read once per open and reused by the 3 s poll,
+  // so a denied Keychain prompt or a down host does not respawn `security`
+  // every tick. Refresh and every action read it again: that is how a rotated
+  // token or a changed URL is picked up.
+  const getConnection = () => (connection.current ??= connect());
 
-  const retryConnect = () => {
-    if (!connectFailed.current) return;
-    connectFailed.current = false;
+  const rereadConfig = () => {
     connection.current = null;
   };
 
@@ -81,7 +75,7 @@ export default function WalkingPad() {
   const act = (action: WalkingPadAction) => async () => {
     busy.current = true;
     setIsLoading(true);
-    retryConnect();
+    rereadConfig();
     try {
       const { client, startSpeed } = await getConnection();
       const outcome = await perform(action, client, startSpeed);
@@ -149,7 +143,7 @@ export default function WalkingPad() {
             icon={Icon.ArrowClockwise}
             shortcut={Keyboard.Shortcut.Common.Refresh}
             onAction={() => {
-              retryConnect();
+              rereadConfig();
               return read();
             }}
           />
