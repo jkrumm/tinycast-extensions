@@ -27,11 +27,25 @@ export default function WalkingPad() {
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const connection = useRef<Promise<Connection> | null>(null);
+  // A rejected connect() (config unreadable, Keychain denied) is kept, so the
+  // 3 s poll does not respawn `security` and re-show its dialog; Refresh and
+  // the actions ask again.
+  const connectFailed = useRef(false);
   // The newest answer wins; a command in flight pauses polling.
   const latest = useRef(0);
   const busy = useRef(false);
 
-  const getConnection = () => (connection.current ??= connect());
+  const getConnection = () =>
+    (connection.current ??= connect().catch((e: unknown) => {
+      connectFailed.current = true;
+      throw e;
+    }));
+
+  const retryConnect = () => {
+    if (!connectFailed.current) return;
+    connectFailed.current = false;
+    connection.current = null;
+  };
 
   const read = useCallback(async () => {
     if (busy.current) return;
@@ -44,8 +58,6 @@ export default function WalkingPad() {
       setError(null);
       await writeCached(next);
     } catch (e) {
-      // A failed config read (Keychain denied) must be asked again next time.
-      connection.current = null;
       if (ticket === latest.current) setError(describeError(e));
     } finally {
       if (ticket === latest.current) setIsLoading(false);
@@ -69,12 +81,12 @@ export default function WalkingPad() {
   const act = (action: WalkingPadAction) => async () => {
     busy.current = true;
     setIsLoading(true);
+    retryConnect();
     try {
       const { client, startSpeed } = await getConnection();
       const outcome = await perform(action, client, startSpeed);
       await showToast({ style: Toast.Style.Success, title: outcome.message });
     } catch (e) {
-      connection.current = null;
       await showToast({
         style: Toast.Style.Failure,
         title: "WalkingPad",
@@ -136,7 +148,10 @@ export default function WalkingPad() {
             title="Refresh"
             icon={Icon.ArrowClockwise}
             shortcut={Keyboard.Shortcut.Common.Refresh}
-            onAction={read}
+            onAction={() => {
+              retryConnect();
+              return read();
+            }}
           />
         </ActionPanel>
       }
