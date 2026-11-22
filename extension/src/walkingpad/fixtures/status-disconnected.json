@@ -1,0 +1,15 @@
+{
+  "connected": false,
+  "current_session": null,
+  "today": {
+    "duration_s": 0,
+    "distance_m": 0,
+    "steps": 0,
+    "kcal": 0
+  },
+  "device": {
+    "name": "",
+    "address": "",
+    "rssi": 0
+  }
+}

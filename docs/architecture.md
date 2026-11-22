@@ -26,6 +26,8 @@ usage) and the secrets chain (TickTick, Netgear, Victron) where useful.
 | `scene-*`, `nami-comes-along`, `nami-stays-home` | no-view (11) | `src/scene-<name>.tsx`, `src/nami-*.tsx` | `home/{scene-command,actions,run}.ts` | `home trigger <name>` / `home set "Nami zu Hause" power <bool>` |
 | `spotify` | view (Detail) | `src/spotify.tsx` | `spotify/{run,parse,actions,types}.ts` | `~/.local/bin/home audio [now\|toggle\|next\|prev\|volume\|take\|release]` (ssh to the mini → Spotify Soloist "Mine") + `LocalStorage` `spotify-state`; Play on MacBook adds `osascript` |
 | `spotify-*` | no-view (7) | `src/spotify-<name>.tsx` | `spotify/{command,actions,run}.ts` | same `home audio` calls, HUD with the result |
+| `walkingpad` | view (Detail) | `src/walkingpad.tsx` | `walkingpad/{run,parse,actions,client,config,types}.ts` | the WalkingPad host's HTTP API over the tailnet door (URL from `defaults`, token from the login Keychain, both the Mac app's) + `LocalStorage` `walkingpad-status` |
+| `walkingpad-*` | no-view (8) | `src/walkingpad-<name>.tsx` | `walkingpad/{command,actions,client,config,run}.ts` | same host calls, HUD with the result |
 | `hub` | view | `src/hub.tsx` | reads every feature module above, one tile each | all of the above, loaded independently per tile |
 
 Shared: `lib/argo.ts` (bearer-authed fetch client, `prefs()`, `useAuthHeaders()`),

@@ -48,10 +48,10 @@ describe("hub command", () => {
 
   it("renders one tile per command and shows Offline for a failing loader", async () => {
     const renderer = await renderCommand(<Hub />);
-    await waitFor(() => renderer.root.findAllByType(Grid.Item).length === 10);
+    await waitFor(() => renderer.root.findAllByType(Grid.Item).length === 11);
 
     const tiles = renderer.root.findAllByType(Grid.Item);
-    expect(tiles).toHaveLength(10);
+    expect(tiles).toHaveLength(11);
     // Every tile's content is a data: URI SVG — as long as it doesn't throw
     // building that, the harness has already done its job; netgear/battery
     // fail on purpose here and should still produce a valid tile.

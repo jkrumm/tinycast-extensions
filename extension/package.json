@@ -371,6 +371,143 @@
       "description": "One-glance grid over every command",
       "mode": "view",
       "icon": "hub.png"
+    },
+    {
+      "name": "walkingpad",
+      "title": "WalkingPad",
+      "description": "State, speed, the walk in progress and today's totals, with start/stop and speed controls",
+      "mode": "view",
+      "keywords": [
+        "walkingpad",
+        "treadmill",
+        "laufband",
+        "walk",
+        "speed"
+      ],
+      "icon": "walkingpad.png"
+    },
+    {
+      "name": "walkingpad-toggle",
+      "title": "WalkingPad Start/Stop",
+      "subtitle": "WalkingPad",
+      "description": "Start the belt at the start speed, or stop it",
+      "mode": "no-view",
+      "keywords": [
+        "walkingpad",
+        "treadmill",
+        "laufband",
+        "start",
+        "stop",
+        "toggle"
+      ],
+      "icon": "walkingpad.png"
+    },
+    {
+      "name": "walkingpad-faster",
+      "title": "WalkingPad Faster",
+      "subtitle": "WalkingPad",
+      "description": "Raise the belt speed by 0.5 km/h",
+      "mode": "no-view",
+      "keywords": [
+        "walkingpad",
+        "treadmill",
+        "laufband",
+        "faster",
+        "speed",
+        "up"
+      ],
+      "icon": "walkingpad.png"
+    },
+    {
+      "name": "walkingpad-slower",
+      "title": "WalkingPad Slower",
+      "subtitle": "WalkingPad",
+      "description": "Lower the belt speed by 0.5 km/h",
+      "mode": "no-view",
+      "keywords": [
+        "walkingpad",
+        "treadmill",
+        "laufband",
+        "slower",
+        "speed",
+        "down"
+      ],
+      "icon": "walkingpad.png"
+    },
+    {
+      "name": "walkingpad-speed-3-0",
+      "title": "WalkingPad 3.0 km/h",
+      "subtitle": "WalkingPad",
+      "description": "Walk at 3.0 km/h: sets the speed while walking, starts the belt at it when it stands",
+      "mode": "no-view",
+      "keywords": [
+        "walkingpad",
+        "treadmill",
+        "laufband",
+        "speed",
+        "3.0"
+      ],
+      "icon": "walkingpad.png"
+    },
+    {
+      "name": "walkingpad-speed-3-5",
+      "title": "WalkingPad 3.5 km/h",
+      "subtitle": "WalkingPad",
+      "description": "Walk at 3.5 km/h: sets the speed while walking, starts the belt at it when it stands",
+      "mode": "no-view",
+      "keywords": [
+        "walkingpad",
+        "treadmill",
+        "laufband",
+        "speed",
+        "3.5"
+      ],
+      "icon": "walkingpad.png"
+    },
+    {
+      "name": "walkingpad-speed-4-0",
+      "title": "WalkingPad 4.0 km/h",
+      "subtitle": "WalkingPad",
+      "description": "Walk at 4.0 km/h: sets the speed while walking, starts the belt at it when it stands",
+      "mode": "no-view",
+      "keywords": [
+        "walkingpad",
+        "treadmill",
+        "laufband",
+        "speed",
+        "4.0"
+      ],
+      "icon": "walkingpad.png"
+    },
+    {
+      "name": "walkingpad-speed-4-5",
+      "title": "WalkingPad 4.5 km/h",
+      "subtitle": "WalkingPad",
+      "description": "Walk at 4.5 km/h: sets the speed while walking, starts the belt at it when it stands",
+      "mode": "no-view",
+      "keywords": [
+        "walkingpad",
+        "treadmill",
+        "laufband",
+        "speed",
+        "4.5"
+      ],
+      "icon": "walkingpad.png"
+    },
+    {
+      "name": "walkingpad-speed-5-0",
+      "title": "WalkingPad 5.0 km/h",
+      "subtitle": "WalkingPad",
+      "description": "Walk at 5.0 km/h: sets the speed while walking, starts the belt at it when it stands",
+      "mode": "no-view",
+      "keywords": [
+        "walkingpad",
+        "treadmill",
+        "laufband",
+        "speed",
+        "5.0"
+      ],
+      "icon": "walkingpad.png"
     }
   ],
   "dependencies": {

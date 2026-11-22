@@ -23,7 +23,7 @@ there.
 
 ```
 extension/
-  package.json          ← manifest: name "jkrumm", 33 commands, 9 preferences
+  package.json          ← manifest: name "jkrumm", 42 commands, 9 preferences
   src/
     my-tasks.tsx         command — TickTick task list
     quick-add.tsx        command — TickTick quick add
@@ -42,6 +42,8 @@ extension/
     nami-comes-along.tsx, nami-stays-home.tsx  no-view commands — set the "Nami zu Hause" switch false / true
     spotify.tsx             command — Spotify on Mine Detail (cover, track, volume, output, active device): play/pause, next/previous, volume, Play on Mine / Play on MacBook; LocalStorage stale-while-revalidate
     spotify-<name>.tsx      7 no-view commands (play-pause, next, previous, louder, quieter, play-on-mine, play-on-macbook) — one-liners over `spotify/command.ts`, HUD shows the resulting track + volume
+    walkingpad.tsx          command — WalkingPad Detail: state, speed, the walk in progress and today's totals in one table; start/stop, faster/slower, speed presets (⌘1–5); polls every 3 s while open; LocalStorage stale-while-revalidate
+    walkingpad-<name>.tsx   8 no-view commands (toggle, faster, slower, speed-3-0 … speed-5-0) — one-liners over `walkingpad/command.ts`, HUD shows the result. **No global hotkeys**: the WalkingPad Mac app owns Hyper+W and the speed hotkeys, a second binding would fire twice
     hub.tsx                 command — Grid dashboard, one tile per command
     ticktick/             feature code: client, types, format, parse, search, create-task
     usage/                feature code: quota (argo + local picker + fs read), local (spawns `claude-account`,
@@ -101,6 +103,7 @@ extension/
                            window can cache pre-write state until the next refresh (display only)
     spotify/              feature code: run (`home audio …` through home/run's spawn + osascript for the MacBook's Spotify + LocalStorage `spotify-state`, the impure bit), parse (pure: defensive `home audio` JSON, volume args, HUD line, Detail markdown), actions (no-view core: action → args, run + one HUD line, injected ports), command (binds to showHUD), types.
                            Play on MacBook = `home audio release`, then `tell application "Spotify" to play`: UNVERIFIED that the desktop app resumes locally; macOS may ask once for Automation permission for Spotify
+    walkingpad/           feature code: client (pure: the host's HTTP API behind an injected `Transport`, `WalkingPadError`, `describeError`), config (pure with an injected `Exec`: host URL + token + start speed from the WalkingPad Mac app's own storage), parse (pure: defensive /status JSON, belt phase, speed grid, text), actions (no-view core: fresh /status, one decision, at most one call, one HUD line), run (the impure bit: execFile + fetch transport + LocalStorage `walkingpad-status`), command (binds to showHUD), fixtures (golden responses copied from walkingpad-mac `contracts/fixtures`), types
     apple-llm/            feature code: run (spawns the helper, the only impure bit), parse (pure)
     lib/                  shared: argo.ts (fetch client), secrets.ts (Keychain/1Password chain),
                            action-log.ts (persistent log file), svg.ts + chart/ (hero/chart library, see svg-charts skill), preferences.ts (Preferences type),
@@ -580,6 +583,22 @@ The
 - **Speed Test** — `/usr/bin/networkQuality` (`speed-test/run.ts`), quick
   (`-c -M 4 -u`, download-only, ~4s/~15MB) or full (`-c`, ~10-20s/~170MB).
   Last 20 results persisted in `LocalStorage`.
+
+- **WalkingPad** — the treadmill's Go host on the mini, reached through its tailnet
+  door (HTTPS, bearer token). Contract: walkingpad-mac `docs/protocol.md` §8, golden
+  responses copied to `walkingpad/fixtures/`. **Connection is read from the WalkingPad Mac
+  app's own storage, no second copy**: the URL from `defaults read com.jkrumm.walkingpad.client
+  hostURL`, the token from the login Keychain (`security find-generic-password -s
+  com.jkrumm.walkingpad.client -a host-token -w`; the first read asks the owner once, "Always
+  Allow" ends it), the start speed from the same domain's `startSpeed` (default 3.0). Nothing
+  of it is logged, cached or put in an error: failures read "Token refused", "Timed out",
+  "Host unreachable". Rules copied from the Swift client: `GET /status` times out after 5 s;
+  commands after 20 s (`POST /start` blocks 4–5 s on the belt's 3-2-1 ramp); `/speed` goes out
+  only when a *fresh* `/status` reads active, because the host starts a stopped belt on
+  `/speed` — a preset on a standing belt (or a ramping one) is `/start` with the speed instead;
+  faster/slower step on the 0.5 grid and send nothing at 0.5/6.0. **Never send `POST /start`,
+  `/stop`, `/speed` or `/pref/*` from a test or a proof** — a person stands on the belt;
+  tests use a fake `PadClient`/`Transport`, a proof is `GET /status` only.
 
 - **Apple on-device model** — `extension/helpers/apple-llm/main.swift` (built
   by `make helper` into the gitignored `assets/apple-llm`, `--selftest` in

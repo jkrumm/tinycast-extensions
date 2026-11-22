@@ -1,0 +1,18 @@
+{
+  "connected": true,
+  "belt_state": "starting",
+  "mode": "manual",
+  "observed_at": "2026-05-17T13:22:11Z",
+  "current_session": null,
+  "today": {
+    "duration_s": 0,
+    "distance_m": 0,
+    "steps": 0,
+    "kcal": 0
+  },
+  "device": {
+    "name": "WalkingPad",
+    "address": "00000000-0000-0000-0000-000000000001",
+    "rssi": -56
+  }
+}

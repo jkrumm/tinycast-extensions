@@ -30,6 +30,8 @@ import { tileStatus as homeTileStatus } from "./home/format";
 import { localStorageHome, localStorageStatus } from "./home/run";
 import { tileStatus as spotifyTileStatus } from "./spotify/parse";
 import { readCached as readSpotify } from "./spotify/run";
+import { tileStatus as walkingPadTileStatus } from "./walkingpad/parse";
+import { readCached as readWalkingPad } from "./walkingpad/run";
 import { RAYCAST_COLOR, RaycastColor, tile, toDataUri } from "./lib/svg";
 
 interface TileConfig {
@@ -110,6 +112,13 @@ const TILES: TileConfig[] = [
     glyph: "S",
     name: "Spotify",
     color: RAYCAST_COLOR.green,
+  },
+  {
+    command: "walkingpad",
+    icon: "walkingpad",
+    glyph: "W",
+    name: "WalkingPad",
+    color: RAYCAST_COLOR.orange,
   },
 ];
 
@@ -206,6 +215,17 @@ async function spotifyStatus(): Promise<TileData> {
   return { status: spotifyTileStatus(await readSpotify()) };
 }
 
+// Last cached reading only — the host call belongs to the WalkingPad commands.
+async function walkingPadStatus(): Promise<TileData> {
+  const cached = await readWalkingPad();
+  return {
+    status: walkingPadTileStatus(
+      cached?.status ?? null,
+      cached ? Date.now() - cached.at : 0,
+    ),
+  };
+}
+
 const STATUS_LOADERS: Record<string, () => Promise<TileData>> = {
   "my-tasks": tasksStatus,
   "quick-add": async () => ({ status: "" }),
@@ -217,6 +237,7 @@ const STATUS_LOADERS: Record<string, () => Promise<TileData>> = {
   shortcuts: shortcutsStatus,
   home: homeStatus,
   spotify: spotifyStatus,
+  walkingpad: walkingPadStatus,
 };
 
 // The icon SVGs ship in the build's assets/src; drop the outer <svg> so the
