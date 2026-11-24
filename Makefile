@@ -179,7 +179,7 @@ van-sampler-check: ## Judge the van-sampler background runs; ARGS="--wait 2" blo
 	@python3 scripts/van-sampler-check.py $(ARGS)
 
 TINYCAST_APP := /Applications/Tinycast.app
-TINYCAST_VERIFIED := 2026-10-13
+TINYCAST_VERIFIED := 2026-11-24
 
 tinycast-version: ## Installed Tinycast vs latest stable upstream release + extension-runtime commits since SINCE (default: last skill verification)
 	@echo "installed: $$(defaults read '$(TINYCAST_APP)/Contents/Info' CFBundleShortVersionString)"

@@ -25,8 +25,9 @@ Sourced from `tinycast.dev` docs + the project's engineering spec
 directly from Tinycast's `main`-branch Swift source (via `gh api
 repos/abue-ammar/tinycast/contents/<path>?ref=main`) for anything
 render-size/layout-specific, compiled 2026-09-27, re-checked against `main`
-through 2026-10-09 (§ Changes since 0.11.10; every file:line below is `main`
-@ `9e6beba`). **UNCONFIRMED** items are
+through 2026-10-09 and against stable 0.12.15 on 2026-11-24 (§ Changes since
+0.11.10). The file:line citations are `main` @ `9e6beba` and predate the 0.12.x
+changes: re-check a citation before relying on it. **UNCONFIRMED** items are
 flagged; check them again before relying on them for anything load-bearing.
 
 ## Install route used by this repo: "Add from folder"
@@ -38,7 +39,7 @@ are copied; **`node_modules` and source maps are never copied** (as last
 verified 2026-09-27). With `@raycast/api` 2.x `ray build` emits a
 `build/node_modules/` of shared dependencies the command files `require()`;
 this repo's `make deploy` rsyncs it, and Tinycast resolves it inside the
-extension folder since `126c998` (0.11.19-beta.117).
+extension folder since `126c998` (0.11.19-beta.117; stable since 0.11.19).
 
 ```
 make build   # ray build -e dist -o extension/build
@@ -115,7 +116,7 @@ Transforms (compress on flush, not streaming; `ce7535c5`). `WebAssembly.compile`
 | Gap | Detail |
 |-|-|
 | `AI`, `BrowserExtension`, `WindowManagement` | Import works, calling throws |
-| `OAuth` (PKCE client + Raycast's proxy) | Removed in 0.11.17-beta.115 (`c45da6f`), **back in 0.11.20-beta.119** (`001761a`, #1502: `oauth.js`, `ExtensionSignInSession.swift`). Unused here (argo bearer token via `lib/secrets.ts`) |
+| `OAuth` (Raycast's sign-in in extensions) | **Supported in stable since 0.12.1** (`001761a`, #1502: `oauth.js`, `ExtensionSignInSession.swift`; beta 0.11.20-beta.119). Its earlier PKCE removal (`c45da6f`, #1445; stable 0.11.19) is reverted. Web-method `state` is an envelope the redirect must echo back unchanged (`980f7ac`, #1679, stable 0.12.8). Unused here (argo bearer token via `lib/secrets.ts`) |
 | Cancelling an in-flight `fetch` | Caller gets `AbortError`; the request runs to completion server-side anyway |
 | Streaming HTTP (SSE, download progress, backpressure) | Bridge delivers the whole body at once |
 | `net` / `tls` | Resolve, throw on use |
@@ -291,7 +292,7 @@ Stable 0.11.3 (pre-0.12.x) had a 220pt image cap, plain-text tables and no nativ
   `NSRemindersFullAccessUsageDescription` (`3bd70383`). Nothing removed.
 - Settings: opt-in `settings.json` mirror of preferences (`1d7d2266`, beta.106),
   "Install from GitHub" (builds a repo link, `4935e937`), option to disable
-  automatic update checks (`2c9b4459`, beta.111 — useful to pin a beta).
+  automatic update checks (`2c9b4459`, beta.111 — useful to pin a version).
 - **0.11.13 → 0.11.17 (checked 2026-10-09, 44 commits, `main` @ `9e6beba`)**:
   nothing in the Detail/List/Grid/markdown/SVG/node-shim/background paths broke.
   Relevant: OAuth removed (`c45da6f`, see table above); **search text now
@@ -311,11 +312,27 @@ Stable 0.11.3 (pre-0.12.x) had a 220pt image cap, plain-text tables and no nativ
   folder (`126c998`); `createRequire` works (`01ce994`); malformed UTF-8 decodes
   to U+FFFD instead of throwing (`ad7d5b4`); Docker HTTP over Unix sockets
   (`e0ee4dd`); URLSearchParams as form body (`035a106`). Not runtime: launcher
-  forms, paste focus fix, Swift test fixtures.
+  forms, Swift test fixtures. The paste focus fix (`5aa696f`) is host-side; see the 0.12.15 list.
 - **0.11.20 → 0.11.22 (checked 2026-10-16, `main` @ `8d0d6b6`)**: no runtime
   behaviour change. `57e29b4` (#1566) only deletes comments across ~46
   `Features/Extensions`/runtime files (−999 lines), so `file:line` citations in
   this skill may be off by some lines; `6d036ae` is an emoji-icon Light-mode fix.
+- **0.11.22 → stable 0.12.15 (checked 2026-11-24, `make tinycast-version` with SINCE 2026-10-13; installed = latest stable, published 2026-11-14)**. The stable releases in this window are 0.12.1, 0.12.8, 0.12.11 and 0.12.15. No behaviour change for our paths in the diffs; each entry names the stable release that first shipped it:
+  - `spawn`/`spawnSync` `stdio`: an `fs.openSync` descriptor replaces that stream's pipe (`42cc467`, #1822, 0.12.11). `van/run.ts` still pipes stdin.
+  - `crypto`: AES-GCM with 16-byte tags and 12+ byte nonces, CryptoKit's limits, narrower than Node's (`7031f8a`, #1767, 0.12.8).
+  - `process.getuid/getgid/geteuid/getegid/getgroups` and `fs.stat` owner (`de115d8`, #1733, 0.12.8).
+  - `os.networkInterfaces()` returns the real interfaces as a list per name (`6ac7216`, #1765, 0.12.8); it was `{}`.
+  - `SharedArrayBuffer` shim with finite `Atomics.wait` (`5fab5cb`, #1738, 0.12.8).
+  - `storeValue` form fields are restored and saved per command (`f52b964`, #1841, 0.12.11; `ExtensionStorage.formValues`).
+  - Shortcut handlers resolve their screen per press, so a closed screen is not retained (`c875fe1`, #1626, 0.12.1).
+  - Missing extension preferences get a direct configure action (`10421dd`, #1754, 0.12.8).
+  - Sign-in: leaving the command cancels its browser session and finishes the pending host call (`25d86bf`, #1708, 0.12.8).
+  - `fetch` only: its URLSession opts out of the macOS AppSSO broker via `_preventsAppSSO` (`1a2c80a`, #1739, 0.12.8). Other sessions are unchanged.
+  - Deeplinks: ask-once consent for deeplink input; Debug builds use the `tinycast-dev` scheme (`788237c`, #1753, 0.12.8). Stable `tinycast://` links are unchanged.
+  - Paste into the palette: the host closes the main window before pasting (`5aa696f`, #1476, 0.11.19).
+  - Toast titles truncate (`9e3dc701`, already listed above). Bundled `build/node_modules` loading (`126c998`, #1489) has been in stable since 0.11.19; our `make deploy` copy approach is unchanged.
+  - Runtime `@raycast/api` is 2.8.2 from `980f7ac` (#1679, 0.12.8). This repo pins 2.7.3.
+  - Next stable (beta-only as of 0.12.15, not available yet): per-extension appearance and tint picker (`af5e7c2`), Settings in its own process (`876b61d`), iCloud sync of the extension catalog (`9c3c899`).
 - **Unchanged** (no commits touching them since 2026-09-27): `ExtensionIconCache`
   (`raycast-*` rewrite), `ExtensionMenuBarImage`, Detail metadata/width rules,
   image sizing, deeplink handling (`ExtensionLink`), background refresh policy.
@@ -327,8 +344,8 @@ release (`releases/latest`, prereleases excluded), plus the commits since `SINCE
 verification, below) that touch `Features/Extensions`, `Scripts/raycast-runtime`
 or `docs/features/extensions.md`. Then `gh api repos/abue-ammar/tinycast/commits/<sha>
 --jq '.files[].filename'` and read the diff; re-verify only the file:line
-citations whose file shows up. **Last verified: 2026-10-16 against `main`
-`8d0d6b6` (0.11.22-beta.121); installed 0.11.21-beta.120.** Update that line
+citations whose file shows up. **Last verified: 2026-11-24 against stable 0.12.15
+(installed 0.12.15, latest stable 0.12.15).** Update that line
 and the header when you re-check.
 
 ## Fast access: deeplinks, hotkeys, aliases, favorites
