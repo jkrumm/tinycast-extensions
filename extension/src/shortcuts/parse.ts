@@ -214,6 +214,40 @@ export function parseBinding(raw: string): Binding {
   return { kind: "combo", modifiers, keyCode };
 }
 
+const WALKINGPAD_PREFIX = "KeyboardShortcuts_";
+
+// The WalkingPad Mac app's own hotkeys (`KeyboardShortcuts_<action>` in its
+// domain), action name → combo. Each value is a flat `{"carbonKeyCode":N,
+// "carbonModifiers":M}` JSON string, not Tinycast's wrapped binding; unset or
+// unreadable values are left out.
+export function parseWalkingPadHotkeys(xml: string): Record<string, Binding> {
+  const hotkeys: Record<string, Binding> = {};
+  const root = parsePlist(xml);
+  if (!isDict(root)) return hotkeys;
+  for (const [key, value] of Object.entries(root)) {
+    if (!key.startsWith(WALKINGPAD_PREFIX) || typeof value !== "string") {
+      continue;
+    }
+    const binding = parseFlatBinding(value);
+    if (binding) hotkeys[key.slice(WALKINGPAD_PREFIX.length)] = binding;
+  }
+  return hotkeys;
+}
+
+function parseFlatBinding(raw: string): Binding | null {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return null;
+  }
+  if (typeof parsed !== "object" || parsed === null) return null;
+  const { carbonKeyCode, carbonModifiers } = parsed as Record<string, unknown>;
+  if (typeof carbonKeyCode !== "number" || typeof carbonModifiers !== "number")
+    return null;
+  return { kind: "combo", modifiers: carbonModifiers, keyCode: carbonKeyCode };
+}
+
 export interface CommandInfo {
   title: string;
   icon?: string; // asset file name from the manifest, e.g. `tasks.png`

@@ -102,3 +102,23 @@ export const SETTINGS_PLIST_FIXTURE = `<?xml version="1.0" encoding="UTF-8"?>
 </dict>
 </plist>
 `;
+
+// Trimmed export of the WalkingPad Mac app's defaults domain: only its three
+// Hyper hotkeys (the real domain holds other settings, not copied here).
+export const WALKINGPAD_PLIST_FIXTURE = `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>KeyboardShortcuts_speedDown</key>
+	<string>{"carbonKeyCode":125,"carbonModifiers":6400}</string>
+	<key>KeyboardShortcuts_speedUp</key>
+	<string>{"carbonKeyCode":126,"carbonModifiers":6400}</string>
+	<key>KeyboardShortcuts_toggleBelt</key>
+	<string>{"carbonKeyCode":51,"carbonModifiers":6400}</string>
+	<key>KeyboardShortcuts_unset</key>
+	<string></string>
+	<key>someOtherSetting</key>
+	<string>not a shortcut</string>
+</dict>
+</plist>
+`;

@@ -5,51 +5,25 @@ import { join } from "path";
 import { LaunchType, environment, launchCommand } from "@raycast/api";
 import { LaunchTarget, ShortcutsData } from "./format";
 import {
-  AppInfo,
   CommandInfo,
   TinycastSettings,
-  parseAppIndex,
   parseCommands,
   parseTinycastSettings,
 } from "./parse";
+import { appIndex, exportDomain, keyboardLayout } from "./system";
 
 const execFileAsync = promisify(execFile);
 
-const DEFAULTS_BIN = "/usr/bin/defaults";
 const OPEN_BIN = "/usr/bin/open";
 const TINYCAST_DOMAIN = "com.abueammar.tinycast";
 
 export async function readTinycastSettings(): Promise<TinycastSettings> {
-  const { stdout } = await execFileAsync(DEFAULTS_BIN, [
-    "export",
-    TINYCAST_DOMAIN,
-    "-",
-  ]);
-  return parseTinycastSettings(stdout);
+  return parseTinycastSettings(await exportDomain(TINYCAST_DOMAIN));
 }
 
 export async function loadHotkeyCount(): Promise<number> {
   const settings = await readTinycastSettings();
   return Object.keys(settings.hotkeys).length;
-}
-
-// bundle id → app name + path, from every .app's Info.plist in the usual folders. One
-// shell for all of them: Spotlight (`mdfind`) is disabled on this Mac.
-const APP_INDEX_SCRIPT = `
-for a in /Applications/*.app /Applications/Utilities/*.app /System/Applications/*.app \
-  "$HOME"/Applications/*.app "$HOME"/Applications/*/*.app; do
-  [ -f "$a/Contents/Info.plist" ] || continue
-  id=$(/usr/bin/plutil -extract CFBundleIdentifier raw "$a/Contents/Info.plist" 2>/dev/null) || continue
-  printf '%s\\t%s\\t%s\\n' "$id" "$(basename "$a" .app)" "$a"
-done`;
-
-async function appIndex(): Promise<Record<string, AppInfo>> {
-  try {
-    const { stdout } = await execFileAsync("/bin/sh", ["-c", APP_INDEX_SCRIPT]);
-    return parseAppIndex(stdout);
-  } catch {
-    return {};
-  }
 }
 
 async function commandInfo(): Promise<Record<string, CommandInfo>> {
@@ -61,20 +35,6 @@ async function commandInfo(): Promise<Record<string, CommandInfo>> {
     return parseCommands(manifest);
   } catch {
     return {};
-  }
-}
-
-// e.g. `com.apple.keylayout.German`; "" when it can't be read.
-async function keyboardLayout(): Promise<string> {
-  try {
-    const { stdout } = await execFileAsync(DEFAULTS_BIN, [
-      "read",
-      "com.apple.HIToolbox",
-      "AppleCurrentKeyboardLayoutInputSourceID",
-    ]);
-    return stdout.trim();
-  } catch {
-    return "";
   }
 }
 

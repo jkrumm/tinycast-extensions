@@ -1,4 +1,4 @@
-.PHONY: help install van-sampler-build van-sampler-spike van-sampler-notify-test van-sampler-setup van-sampler-teardown van-sampler-status watchdog-setup watchdog-teardown watchdog-status build helper deploy check test lint typecheck clean secrets secrets-clear icons status e2e e2e-live fake-router previews van-eval tinycast-version van-sampler-check
+.PHONY: help install van-sampler-build van-sampler-spike van-sampler-notify-test van-sampler-setup van-sampler-teardown van-sampler-status watchdog-setup watchdog-teardown watchdog-status build helper deploy check test lint typecheck clean secrets secrets-clear icons status e2e e2e-live fake-router previews van-eval tinycast-version van-sampler-check hyper-sheet
 
 EXT_DIR := extension
 RAY := node_modules/.bin/ray
@@ -77,6 +77,9 @@ previews: ## Render every production hero + the chart gallery to /tmp/tinycast-p
 
 van-eval: ## SoC estimator tuning loop: replay the estimator leave-one-out over van-log.jsonl / van-trends.jsonl from the support dir (ARGS="<support-dir>" to override)
 	cd $(EXT_DIR) && bun scripts/van-eval.ts $(ARGS)
+
+hyper-sheet: ## Printable Hyper key sheet from the live settings → build/hyper-sheet.{html,pdf,png} (pdf/png need Google Chrome)
+	cd $(EXT_DIR) && bun scripts/hyper-sheet.ts $(CURDIR)/build
 
 VANS_LABEL := com.jkrumm.van-sampler
 VANS_PLIST := $(HOME)/Library/LaunchAgents/$(VANS_LABEL).plist

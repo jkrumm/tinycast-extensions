@@ -1,10 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { SETTINGS_PLIST_FIXTURE } from "./fixtures";
+import { SETTINGS_PLIST_FIXTURE, WALKINGPAD_PLIST_FIXTURE } from "./fixtures";
 import {
   parseAppIndex,
   parseBinding,
   parseCommands,
   parseTinycastSettings,
+  parseWalkingPadHotkeys,
 } from "./parse";
 
 describe("parseTinycastSettings", () => {
@@ -136,5 +137,33 @@ describe("parseAppIndex", () => {
       },
       "no.path": { name: "NoPath" },
     });
+  });
+});
+
+describe("parseWalkingPadHotkeys", () => {
+  it("reads the three flat Hyper hotkeys as combos, keyed by action", () => {
+    expect(parseWalkingPadHotkeys(WALKINGPAD_PLIST_FIXTURE)).toEqual({
+      speedDown: { kind: "combo", modifiers: 6400, keyCode: 125 },
+      speedUp: { kind: "combo", modifiers: 6400, keyCode: 126 },
+      toggleBelt: { kind: "combo", modifiers: 6400, keyCode: 51 },
+    });
+  });
+
+  it("leaves out unset, unreadable and unrelated values", () => {
+    const xml = `<plist version="1.0"><dict>
+	<key>KeyboardShortcuts_cancel</key>
+	<string>{"carbonKeyCode":"x","carbonModifiers":6400}</string>
+	<key>KeyboardShortcuts_pause</key>
+	<string>null</string>
+	<key>KeyboardShortcuts_broken</key>
+	<string>{not json</string>
+	<key>KeyboardShortcuts_numeric</key>
+	<integer>0</integer>
+</dict></plist>`;
+    expect(parseWalkingPadHotkeys(xml)).toEqual({});
+  });
+
+  it("throws for input without a plist root, which the runner reads as a missing domain", () => {
+    expect(() => parseWalkingPadHotkeys("")).toThrow("No root element");
   });
 });

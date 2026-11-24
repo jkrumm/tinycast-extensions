@@ -115,7 +115,7 @@ export function hyperChord(settings: TinycastSettings): number {
   return CONTROL | OPTION | CMD | (settings.hyperKeyIncludesShift ? SHIFT : 0);
 }
 
-function modifierGlyphs(modifiers: number): string {
+export function modifierGlyphs(modifiers: number): string {
   return (
     (modifiers & CONTROL ? "⌃" : "") +
     (modifiers & OPTION ? "⌥" : "") +
@@ -181,6 +181,7 @@ export interface ShortcutRow {
   id: string;
   title: string;
   key: string | null; // the accessory tag; null = nothing to show
+  keyCode: number | null; // Carbon key code of a combo hotkey; null otherwise
   icon: RowIcon;
   launch: LaunchTarget | null;
   keywords: string[];
@@ -233,6 +234,7 @@ function entryRow(
     id: `${section}:${id}`,
     ...entry,
     key,
+    keyCode: null,
     keywords: key ? [key, id] : [id],
   };
 }
@@ -241,6 +243,8 @@ const byKey = (a: ShortcutRow, b: ShortcutRow) =>
   (a.key ?? "").localeCompare(b.key ?? "");
 
 const TOGGLE_PALETTE = "togglePalette";
+export const HYPER_APPS = "Hyper — Apps";
+export const HYPER_COMMANDS = "Hyper — Commands";
 
 export function shortcutSections(data: ShortcutsData): ShortcutSection[] {
   const { settings, layout } = data;
@@ -250,23 +254,27 @@ export function shortcutSections(data: ShortcutsData): ShortcutSection[] {
   const tinycast: ShortcutRow[] = [];
 
   for (const [action, raw] of Object.entries(settings.hotkeys)) {
-    const key = formatBinding(parseBinding(raw), hyper, layout);
+    const binding = parseBinding(raw);
+    const key = formatBinding(binding, hyper, layout);
+    const keyCode = binding.kind === "combo" ? binding.keyCode : null;
     if (action.startsWith("app.")) {
-      apps.push(entryRow("app", action.slice(4), key, data));
+      apps.push({ ...entryRow("app", action.slice(4), key, data), keyCode });
     } else if (action.startsWith(`extensionCommand.${OWN_EXTENSION}`)) {
-      commands.push(
-        entryRow(
+      commands.push({
+        ...entryRow(
           "command",
           action.slice("extensionCommand.".length),
           key,
           data,
         ),
-      );
+        keyCode,
+      });
     } else {
       tinycast.push({
         id: `tinycast:${action}`,
         title: action === TOGGLE_PALETTE ? "Toggle palette" : action,
         key,
+        keyCode,
         icon: { kind: "fallback" },
         launch: null,
         keywords: [key, action],
@@ -291,11 +299,11 @@ export function shortcutSections(data: ShortcutsData): ShortcutSection[] {
   const free = freeHyperLetters(settings, layout);
   const sections: ShortcutSection[] = [
     {
-      title: "Hyper — Apps",
+      title: HYPER_APPS,
       subtitle: `free: ${free.length > 0 ? free.join(" ") : "none"}`,
       rows: apps.sort(byKey),
     },
-    { title: "Hyper — Commands", rows: commands.sort(byKey) },
+    { title: HYPER_COMMANDS, rows: commands.sort(byKey) },
     { title: "Tinycast", rows: tinycast },
     { title: "Aliases", rows: aliases },
     { title: "Favorites", rows: favorites },

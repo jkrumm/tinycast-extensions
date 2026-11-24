@@ -76,7 +76,7 @@ extension/
     shortcuts/              feature code: load (defaults export + app scan + manifest + keyboard layout +
                            launch, the impure bit), parse (pure: plist XML → hotkeys/aliases/favorites/
                            Hyper Key settings, binding JSON), format (pure: Hyper chord, key labels per
-                           layout, free Hyper letters, `shortcutSections` for the List, markdown), fixtures
+                           layout, free Hyper letters, `shortcutSections` for the List, markdown), system (impure: defaults export, app scan, keyboard layout; no @raycast/api), sheet + sheet-html (pure: the printable Hyper key sheet, `make hyper-sheet`), fixtures
     van/                  feature code: run (spawns the BLE helper, the only impure bit), load
                            (read → sample → history), parse (pure: Ective frame, Victron readout),
                            history (pure 72 h ring, ETA, history throttle), sun (pure NOAA sunrise/sunset,
@@ -112,6 +112,7 @@ extension/
   scripts/
     fake-router.ts        `make fake-router` entry — starts the fake M2 on 127.0.0.1:8188
     chart-previews.ts     `make previews` entry — renders every hero + chart gallery to PNGs
+    hyper-sheet.ts        `make hyper-sheet` entry — printable Hyper key sheet from the live Tinycast + WalkingPad settings → build/hyper-sheet.{html,pdf,png} (PDF/PNG need Google Chrome)
     coresvg-render.swift   renders an SVG through macOS' own decoder (previews `--coresvg`)
   assets/
     *.png                 command icons — generated, don't hand-edit

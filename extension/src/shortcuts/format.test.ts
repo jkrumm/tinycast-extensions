@@ -312,3 +312,26 @@ describe("shortcutsMarkdown", () => {
     expect(markdown).not.toContain("⇪");
   });
 });
+
+describe("shortcutSections keyCode", () => {
+  it("carries the Carbon key code of combo hotkeys only", () => {
+    const data: ShortcutsData = {
+      settings: settingsOf({
+        hotkeys: {
+          "app.md.obsidian": bound(TINYCAST, 31),
+          togglePalette: bound(256, 49),
+        },
+        aliases: { "extension:jkrumm/hub": "db" },
+        favorites: ["md.obsidian"],
+      }),
+      apps: {},
+      commands: {},
+      layout: "",
+    };
+    const rows = shortcutSections(data).flatMap((section) => section.rows);
+    expect(rows.find((r) => r.title === "md.obsidian")?.keyCode).toBe(31);
+    expect(rows.find((r) => r.title === "Toggle palette")?.keyCode).toBe(49);
+    expect(rows.find((r) => r.id.startsWith("alias:"))?.keyCode).toBeNull();
+    expect(rows.find((r) => r.id.startsWith("favorite:"))?.keyCode).toBeNull();
+  });
+});
