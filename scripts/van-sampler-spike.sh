@@ -31,7 +31,7 @@ cleanup() {
   rm -f "$exitfile"
   launchctl bootout "$domain/$label" 2>/dev/null || true
   rm -f "$plist"
-  if [ "$tinycast_was_running" = 1 ]; then open -a "Tinycast Beta" 2>/dev/null || true; fi
+  if [ "$tinycast_was_running" = 1 ]; then open -a "Tinycast" 2>/dev/null || true; fi
 }
 trap cleanup EXIT
 
@@ -97,12 +97,12 @@ if codesign -dvv "$bin" 2>&1 | grep -q 'Signature=adhoc'; then
   say "NOTE: ad-hoc signed — the grant is bound to this cdhash; a rebuild with changed bytes re-prompts."
 fi
 
-if pgrep -f "Tinycast Beta" >/dev/null 2>&1; then
+if pgrep -x Tinycast >/dev/null 2>&1; then
   tinycast_was_running=1
-  say "quitting Tinycast Beta for the test (it is reopened afterwards)"
-  osascript -e 'quit app "Tinycast Beta"' >/dev/null 2>&1 || true
+  say "quitting Tinycast for the test (it is reopened afterwards)"
+  osascript -e 'quit app "Tinycast"' >/dev/null 2>&1 || true
   sleep 3
-  pgrep -f "Tinycast Beta" >/dev/null 2>&1 && fail "Tinycast Beta would not quit — the test needs it closed"
+  pgrep -x Tinycast >/dev/null 2>&1 && fail "Tinycast would not quit — the test needs it closed"
 fi
 
 say "A1 launchd program = signed van-ble. If macOS asks for Bluetooth access, click Allow (waits up to 2 min)…"

@@ -1,4 +1,4 @@
-// Trimmed export of Tinycast Beta's defaults domain: only hotkey.*, launcherAliases,
+// Trimmed export of Tinycast's defaults domain: only hotkey.*, launcherAliases,
 // favoriteApps and bound* keys (the real domain also holds unrelated settings).
 export const SETTINGS_PLIST_FIXTURE = `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">

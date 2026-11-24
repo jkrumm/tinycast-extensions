@@ -21,7 +21,7 @@ LLM_SRC := $(EXT_DIR)/helpers/apple-llm/main.swift
 LLM_BIN := $(EXT_DIR)/assets/apple-llm
 
 # The Van Power BLE helper (Swift, CoreBluetooth + CommonCrypto, no deps) is
-# spawned by the extension from environment.assetsPath. Tinycast Beta is the
+# spawned by the extension from environment.assetsPath. Tinycast is the
 # TCC-responsible process, so this stays a bare binary — no .app, no agent.
 helper: ## Compile the van-ble BLE helper into extension/assets and run its --selftest
 	@mkdir -p $(EXT_DIR)/assets
@@ -35,12 +35,12 @@ build: helper ## Build the extension for Tinycast/Raycast "Add from folder"
 	@echo ""
 	@echo "Built to $(EXT_DIR)/build/ — run 'make deploy' to update Tinycast (first install: Add from folder → $(CURDIR)/$(EXT_DIR)/build)"
 
-TINYCAST_EXT_DIR := $(HOME)/Library/Application Support/com.tinycast.app.beta/extensions/jkrumm
+TINYCAST_EXT_DIR := $(HOME)/Library/Application Support/com.abueammar.tinycast/extensions/jkrumm
 
 # "Add from folder" is a one-time copy and re-adding does not reliably
 # replace it, so deploy does that copy itself: package.json, built commands
 # and assets/, never source maps. Tinycast reads a command's JS on each run.
-deploy: build ## Build and copy straight into Tinycast Beta's installed extension
+deploy: build ## Build and copy straight into Tinycast's installed extension
 	@test -d "$(TINYCAST_EXT_DIR)" || { echo "Not installed yet — add $(CURDIR)/$(EXT_DIR)/build once via Settings → Extensions → Add from folder"; exit 1; }
 	@cmp -s "$(EXT_DIR)/build/package.json" "$(TINYCAST_EXT_DIR)/package.json"; echo $$? > /tmp/tinycast-manifest-changed
 	rsync -a --delete --exclude '*.map' "$(EXT_DIR)/build/" "$(TINYCAST_EXT_DIR)/"
@@ -48,8 +48,8 @@ deploy: build ## Build and copy straight into Tinycast Beta's installed extensio
 	@launchctl print gui/$$(id -u)/com.jkrumm.netgear-watchdog >/dev/null 2>&1 || echo "WARNING: com.jkrumm.netgear-watchdog is not loaded — the Netgear watchdog no longer runs inside Tinycast. Run 'make watchdog-setup'."
 	@# Tinycast only rescans manifests at launch — a new/renamed command needs a restart
 	@if [ "$$(cat /tmp/tinycast-manifest-changed)" != 0 ]; then \
-		echo "Manifest changed — restarting Tinycast Beta so it rescans commands"; \
-		osascript -e 'quit app "Tinycast Beta"'; sleep 2; open -a "Tinycast Beta"; \
+		echo "Manifest changed — restarting Tinycast so it rescans commands"; \
+		osascript -e 'quit app "Tinycast"'; sleep 2; open -a "Tinycast"; \
 	fi
 
 typecheck: ## tsc --noEmit
@@ -170,7 +170,7 @@ secrets-clear: ## Remove cached Keychain entries (forces re-resolution from 1Pas
 status: ## Debug readout: command metadata, watchdog log, LocalStorage sizes, deployed-vs-built check
 	python3 scripts/tinycast-status.py
 
-NETGEAR_LOG := $(HOME)/Library/Application Support/com.tinycast.app.beta/extension-support/jkrumm/netgear.log
+NETGEAR_LOG := $(HOME)/Library/Application Support/com.abueammar.tinycast/extension-support/jkrumm/netgear.log
 
 logs: ## Last 100 lines of the extension's own Netgear action log (console.log is dead in Tinycast)
 	@test -f "$(NETGEAR_LOG)" && tail -n 100 "$(NETGEAR_LOG)" || echo "No log yet: $(NETGEAR_LOG)"
@@ -178,12 +178,12 @@ logs: ## Last 100 lines of the extension's own Netgear action log (console.log i
 van-sampler-check: ## Judge the van-sampler background runs; ARGS="--wait 2" blocks for the next two and checks each
 	@python3 scripts/van-sampler-check.py $(ARGS)
 
-TINYCAST_APP := /Applications/Tinycast Beta.app
+TINYCAST_APP := /Applications/Tinycast.app
 TINYCAST_VERIFIED := 2026-10-13
 
-tinycast-version: ## Installed Tinycast Beta vs latest upstream release + extension-runtime commits since SINCE (default: last skill verification)
+tinycast-version: ## Installed Tinycast vs latest stable upstream release + extension-runtime commits since SINCE (default: last skill verification)
 	@echo "installed: $$(defaults read '$(TINYCAST_APP)/Contents/Info' CFBundleShortVersionString)"
-	@echo "latest:    $$(gh api repos/abue-ammar/tinycast/releases --jq '[.[]|select(.prerelease)][0].tag_name')"
+	@echo "latest:    $$(gh api repos/abue-ammar/tinycast/releases/latest --jq '.tag_name')"
 	@echo "--- commits since $${SINCE:-$(TINYCAST_VERIFIED)} touching the extension runtime (see .claude/skills/tinycast/SKILL.md § Checking upstream)"
 	@for p in Tinycast/Features/Extensions Scripts/raycast-runtime docs/features/extensions.md; do \
 		gh api "repos/abue-ammar/tinycast/commits?sha=main&since=$${SINCE:-$(TINYCAST_VERIFIED)}T00:00:00Z&per_page=100&path=$$p" \

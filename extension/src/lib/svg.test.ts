@@ -903,7 +903,7 @@ describe("barChart extras and time-chart windows", () => {
   });
 });
 
-// Tinycast beta draws a markdown image at its intrinsic/hinted size and never
+// Tinycast draws a markdown image at its intrinsic/hinted size and never
 // upscales — every hero a command actually embeds is built by the command's
 // own function (production-heroes.ts) and held to the floor at the real column
 // width: ≥11pt text, ≥20pt for the headline, canvas ≤ HERO_COL_WIDTH.

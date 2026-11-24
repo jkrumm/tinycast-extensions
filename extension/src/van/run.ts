@@ -1,5 +1,5 @@
 // The only impure part of the Van Power feature: resolve the Victron key and
-// spawn the van-ble helper. In Tinycast Beta, the TCC-responsible process for
+// spawn the van-ble helper. In Tinycast, the TCC-responsible process for
 // Bluetooth (it carries NSBluetoothAlwaysUsageDescription and the user's
 // grant), the helper is a bare binary shipped in assets/ — no .app bundle. The
 // launchd sampler runs a separately signed copy of the same binary, injected

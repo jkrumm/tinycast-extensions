@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Debug readout for the `jkrumm` Tinycast extension.
 
-Reads Tinycast Beta's own persisted state — background command metadata,
+Reads Tinycast's own persisted state — background command metadata,
 the netgear-watchdog event log, the van sampler's state files and background
 readings, the tail of the extension's own netgear.log, LocalStorage key sizes,
 and a deployed-vs-built sha1 check — since `console.log` is compiled out of the
@@ -19,7 +19,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 EXTENSION_NAME = "jkrumm"
-BUNDLE_ID = "com.tinycast.app.beta"
+BUNDLE_ID = "com.abueammar.tinycast"
 APPLE_EPOCH_OFFSET_SECONDS = 978307200  # 2001-01-01T00:00:00Z, unix seconds
 WATCHDOG_LOG_LIMIT = 60
 

@@ -167,7 +167,7 @@ const BATTERY_ISSUES: Record<string, string> = {
 
 function bluetoothIssue(errors: string[]): string | null {
   if (errors.includes("bluetooth-unauthorized")) {
-    return "Bluetooth access denied — allow Tinycast Beta in System Settings → Privacy & Security → Bluetooth.";
+    return "Bluetooth access denied — allow Tinycast in System Settings → Privacy & Security → Bluetooth.";
   }
   if (errors.includes("bluetooth-off")) return "Bluetooth is off.";
   const other = errors.find((e) => e.startsWith("bluetooth-"));

@@ -17,7 +17,7 @@ const execFileAsync = promisify(execFile);
 
 const DEFAULTS_BIN = "/usr/bin/defaults";
 const OPEN_BIN = "/usr/bin/open";
-const TINYCAST_DOMAIN = "com.tinycast.app.beta";
+const TINYCAST_DOMAIN = "com.abueammar.tinycast";
 
 export async function readTinycastSettings(): Promise<TinycastSettings> {
   const { stdout } = await execFileAsync(DEFAULTS_BIN, [

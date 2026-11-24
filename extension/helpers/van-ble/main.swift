@@ -9,7 +9,7 @@
 //
 // Prints exactly one JSON line to stdout and exits 0, even when a device was
 // not found (see `errors`). `--selftest` checks the crypto + framing against
-// known vectors and prints ok/fail. Tinycast Beta is the TCC-responsible
+// known vectors and prints ok/fail. Tinycast is the TCC-responsible
 // process for Bluetooth; this binary is spawned by the extension, not bundled.
 
 import CommonCrypto

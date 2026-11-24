@@ -27,7 +27,7 @@ const supportDir =
   process.env.NETGEAR_LOG_DIR ||
   join(
     homedir(),
-    "Library/Application Support/com.tinycast.app.beta/extension-support/jkrumm",
+    "Library/Application Support/com.abueammar.tinycast/extension-support/jkrumm",
   );
 
 mkdirSync(dir, { recursive: true });

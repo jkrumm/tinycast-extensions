@@ -1,24 +1,25 @@
 ---
 name: tinycast
-description: How to build, install, update and debug a Raycast-format extension for Tinycast (macOS launcher, com.tinycast.app) — what its JS runtime supports and doesn't, install routes, menu-bar semantics, and troubleshooting. Use for any work in this repo's extension/ directory or general Tinycast/Raycast-extension questions.
+description: How to build, install, update and debug a Raycast-format extension for Tinycast (macOS launcher, com.abueammar.tinycast) — what its JS runtime supports and doesn't, install routes, menu-bar semantics, and troubleshooting. Use for any work in this repo's extension/ directory or general Tinycast/Raycast-extension questions.
 agent: general-purpose
 ---
 
 # Building for Tinycast
 
-Tinycast (`https://tinycast.dev`, bundle `com.tinycast.app` stable /
-`com.tinycast.app.beta` beta) runs Raycast extensions natively: same
-`package.json` manifest, same `ray build` output, JS executed in
-JavaScriptCore, UI drawn in SwiftUI. **There is no separate Tinycast SDK** —
-you write a normal Raycast extension and install the built output.
+Tinycast (`https://tinycast.dev`, bundle `com.abueammar.tinycast`) runs
+Raycast extensions natively: same `package.json` manifest, same `ray build`
+output, JS executed in JavaScriptCore, UI drawn in SwiftUI. **There is no
+separate Tinycast SDK** — you write a normal Raycast extension and install the
+built output.
 
-**This repo targets the beta channel** (`com.tinycast.app.beta`,
-`0.11.x-beta.N` = upstream `main`; installed 0.11.15-beta.113, latest
-0.11.17-beta.115 = `main` @ `9e6beba` as of 2026-10-09) — see § Designing for
-Tinycast beta. The Homebrew cask lags (`brew info` still says 0.11.11-beta.107)
-because the app self-updates; trust the app's `Info.plist`, not brew.
-`make tinycast-version` prints installed vs latest and the extension-runtime
-commits in between (§ Checking upstream).
+**This repo targets stable Tinycast** (cask `tinycast`,
+`/Applications/Tinycast.app`, `com.abueammar.tinycast`; 0.12.15 installed as
+of 2026-11-24). Stable releases are cut from upstream `main`, and stable 0.12.x
+has the native menu-bar rendering and `Grid` tables this repo needs — see §
+Designing for Tinycast. The beta channel was retired here on 2026-11-24. The
+Homebrew cask can lag because the app self-updates; trust the app's
+`Info.plist`, not brew. `make tinycast-version` prints installed vs latest
+stable and the extension-runtime commits in between (§ Checking upstream).
 Sourced from `tinycast.dev` docs + the project's engineering spec
 (`docs/features/extensions.md`) for general Raycast-format behaviour, and
 directly from Tinycast's `main`-branch Swift source (via `gh api
@@ -62,8 +63,8 @@ restart-on-manifest-change is still required).
 Storage: extension code → `~/Library/Application Support/<bundle
 id>/extensions/<name>/`; preferences/cache → `extension-data/<safe
 name>.json`; `environment.supportPath` → `extension-support/<safe name>/`.
-`<bundle id>` is `com.tinycast.app` (stable) or `com.tinycast.app.beta` (beta)
-— separate apps, separate installs, never share settings.
+`<bundle id>` is `com.abueammar.tinycast` (stable 0.12.15+; earlier stable
+builds used `com.tinycast.app`).
 
 ## What works
 
@@ -102,14 +103,12 @@ Transforms (compress on flush, not streaming; `ce7535c5`). `WebAssembly.compile`
   and Tinycast uses `spawn` + `stdin.end(data)`. `van/run.ts` does this to pass
   the Victron key without putting it in argv. A binary shipped in `assets/` is
   reachable at `path.join(environment.assetsPath, "<name>")`; `van-ble`
-  is a bare binary, not an `.app`, on the premise that Tinycast Beta is the
+  is a bare binary, not an `.app`, on the premise that Tinycast is the
   TCC-responsible process for Bluetooth (UNCONFIRMED until the first in-app run).
 - **Menu-bar commands**: full lifecycle — activation on first manual run or
   "Show in menu bar", `interval` (10s floor for menu-bar, 60s for `no-view`),
   own transient JS engine per session, `updateCommandMetadata` for launcher
-  subtitle updates. See *Menu-bar: stable vs. beta* below — this repo's two
-  menu-bar commands need the **beta** channel until Tinycast's native
-  rendering ships to stable.
+  subtitle updates. See *Menu-bar* below.
 
 ## What doesn't work
 
@@ -133,11 +132,10 @@ Transforms (compress on flush, not streaming; `ce7535c5`). `WebAssembly.compile`
   Netgear client uses `curl -L` rather than `fetch`.
 - `.local`/mDNS names resolve.
 
-## Designing for Tinycast beta (target renderer)
+## Designing for Tinycast (target renderer)
 
-**This repo targets the beta channel** (`0.11.10-beta.x`, tracks upstream
-`main`) — install `abue-ammar/tinycast/tinycast@beta`
-(`com.tinycast.app.beta`), not stable. Verified by reading Tinycast source
+**This repo targets stable Tinycast** (0.12.x, cut from upstream `main`).
+Verified by reading Tinycast source
 straight off `main` (`gh api repos/abue-ammar/tinycast/contents/<path>?ref=main`):
 `Tinycast/DesignSystem/Theme.swift`, `InterfaceMetrics.swift`,
 `Features/Extensions/UI/{ExtensionDetailView,ExtensionListView,
@@ -167,7 +165,7 @@ ExtensionMenuBarImage}.swift`, `Features/Extensions/Model/ExtensionImageSize.swi
   `docs/architecture.md` § Metadata) — full width is the point.
   `extension/src/lib/svg.ts`'s `HERO_COL_WIDTH` (720) is the conservative
   design width every hero targets.
-- **No 220pt image height cap** (unlike stable 0.11.3). A markdown image
+- **No 220pt image height cap**. A markdown image
   draws at its own intrinsic size (the SVG's `width`/`height` attributes) —
   or, if the URL carries a `?raycast-width=&raycast-height=` hint, is fit
   (shrunk or grown, `.aspectRatio(.fit)`) into that box
@@ -180,7 +178,7 @@ ExtensionMenuBarImage}.swift`, `Features/Extensions/Model/ExtensionImageSize.swi
   svg.test.ts's "Hero image legibility" block).
 - **Markdown tables render as a real `Grid`**, header row shaded, borders
   drawn (`ExtensionMarkdownView.Block.table` in `ExtensionDetailView.swift`)
-  — the opposite of stable 0.11.3 (plain text). Use a table wherever it
+  — not plain text. Use a table wherever it
   beats a bullet list: this repo's battery/netgear/speed-test "extra
   fields" tables and speed-test's history table.
   - **Zero-width columns are how this repo fakes a "no header" table**:
@@ -255,7 +253,7 @@ ExtensionMenuBarImage}.swift`, `Features/Extensions/Model/ExtensionImageSize.swi
   `extensionName` is given, `type: LaunchType.Background` only for non-view
   commands. List `keywords` are searched next to title/subtitle
   (`ExtensionScreen.matches`); accessories are not.
-- **`MenuBarExtra` renders natively** on beta (`NSStatusItem`, confirmed via
+- **`MenuBarExtra` renders natively** on stable 0.12.x (`NSStatusItem`, landed in `0.11.4-beta.100`; confirmed via
   `ExtensionMenuBarImage.swift`) — an `icon` fits into an 18×18pt glyph
   (`.aspectRatio(.fit)`, rendered at 2x for Retina internally, so any SVG
   canvas works — nothing reads as text at that size, keep menu-bar icons to
@@ -264,18 +262,7 @@ ExtensionMenuBarImage}.swift`, `Features/Extensions/Model/ExtensionImageSize.swi
   quota-reflecting icon, and keeps `title` to the bare weekly percent now that a
   status-item title costs real menu-bar space.
 
-### Stable 0.11.3 differences (if this repo is ever reinstalled there)
-
-- **220pt image height cap**, and images always fill the column width —
-  neither `HERO_COL_WIDTH` sizing nor `?raycast-width=` hints apply the same
-  way; every hero would need re-tuning.
-- **Markdown tables render as plain text**, not a grid — every `| |` table
-  in this repo would need to fall back to a bullet list.
-- **`MenuBarExtra` doesn't render at all** — `ticktick-menu-bar` and
-  `claude-usage-menu-bar` need `0.11.4-beta.100`+ (see § Menu-bar below);
-  their ring/dot icons and compact titles are simply invisible on stable.
-- **List detail pane width is 220pt**, not 290pt; `Detail.Metadata` sidebar
-  is 240pt on both channels (unchanged).
+Stable 0.11.3 (pre-0.12.x) had a 220pt image cap, plain-text tables and no native menu-bar drawing; nothing here targets it.
 
 ## Changes since 0.11.10 (verified against `main` commits, 2026-10-05)
 
@@ -335,8 +322,8 @@ ExtensionMenuBarImage}.swift`, `Features/Extensions/Model/ExtensionImageSize.swi
 
 ## Checking upstream
 
-`make tinycast-version` = installed `Info.plist` version vs the newest
-`releases` entry, plus the commits since `SINCE` (default: the last skill
+`make tinycast-version` = installed `Info.plist` version vs the latest stable
+release (`releases/latest`, prereleases excluded), plus the commits since `SINCE` (default: the last skill
 verification, below) that touch `Features/Extensions`, `Scripts/raycast-runtime`
 or `docs/features/extensions.md`. Then `gh api repos/abue-ammar/tinycast/commits/<sha>
 --jq '.files[].filename'` and read the diff; re-verify only the file:line
@@ -367,22 +354,13 @@ For this repo, `<ext>` is `jkrumm` and `<owner>` is the local install (can be
 omitted); e.g. `tinycast://extensions/jkrumm/hub` or
 `extension:jkrumm/claude-usage` as the key for hotkeys/aliases/favorites.
 
-## Menu-bar: stable vs. beta
+## Menu-bar
 
-Public docs and the engineering spec describe menu-bar commands as fully
-shipped, but the exact version that added **native SwiftUI rendering** of a
-menu-bar command is `0.11.4-beta.100` (PR #963) — **stable 0.11.3 ships the
-JS shims only.** Until 0.11.4 reaches stable (stable self-updates daily —
-check the installed version before assuming), you need:
-
-```bash
-brew install --cask abue-ammar/tinycast/tinycast@beta
-```
-
-This installs `Tinycast Beta.app` (`com.tinycast.app.beta`) — a fully
-separate app, its own settings, side-by-side with stable. Channels never
-cross; `brew upgrade` never touches either (both self-update via GitHub
-Releases polling).
+Menu-bar commands need Tinycast's native **`NSStatusItem` rendering**, which
+landed in `0.11.4-beta.100` (PR #963) and ships in stable 0.12.x (stable 0.11.3
+ships the JS shims only). Install and update through the stable cask
+(`brew install --cask tinycast`); the app self-updates, so check the installed
+`Info.plist` version rather than assuming.
 
 ## Preferences, arguments, interval
 
@@ -433,7 +411,7 @@ end-user log viewer. Confirmed state surfaces instead:
 - **Background command metadata** (subtitle, `backgroundEnabled`, `lastRun`
   — seconds since the Apple reference date 2001-01-01, `lastError`,
   `consecutiveFailures`, `menuBarSnapshot`) lives in
-  `~/Library/Application Support/com.tinycast.app.beta/extension-commands.json`,
+  `~/Library/Application Support/com.abueammar.tinycast/extension-commands.json`,
   keyed by extension then command (`ExtensionCommandMetadataStore.swift`).
   **Failures back off exponentially**: next run = `interval × 2^consecutiveFailures`,
   capped at 24 h (`ExtensionRefreshPolicy.effectiveInterval`) — 10 failed
@@ -441,7 +419,7 @@ end-user log viewer. Confirmed state surfaces instead:
   does not wake it. A manual/deeplink run (`?launchType=background`) does
   **not** reset the counter; only a successful scheduled run or toggling
   Background Refresh off/on (`clearBackgroundError`) does. Fastest reset:
-  quit Tinycast Beta, set `consecutiveFailures` to 0 in that JSON, relaunch
+  quit Tinycast, set `consecutiveFailures` to 0 in that JSON, relaunch
   (seen 2026-10-02 after the `fs/promises.open` crash).
 - **`LocalStorage`/`Cache`** are real, persisted (debounced 250ms writes) to
   `extension-data/<safe-name>.json` under the same app-support dir, as
@@ -499,7 +477,7 @@ to the extension's own log file — `lib/action-log.ts` →
 dead. `lib/action-log.ts` (`appendLogLine`/`readLogTail`, pure sync `fs`,
 swallows its own errors, rotates to `.1` at 512 KB) writes one line per event to
 `<environment.supportPath>/netgear.log`, i.e.
-`~/Library/Application Support/com.tinycast.app.beta/extension-support/jkrumm/netgear.log`.
+`~/Library/Application Support/com.abueammar.tinycast/extension-support/jkrumm/netgear.log`.
 `make logs` tails it, `make status` prints its last 25 lines, and the
 Netgear command's "Show Netgear Log" action (cmd+shift+L) renders the last 80.
 New background/long-running code should log through `session.ts`'s
@@ -552,7 +530,7 @@ Verified against `gh api repos/abue-ammar/tinycast/contents/<path>?ref=main`,
   `#`-`####`, lists, a single-level blockquote, rules, fenced code blocks (no
   syntax highlighting), pipe tables, and inline bold/italic/links. **No
   HTML.** A standalone image (`http(s)`/`data:` only) must be alone on its
-  own line — see § Designing for Tinycast beta above for the table/image
+  own line — see § Designing for Tinycast above for the table/image
   specifics.
 - **Every component open is a cold `JSContext`** — no state, no module
   cache, no closures survive between opens (`ExtensionRuntime.bootOnQueue`, `ExtensionRuntime.swift:88`: `JSContext()` per boot, `runtime.shutdown()` after every run).

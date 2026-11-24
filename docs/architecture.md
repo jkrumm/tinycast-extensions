@@ -19,7 +19,7 @@ usage) and the secrets chain (TickTick, Netgear, Victron) where useful.
 | `speed-test` | view | `src/speed-test.tsx` | `speed-test/{run,parse,heroes,types}.ts`, `lib/svg.ts` | `/usr/bin/networkQuality` + `LocalStorage` history |
 | `van-power` | view | `src/van-power.tsx` | `van/{run,load,parse,history,victron-history,victron-trends,consumption,soc-estimate,capture-log,sampler,sampler-storage,store,legacy,runtime,format,heroes,storage,types}.ts`, `lib/svg.ts` | `assets/van-ble` (Swift BLE helper: Ective BMS notify + Victron Instant Readout advert, Victron GATT history/trends) + the file store (`~/.local/state/van-sampler/`, 72 h history) + the `van-log.jsonl` / `van-trends.jsonl` logs (14-day consumption) |
 | `van-sampler` | launchd `com.jkrumm.van-sampler`, 15 min, `jobrun` | `extension/scripts/van-sampler.ts` | `van/{sampler-runner,sampler,sampler-storage,store,runtime,notify,load,run}.ts` | signed `~/.local/libexec/van-sampler/van-ble` (launchd program, `--supervise`; Bluetooth TCC: `docs/van-sampler-tcc.md`) + files in `~/.local/state/van-sampler/` (shared with the view) + `osascript` low-battery notification |
-| `shortcuts` | view (List) | `src/shortcuts.tsx` | `shortcuts/{load,parse,format,fixtures}.ts` | `/usr/bin/defaults export com.tinycast.app.beta -` (hotkeys, `launcherAliases`, `favoriteApps`, Hyper Key settings) + `defaults read com.apple.HIToolbox` (keyboard layout) + an Info.plist scan of the app folders (bundle id → app name + path) + the installed `package.json` command titles and icons |
+| `shortcuts` | view (List) | `src/shortcuts.tsx` | `shortcuts/{load,parse,format,fixtures}.ts` | `/usr/bin/defaults export com.abueammar.tinycast -` (hotkeys, `launcherAliases`, `favoriteApps`, Hyper Key settings) + `defaults read com.apple.HIToolbox` (keyboard layout) + an Info.plist scan of the app folders (bundle id → app name + path) + the installed `package.json` command titles and icons |
 | `home` | view (List) | `src/home.tsx` | `home/{run,parse,format,types}.ts` | `~/.local/bin/home scenes\|status\|trigger\|set\|doctor --json` (ssh to the mini → HomeClaw) + `LocalStorage` `home-cache`, `home-status` |
 | `home-menu-bar` | menu-bar, `interval: 5m` | `src/home-menu-bar.tsx` | `home/{run,actions,format,parse,types}.ts` | same `home` CLI + the two caches |
 | `home-climate` | view (Detail) | `src/home-climate.tsx` | `home/{run,climate,climate-view,heroes}.ts`, `lib/svg.ts` | `~/.local/bin/home climate <hours> --json` + `home status --json` |
@@ -72,7 +72,7 @@ Speed Test command
 
 Shortcuts command
   └─ shortcuts/load.ts
-       ├─ execFile /usr/bin/defaults export com.tinycast.app.beta - → shortcuts/parse.ts (pure XML plist subset)
+       ├─ execFile /usr/bin/defaults export com.abueammar.tinycast - → shortcuts/parse.ts (pure XML plist subset)
        ├─ execFile /usr/bin/defaults read com.apple.HIToolbox … → keyboard layout (Y/Z swap)
        ├─ execFile /bin/sh: one Info.plist scan of the app folders → app names + .app paths (fallback: the id)
        ├─ fs.readFile ../package.json → command titles + icons
@@ -148,14 +148,13 @@ runner stands in for `security`/`op`) and callers (`lib/argo.ts`,
 Every Detail command (`claude-usage`, `netgear`, `battery`, `speed-test`,
 `van-power`)
 renders **no `Detail.Metadata` sidebar**. Two things made that the better
-trade once the target channel became Tinycast beta:
+trade once the target became stable Tinycast 0.12.x:
 
-- On beta, a plain `Detail`'s markdown pane is the full column width minus
+- A plain `Detail`'s markdown pane is the full column width minus
   the sidebar (≈489pt with the 240pt sidebar vs. ≈730pt without, at the
   750-wide `standard` window) — dropping it is a real width gain, not
   cosmetic.
-- Beta also renders markdown tables as a real `Grid` (stable 0.11.3 doesn't
-  — see `.claude/skills/tinycast/SKILL.md` § Stable 0.11.3 differences), so
+- Tinycast also renders markdown tables as a real `Grid`, so
   the fields that used to justify a sidebar (state, voltage, SIM, connected
   clients, latency, …) used to sit in a markdown table below the hero images;
   now only the long-tail reference text does. The headline numbers are an SVG

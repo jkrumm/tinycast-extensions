@@ -70,7 +70,7 @@ export async function getPassword(opts: {
 // Persistent action log (lib/action-log.ts) — `console.log` is dead in
 // Tinycast's release build, so this file is the only readable record of what a
 // Netgear action actually did. On disk:
-// ~/Library/Application Support/com.tinycast.app.beta/extension-support/jkrumm/netgear.log
+// ~/Library/Application Support/com.abueammar.tinycast/extension-support/jkrumm/netgear.log
 export function netgearLogPath(): string {
   return join(environment.supportPath, "netgear.log");
 }

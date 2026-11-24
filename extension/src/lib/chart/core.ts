@@ -13,8 +13,8 @@
 // (secondary text is already 60%). See `.claude/skills/svg-charts/SKILL.md`
 // and `.claude/skills/tinycast/SKILL.md` § Designing for Tinycast.
 //
-// Target renderer: Tinycast **beta** (0.11.10-beta.x = upstream `main`),
-// window 750×475 at `interfaceSize: standard`. Beta has **no 220pt image
+// Target renderer: stable Tinycast 0.12.x (cut from upstream `main`, like the betas),
+// window 750×475 at `interfaceSize: standard`. Tinycast has **no 220pt image
 // height cap** — a markdown image draws at its own intrinsic size, or fits an
 // explicit `?raycast-width=&raycast-height=` hint, which `toDataUri()` always
 // appends from the SVG's own canvas. Every Detail command renders full-width

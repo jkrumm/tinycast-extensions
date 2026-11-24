@@ -9,15 +9,13 @@ van's BLE power system (Ective battery + Victron solar).
 
 Tinycast runs Raycast extensions natively (same `package.json` + `ray build`
 output, JS in JavaScriptCore, UI in SwiftUI) — there is no separate SDK, no
-dev server, and no hot reload. **Target install channel is beta**
-(`com.tinycast.app.beta`, `0.11.10-beta.x` = upstream `main`) — install
-`abue-ammar/tinycast/tinycast@beta`, not stable; native `MenuBarExtra`
-rendering and markdown tables-as-grid both need it. See
-`.claude/skills/tinycast/SKILL.md` for the full runtime reference (what
-works, what doesn't, sourced against `tinycast.dev` docs and, for
-render-size/layout facts, directly against Tinycast's `main`-branch Swift
-source) and its § Stable 0.11.3 differences if this ever needs reinstalling
-there.
+dev server, and no hot reload. **Target install: stable Tinycast** (cask
+`tinycast`, bundle id `com.abueammar.tinycast`, 0.12.x+; native `MenuBarExtra`
+rendering and markdown tables-as-grid ship in stable). Switched from the beta
+channel on 2026-11-24. See `.claude/skills/tinycast/SKILL.md` for the full
+runtime reference (what works, what doesn't, sourced against `tinycast.dev`
+docs and, for render-size/layout facts, directly against Tinycast's
+`main`-branch Swift source).
 
 ## Layout
 
@@ -36,7 +34,7 @@ extension/
     van-power.tsx           command — Van Power: Ective battery + Victron solar over BLE, 72 h charts
     shortcuts.tsx           command — List of every global hotkey, launcher alias and favorite (Enter launches it), read live from Tinycast's defaults
     home.tsx                command — Apple Home: Status (climate, Nami toggle, someone home) + Lights (`home device-map`: Enter toggles, brightness 25/50/75/100 % submenu) + scenes (type a name, Enter triggers) + Needs attention (unreachable, low battery), LocalStorage stale-while-revalidate
-    home-menu-bar.tsx       command — Home menu bar (5m): `21.9° 42%` title, climate + hints, Nami toggle, scenes, Open Home; beta only
+    home-menu-bar.tsx       command — Home menu bar (5m): `21.9° 42%` title, climate + hints, Nami toggle, scenes, Open Home
     home-climate.tsx        command — Home Climate History Detail: status panel (inside temp + humidity, outside), metrics grid (24 h ranges, absolute humidity, airing helps, Nami, presence), temperature + humidity charts; ranges 24 h / 48 h / 7 d / 30 d (⌘1–4, default 48 h); pushed from the Home list (⇧⌘Y), launched from the menu bar
     scene-<name>.tsx        9 no-view commands (arbeit, aus, bett-dunkel, bett-hell, chill, gute-nacht, guten-morgen, hell, tv) — one-liners over `home/scene-command.ts`, so the launcher runs a scene by its name
     nami-comes-along.tsx, nami-stays-home.tsx  no-view commands — set the "Nami zu Hause" switch false / true
@@ -138,7 +136,7 @@ make build      # ray build -e dist -o extension/build
 
 ```
 make helper     # swiftc extension/helpers/van-ble/main.swift → extension/assets/van-ble, then --selftest
-make deploy     # build + copy into Tinycast Beta's installed extension
+make deploy     # build + copy into Tinycast's installed extension
 make watchdog-setup   # MacBook: render + load the 60 s netgear-watchdog LaunchAgent (jobrun-wrapped); -status / -teardown
 ```
 
@@ -151,7 +149,7 @@ selftest is part of green.
 never re-adds anything. "Add from folder" (Settings → Extensions → Install) is
 only for the very first install: it copies `package.json`, the built command
 `.js` and `assets/` (never `node_modules`, never source maps) into
-`~/Library/Application Support/com.tinycast.app.beta/extensions/jkrumm/`, and
+`~/Library/Application Support/com.abueammar.tinycast/extensions/jkrumm/`, and
 **re-adding the folder does not replace that copy** (verified 2026-09-27: the
 installed `hub.js` stayed stale). `make deploy` rsyncs `extension/build/` there
 itself — including `build/node_modules/`: since `@raycast/api` 2.x, `ray build`
@@ -160,7 +158,7 @@ moves dependencies shared by several commands (`@raycast/utils`, `d3-*`,
 them from 0.11.19-beta.117 (`126c998`), so that is the floor; Tinycast reads a command's JS on every run, so the next open shows the
 change. The **command list** is different: Tinycast scans manifests only at
 launch (`ExtensionManager.refresh()`), so a new/renamed command stays invisible
-until a restart — `make deploy` restarts Tinycast Beta itself whenever the
+until a restart — `make deploy` restarts Tinycast itself whenever the
 deployed `package.json` changed. Verify with `shasum` of the installed vs built `.js` if in doubt, or
 run `make status` — it prints that same deployed-vs-built check alongside
 background command metadata and the netgear-watchdog log (see § Debugging in
@@ -168,7 +166,7 @@ the tinycast skill). There is no hot reload or dev mode.
 
 `make van-sampler-check` judges the latest `van-sampler` run (the store's `sampler.json` + `paused` flag + the `background` lines in `van-log.jsonl`); `ARGS="--wait 2"` blocks for the next two runs and exits non-zero on a failure or an overdue run.
 
-`make tinycast-version` prints the installed Tinycast Beta vs the latest upstream release and the runtime commits since the skill was last verified (recipe: tinycast skill § Checking upstream).
+`make tinycast-version` prints the installed Tinycast vs the latest upstream release and the runtime commits since the skill was last verified (recipe: tinycast skill § Checking upstream).
 
 `make previews` renders the chart gallery and every production hero (see § SVG hero images).
 
@@ -430,7 +428,7 @@ run make secrets" while still reading the battery.
   everywhere, each saying what happened and what to do. **Persistent action
   log**: `console.log` is compiled out of the release app, so
   `lib/action-log.ts` appends one human-readable line per event to
-  `netgear.log` in `supportPath` (`~/Library/Application Support/com.tinycast.app.beta/extension-support/jkrumm/`,
+  `netgear.log` in `supportPath` (`~/Library/Application Support/com.abueammar.tinycast/extension-support/jkrumm/`,
   rotates to `netgear.log.1` at 512 KB; logging never throws) —
   `withAdmin` (start / every progress step / ok / failed with raw error +
   stack), `netgear.tsx`'s auto-unlock and Rejoin Wi-Fi, the lock wait, and the
@@ -614,7 +612,7 @@ The
   stays on screen next to the translation and the output is only ever shown,
   never acted on. Not yet exposed over HTTP — the CLI is the interface.
 
-- **Shortcuts** — `/usr/bin/defaults export com.tinycast.app.beta -` (an XML plist;
+- **Shortcuts** — `/usr/bin/defaults export com.abueammar.tinycast -` (an XML plist;
   `plutil -convert json` fails on its `<data>`/`<date>` values, so `shortcuts/parse.ts`
   extracts only `hotkey.<action>` strings, `launcherAliases`, `favoriteApps` and the
   top-level `hyperKeyPhysicalKey`/`hyperKeyIncludesShift`) → read-only, nothing is
@@ -645,7 +643,7 @@ The
   CommonCrypto, built by `make helper` into the gitignored
   `extension/assets/van-ble`) and spawned by `van/run.ts` via
   `child_process.spawn(path.join(environment.assetsPath, "van-ble"))`. **In the
-  Van Power view, Tinycast Beta is the TCC-responsible process** — it carries
+  Van Power view, Tinycast is the TCC-responsible process** — it carries
   `NSBluetoothAlwaysUsageDescription` and the user's Bluetooth grant — so that
   helper is a bare binary. The **launchd sampler** (below) runs a *separately
   signed* copy with the usage description embedded (`helpers/van-ble/Info.plist`,
@@ -934,7 +932,7 @@ The
     slightly, pending most), a day with no data keeps its place as "—". Starts at the first
     known day; fewer than two days → no chart.
   - **SoC estimator tuning loop.** Two append-only files in the extension's
-    support dir (`~/Library/Application Support/com.tinycast.app.beta/extension-support/jkrumm/`,
+    support dir (`~/Library/Application Support/com.abueammar.tinycast/extension-support/jkrumm/`,
     written by `van/capture-log.ts` with only shim-safe fs calls, never throwing):
     - `van-log.jsonl` — one line per Van Power open or background-sampler run
       (`source: "open" | "background"`, absent in older lines = open;
@@ -1037,7 +1035,7 @@ horizontal / stacked), `sparkline`, `ring`/`ringGaugeRow`, `thresholdBar`,
 `toDataUri()` into markdown / `Grid.Item.content` / `MenuBarExtra`'s `icon`.
 Colours are always `raycast-*` names (`RAYCAST_COLOR`), never hex — Tinycast
 rewrites them to the live theme (gradients and opacity included, see the tinycast
-skill § Designing for Tinycast beta). **API, design rules and perf numbers:
+skill § Designing for Tinycast). **API, design rules and perf numbers:
 `.claude/skills/svg-charts/SKILL.md`.** A command's hero builders live in a pure
 `<feature>/heroes.ts` (no `@raycast/api`) and are listed in
 `lib/chart/production-heroes.ts`, so tests and previews render exactly what ships.
@@ -1054,9 +1052,8 @@ numbers a sidebar used to (see § Metadata below and `docs/architecture.md`),
 so the markdown pane is the full column (~730pt at the 750-wide `standard`
 window) — `HERO_COL_WIDTH` is a conservative round number under that.
 `toDataUri()` always appends a `?raycast-width=&raycast-height=` hint
-matching the SVG's own declared size (Tinycast beta has no 220pt image
-height cap, unlike stable 0.11.3 — it draws at intrinsic/hinted size,
-never upscaling). `assertLegible` plus svg.test.ts's production-hero block
+matching the SVG's own declared size (Tinycast has no 220pt image height
+cap — it draws at intrinsic/hinted size, never upscaling). `assertLegible` plus svg.test.ts's production-hero block
 enforce ≥11pt text (≥20pt for the one headline number, `role: "primary"`) at that
 column width for every production hero — run it after any layout change.
 
@@ -1082,8 +1079,7 @@ table**, and **every number is drawn once**.
   < 5 °C or > 40 °C), cycles/capacity/charger current are cut as numbers that
   change no decision.
 - A markdown table stays only for genuinely long-tail reference text, using
-  Tinycast beta's real `Grid` table rendering (stable 0.11.3 renders a table
-  as plain text — see the skill's § Stable 0.11.3 differences): netgear's
+  Tinycast's real `Grid` table rendering (since 0.12.x): netgear's
   roaming/APN/PIN/SMS/SIM operator, speed-test's "Recent Tests", netgear's
   "Connected Devices" and watchdog log (plain `Detail`s with a table too, not
   `List`s).
@@ -1092,14 +1088,11 @@ Charts that repeat a panel number drop their last-value chip (`lastValues:
 false`). `.claude/skills/svg-charts/SKILL.md` has the API and the
 panel-vs-cards-vs-table rule.
 
-## Menu-bar commands — beta only
+## Menu-bar commands
 
 `ticktick-menu-bar`, `claude-usage-menu-bar` and `home-menu-bar` need Tinycast's native
 menu-bar rendering (`NSStatusItem`), which landed in `0.11.4-beta.100`
-(PR #963) — **stable 0.11.3 ships the JS shims but not the native drawing,
-so these commands are invisible there.** This repo's target channel is
-already beta (`com.tinycast.app.beta`) for exactly this reason — see the
-top of this file. `claude-usage-menu-bar` uses `lib/svg.ts`'s
+(PR #963) and ships in stable 0.12.x (the JS shims alone, as in 0.11.3, show nothing). `claude-usage-menu-bar` uses `lib/svg.ts`'s
 `menuBarRing()` for a live, no-text ring icon (18×18pt, nothing reads at
 that size, the pool's weekly use) and keeps its status-item `title` to the working account
 plus its weekly use (`me 9%`, a mark prefix when something needs attention), since

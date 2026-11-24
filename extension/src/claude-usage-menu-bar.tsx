@@ -147,8 +147,8 @@ function useUsage() {
 }
 
 // A live ring reflecting the pool's weekly use (the one account's weekly when
-// there is only one) — the limit that binds on a Max plan. Native menu-bar rendering (beta) fits this into an 18×18pt
-// NSStatusItem glyph, so no text: the ring's fill is the whole signal.
+// there is only one) — the limit that binds on a Max plan. Native menu-bar rendering (`NSStatusItem`, in
+// stable since 0.12.x) fits this into an 18×18pt glyph, so no text: the ring's fill is the whole signal.
 function menuBarIcon(quota: UsageQuota, summary: UsageSummary | null): string {
   const percent =
     summary?.pool?.usedPct ??

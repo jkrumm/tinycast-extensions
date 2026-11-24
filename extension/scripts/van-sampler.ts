@@ -20,7 +20,7 @@ const supportDir =
   process.env.VAN_SUPPORT_DIR ||
   join(
     homedir(),
-    "Library/Application Support/com.tinycast.app.beta/extension-support/jkrumm",
+    "Library/Application Support/com.abueammar.tinycast/extension-support/jkrumm",
   );
 
 mkdirSync(vanDir(), { recursive: true });

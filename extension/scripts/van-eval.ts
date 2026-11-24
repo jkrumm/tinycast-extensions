@@ -6,7 +6,7 @@
 //
 //   bun scripts/van-eval.ts [support-dir]
 //
-// Default dir: the deployed Tinycast Beta extension's support path; override
+// Default dir: the deployed Tinycast extension's support path; override
 // with the first argument or $VAN_SUPPORT_DIR. Read-only.
 
 import { homedir } from "os";
@@ -28,7 +28,7 @@ const dir =
   process.env.VAN_SUPPORT_DIR ??
   join(
     homedir(),
-    "Library/Application Support/com.tinycast.app.beta/extension-support/jkrumm",
+    "Library/Application Support/com.abueammar.tinycast/extension-support/jkrumm",
   );
 
 const logText = readTextFile(join(dir, CAPTURE_LOG_FILE));

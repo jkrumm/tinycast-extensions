@@ -4,7 +4,7 @@ The van sampler used to be a Tinycast no-view background command (every 15 min).
 only while no view was open, and it died with the app. It is now a launchd job
 (`launchd/com.jkrumm.van-sampler.plist.tmpl`, `extension/scripts/van-sampler.ts`, wrapped in
 `jobrun`). The one open risk is macOS Bluetooth privacy (TCC): the BLE scan happens in `van-ble`,
-and until now Tinycast Beta was the process the grant belonged to. This page is the research, the
+and until now Tinycast was the process the grant belonged to. This page is the research, the
 spike that decides it, and the fallback. **Status: built, not proven. The spike can only run on the
 MacBook (BLE hardware, GUI session, a human to click the dialog).**
 
@@ -34,7 +34,7 @@ Consequences designed in:
 
 ## The spike — `make van-sampler-spike`
 
-Runs on the MacBook, logged in, at the screen. It quits Tinycast Beta (and reopens it after), then
+Runs on the MacBook, logged in, at the screen. It quits Tinycast (and reopens it after), then
 runs three throwaway launchd jobs against the real signed binary and ends with exactly one line,
 `VAN-SAMPLER SPIKE: PASS` (exit 0) or `VAN-SAMPLER SPIKE: FAIL (<why>)` (exit 1). Evidence:
 `~/Library/Logs/van-sampler-spike.result` (+ `.log`).

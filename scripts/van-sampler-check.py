@@ -43,7 +43,7 @@ STATE_FILE = STATE_DIR / "sampler.json"
 PAUSED_FILE = STATE_DIR / "paused"
 SUPPORT_DIR = Path(
     os.environ.get("VAN_SUPPORT_DIR")
-    or Path.home() / "Library" / "Application Support" / "com.tinycast.app.beta" / "extension-support" / "jkrumm"
+    or Path.home() / "Library" / "Application Support" / "com.abueammar.tinycast" / "extension-support" / "jkrumm"
 )
 VAN_LOG = SUPPORT_DIR / "van-log.jsonl"
 
