@@ -25,7 +25,11 @@ type ExtensionPreferences = {
   /** Victron Instant Readout Key (override) - 32-hex-char Instant Readout encryption key of the SmartSolar MPPT — leave blank to resolve it from Keychain / 1Password instead (see Victron Key 1Password Ref) */
   "victronKey"?: string,
   /** Victron Key 1Password Ref - op:// reference used to resolve the Victron key when no override and no cached Keychain entry exist */
-  "victronKeyRef": string
+  "victronKeyRef": string,
+  /** Scan Inbox - Folder the scanned PDFs are saved into (picked up by another automation) */
+  "scanInbox": string,
+  /** Scanner Host - Leave empty to find the scanner on the network */
+  "scannerHost"?: string
 }
 
 /** Preferences accessible in all the extension's commands */
@@ -54,8 +58,78 @@ declare namespace Preferences {
   export type Shortcuts = ExtensionPreferences & {}
   /** Preferences accessible in the `home` command */
   export type Home = ExtensionPreferences & {}
+  /** Preferences accessible in the `home-menu-bar` command */
+  export type HomeMenuBar = ExtensionPreferences & {}
+  /** Preferences accessible in the `home-climate` command */
+  export type HomeClimate = ExtensionPreferences & {}
+  /** Preferences accessible in the `scene-arbeit` command */
+  export type SceneArbeit = ExtensionPreferences & {}
+  /** Preferences accessible in the `scene-aus` command */
+  export type SceneAus = ExtensionPreferences & {}
+  /** Preferences accessible in the `scene-bett-dunkel` command */
+  export type SceneBettDunkel = ExtensionPreferences & {}
+  /** Preferences accessible in the `scene-bett-hell` command */
+  export type SceneBettHell = ExtensionPreferences & {}
+  /** Preferences accessible in the `scene-chill` command */
+  export type SceneChill = ExtensionPreferences & {}
+  /** Preferences accessible in the `scene-gute-nacht` command */
+  export type SceneGuteNacht = ExtensionPreferences & {}
+  /** Preferences accessible in the `scene-guten-morgen` command */
+  export type SceneGutenMorgen = ExtensionPreferences & {}
+  /** Preferences accessible in the `scene-hell` command */
+  export type SceneHell = ExtensionPreferences & {}
+  /** Preferences accessible in the `scene-tv` command */
+  export type SceneTv = ExtensionPreferences & {}
+  /** Preferences accessible in the `nami-comes-along` command */
+  export type NamiComesAlong = ExtensionPreferences & {}
+  /** Preferences accessible in the `nami-stays-home` command */
+  export type NamiStaysHome = ExtensionPreferences & {}
+  /** Preferences accessible in the `spotify` command */
+  export type Spotify = ExtensionPreferences & {}
+  /** Preferences accessible in the `spotify-play-pause` command */
+  export type SpotifyPlayPause = ExtensionPreferences & {}
+  /** Preferences accessible in the `spotify-next` command */
+  export type SpotifyNext = ExtensionPreferences & {}
+  /** Preferences accessible in the `spotify-previous` command */
+  export type SpotifyPrevious = ExtensionPreferences & {}
+  /** Preferences accessible in the `spotify-louder` command */
+  export type SpotifyLouder = ExtensionPreferences & {}
+  /** Preferences accessible in the `spotify-quieter` command */
+  export type SpotifyQuieter = ExtensionPreferences & {}
+  /** Preferences accessible in the `spotify-play-on-mine` command */
+  export type SpotifyPlayOnMine = ExtensionPreferences & {}
+  /** Preferences accessible in the `spotify-play-on-macbook` command */
+  export type SpotifyPlayOnMacbook = ExtensionPreferences & {}
   /** Preferences accessible in the `hub` command */
   export type Hub = ExtensionPreferences & {}
+  /** Preferences accessible in the `walkingpad` command */
+  export type Walkingpad = ExtensionPreferences & {}
+  /** Preferences accessible in the `walkingpad-toggle` command */
+  export type WalkingpadToggle = ExtensionPreferences & {}
+  /** Preferences accessible in the `walkingpad-faster` command */
+  export type WalkingpadFaster = ExtensionPreferences & {}
+  /** Preferences accessible in the `walkingpad-slower` command */
+  export type WalkingpadSlower = ExtensionPreferences & {}
+  /** Preferences accessible in the `walkingpad-speed-3-0` command */
+  export type WalkingpadSpeed30 = ExtensionPreferences & {}
+  /** Preferences accessible in the `walkingpad-speed-3-5` command */
+  export type WalkingpadSpeed35 = ExtensionPreferences & {}
+  /** Preferences accessible in the `walkingpad-speed-4-0` command */
+  export type WalkingpadSpeed40 = ExtensionPreferences & {}
+  /** Preferences accessible in the `walkingpad-speed-4-5` command */
+  export type WalkingpadSpeed45 = ExtensionPreferences & {}
+  /** Preferences accessible in the `walkingpad-speed-5-0` command */
+  export type WalkingpadSpeed50 = ExtensionPreferences & {}
+  /** Preferences accessible in the `scan` command */
+  export type Scan = ExtensionPreferences & {}
+  /** Preferences accessible in the `scan-fronts` command */
+  export type ScanFronts = ExtensionPreferences & {}
+  /** Preferences accessible in the `scan-backs` command */
+  export type ScanBacks = ExtensionPreferences & {}
+  /** Preferences accessible in the `scan-flatbed` command */
+  export type ScanFlatbed = ExtensionPreferences & {}
+  /** Preferences accessible in the `scan-more` command */
+  export type ScanMore = ExtensionPreferences & {}
 }
 
 declare namespace Arguments {
@@ -81,7 +155,77 @@ declare namespace Arguments {
   export type Shortcuts = {}
   /** Arguments passed to the `home` command */
   export type Home = {}
+  /** Arguments passed to the `home-menu-bar` command */
+  export type HomeMenuBar = {}
+  /** Arguments passed to the `home-climate` command */
+  export type HomeClimate = {}
+  /** Arguments passed to the `scene-arbeit` command */
+  export type SceneArbeit = {}
+  /** Arguments passed to the `scene-aus` command */
+  export type SceneAus = {}
+  /** Arguments passed to the `scene-bett-dunkel` command */
+  export type SceneBettDunkel = {}
+  /** Arguments passed to the `scene-bett-hell` command */
+  export type SceneBettHell = {}
+  /** Arguments passed to the `scene-chill` command */
+  export type SceneChill = {}
+  /** Arguments passed to the `scene-gute-nacht` command */
+  export type SceneGuteNacht = {}
+  /** Arguments passed to the `scene-guten-morgen` command */
+  export type SceneGutenMorgen = {}
+  /** Arguments passed to the `scene-hell` command */
+  export type SceneHell = {}
+  /** Arguments passed to the `scene-tv` command */
+  export type SceneTv = {}
+  /** Arguments passed to the `nami-comes-along` command */
+  export type NamiComesAlong = {}
+  /** Arguments passed to the `nami-stays-home` command */
+  export type NamiStaysHome = {}
+  /** Arguments passed to the `spotify` command */
+  export type Spotify = {}
+  /** Arguments passed to the `spotify-play-pause` command */
+  export type SpotifyPlayPause = {}
+  /** Arguments passed to the `spotify-next` command */
+  export type SpotifyNext = {}
+  /** Arguments passed to the `spotify-previous` command */
+  export type SpotifyPrevious = {}
+  /** Arguments passed to the `spotify-louder` command */
+  export type SpotifyLouder = {}
+  /** Arguments passed to the `spotify-quieter` command */
+  export type SpotifyQuieter = {}
+  /** Arguments passed to the `spotify-play-on-mine` command */
+  export type SpotifyPlayOnMine = {}
+  /** Arguments passed to the `spotify-play-on-macbook` command */
+  export type SpotifyPlayOnMacbook = {}
   /** Arguments passed to the `hub` command */
   export type Hub = {}
+  /** Arguments passed to the `walkingpad` command */
+  export type Walkingpad = {}
+  /** Arguments passed to the `walkingpad-toggle` command */
+  export type WalkingpadToggle = {}
+  /** Arguments passed to the `walkingpad-faster` command */
+  export type WalkingpadFaster = {}
+  /** Arguments passed to the `walkingpad-slower` command */
+  export type WalkingpadSlower = {}
+  /** Arguments passed to the `walkingpad-speed-3-0` command */
+  export type WalkingpadSpeed30 = {}
+  /** Arguments passed to the `walkingpad-speed-3-5` command */
+  export type WalkingpadSpeed35 = {}
+  /** Arguments passed to the `walkingpad-speed-4-0` command */
+  export type WalkingpadSpeed40 = {}
+  /** Arguments passed to the `walkingpad-speed-4-5` command */
+  export type WalkingpadSpeed45 = {}
+  /** Arguments passed to the `walkingpad-speed-5-0` command */
+  export type WalkingpadSpeed50 = {}
+  /** Arguments passed to the `scan` command */
+  export type Scan = {}
+  /** Arguments passed to the `scan-fronts` command */
+  export type ScanFronts = {}
+  /** Arguments passed to the `scan-backs` command */
+  export type ScanBacks = {}
+  /** Arguments passed to the `scan-flatbed` command */
+  export type ScanFlatbed = {}
+  /** Arguments passed to the `scan-more` command */
+  export type ScanMore = {}
 }
 

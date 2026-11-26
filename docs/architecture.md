@@ -28,6 +28,7 @@ usage) and the secrets chain (TickTick, Netgear, Victron) where useful.
 | `spotify-*` | no-view (7) | `src/spotify-<name>.tsx` | `spotify/{command,actions,run}.ts` | same `home audio` calls, HUD with the result |
 | `walkingpad` | view (Detail) | `src/walkingpad.tsx` | `walkingpad/{run,parse,actions,client,config,types}.ts` | the WalkingPad host's HTTP API over the tailnet door (URL from `defaults`, token from the login Keychain, both the Mac app's) + `LocalStorage` `walkingpad-status` |
 | `walkingpad-*` | no-view (8) | `src/walkingpad-<name>.tsx` | `walkingpad/{command,actions,client,config,run}.ts` | same host calls, HUD with the result |
+| `scan*` | no-view (5) | `src/scan.tsx`, `src/scan-{fronts,backs,flatbed,more}.tsx` | `scan/{command,actions,parse}.ts` (pre-check + spawn); the scan itself is `scripts/scan.ts` → `scan/{job,runner,transport,discover,deliver,pdf,escl}.ts`, a detached bun process | the scanner's eSCL API over plain HTTP via curl, found by `dns-sd`; PDFs into the scan inbox (`scanInbox`), result as a macOS notification |
 | `hub` | view | `src/hub.tsx` | reads every feature module above, one tile each | all of the above, loaded independently per tile |
 
 Shared: `lib/argo.ts` (bearer-authed fetch client, `prefs()`, `useAuthHeaders()`),
@@ -173,7 +174,7 @@ hero images). `netgear`'s "Connected Devices" and "SMS" sub-views are plain
 ## Testing boundary
 
 Everything under `ticktick/`, `usage/`, `netgear/`, `battery/`, `speed-test/`,
-`shortcuts/`, `van/`, and `lib/` that doesn't import `@raycast/api` is unit-tested with vitest
+`shortcuts/`, `van/`, `scan/`, and `lib/` that doesn't import `@raycast/api` is unit-tested with vitest
 (`make test`) — parsing, formatting, aggregation, the netgear client against
 a fake transport, the secrets chain against a fake runner, and the SVG
 toolkit's string output. The eleven command entry files (`src/*.tsx`) are the

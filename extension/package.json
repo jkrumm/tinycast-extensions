@@ -508,6 +508,87 @@
         "5.0"
       ],
       "icon": "walkingpad.png"
+    },
+    {
+      "name": "scan",
+      "title": "Scan Document",
+      "subtitle": "Scanner",
+      "description": "Scan the sheets in the feeder into one PDF in the scan inbox",
+      "mode": "no-view",
+      "keywords": [
+        "scan",
+        "scanner",
+        "document",
+        "dokument",
+        "pdf",
+        "feeder",
+        "einzug"
+      ],
+      "icon": "scan.png"
+    },
+    {
+      "name": "scan-fronts",
+      "title": "Scan Fronts",
+      "subtitle": "Scanner",
+      "description": "Scan the fronts of a double-sided stack from the feeder (scan the backs next)",
+      "mode": "no-view",
+      "keywords": [
+        "scan",
+        "scanner",
+        "fronts",
+        "vorne",
+        "duplex",
+        "pdf"
+      ],
+      "icon": "scan.png"
+    },
+    {
+      "name": "scan-backs",
+      "title": "Scan Backs",
+      "subtitle": "Scanner",
+      "description": "Scan the backs of the stack scanned just before, as the matching PDF",
+      "mode": "no-view",
+      "keywords": [
+        "scan",
+        "scanner",
+        "backs",
+        "hinten",
+        "duplex",
+        "pdf"
+      ],
+      "icon": "scan.png"
+    },
+    {
+      "name": "scan-flatbed",
+      "title": "Scan Flatbed",
+      "subtitle": "Scanner",
+      "description": "Scan one sheet from the flatbed glass into a PDF in the scan inbox",
+      "mode": "no-view",
+      "keywords": [
+        "scan",
+        "scanner",
+        "flatbed",
+        "glass",
+        "platen",
+        "pdf"
+      ],
+      "icon": "scan.png"
+    },
+    {
+      "name": "scan-more",
+      "title": "Scan More",
+      "subtitle": "Scanner",
+      "description": "Scan more sheets from the feeder and append them to the last scan",
+      "mode": "no-view",
+      "keywords": [
+        "scan",
+        "scanner",
+        "more",
+        "append",
+        "weiter",
+        "fortsetzen"
+      ],
+      "icon": "scan.png"
     }
   ],
   "dependencies": {
@@ -615,6 +696,21 @@
       "type": "textfield",
       "required": true,
       "default": "op://Private/Solar Camper Victron/Instant Readout Key"
+    },
+    {
+      "name": "scanInbox",
+      "title": "Scan Inbox",
+      "description": "Folder the scanned PDFs are saved into (picked up by another automation)",
+      "type": "textfield",
+      "required": false,
+      "default": "/Volumes/SSD/Dokumente/Eingang/Scans"
+    },
+    {
+      "name": "scannerHost",
+      "title": "Scanner Host",
+      "description": "Leave empty to find the scanner on the network",
+      "type": "textfield",
+      "required": false
     }
   ]
 }

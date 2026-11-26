@@ -21,7 +21,7 @@ docs and, for render-size/layout facts, directly against Tinycast's
 
 ```
 extension/
-  package.json          ← manifest: name "jkrumm", 42 commands, 9 preferences
+  package.json          ← manifest: name "jkrumm", 47 commands, 11 preferences
   src/
     my-tasks.tsx         command — TickTick task list
     quick-add.tsx        command — TickTick quick add
@@ -42,6 +42,7 @@ extension/
     spotify-<name>.tsx      7 no-view commands (play-pause, next, previous, louder, quieter, play-on-mine, play-on-macbook) — one-liners over `spotify/command.ts`, HUD shows the resulting track + volume
     walkingpad.tsx          command — WalkingPad Detail: state, speed, the walk in progress and today's totals in one table; start/stop, faster/slower, speed presets (⌘1–5); polls every 3 s while open; LocalStorage stale-while-revalidate
     walkingpad-<name>.tsx   8 no-view commands (toggle, faster, slower, speed-3-0 … speed-5-0) — one-liners over `walkingpad/command.ts`, HUD shows the result. **No global hotkeys**: the WalkingPad Mac app owns Hyper+W and the speed hotkeys, a second binding would fire twice
+    scan.tsx, scan-fronts.tsx, scan-backs.tsx, scan-flatbed.tsx, scan-more.tsx  5 no-view commands (Scan Document / Fronts / Backs / Flatbed / More) — one-liners over `scan/command.ts`: pre-check, then a detached scan process; HUD, the result is a notification
     hub.tsx                 command — Grid dashboard, one tile per command
     ticktick/             feature code: client, types, format, parse, search, create-task
     usage/                feature code: quota (argo + local picker + fs read), local (spawns `claude-account`,
@@ -88,7 +89,7 @@ extension/
                            charged per local day + quality), sampler (pure: pause state, result
                            classification, low-battery alert state machine, subtitle/status words),
                            sampler-runner (one run), sampler-storage (file-backed `sampler.json` + `paused` flag, via `store.ts`),
-                           notify (osascript notification), types, fixtures
+                           types, fixtures (the osascript notification is `lib/notify.ts`, shared with scan)
     home/                 feature code: run (spawns `~/.local/bin/home`, which ssh-es to the mini; LocalStorage
                            `home-cache` + `home-status`, the only impure bit; `loadMenuBar` is the menu bar's never-rejecting
                            loader), parse (pure: scenes/doctor/status/device-map JSON, caches), climate (pure: `home climate` history -> points, range windows, downsampling, 24 h extents, Magnus absolute humidity + airing rule, menu line), heroes (pure: panel, metrics, temperature + humidity charts on lib/chart, Munich night shading), climate-view (pure: the Detail markdown, short-history message), fixtures (climate/status fixtures for tests + `make previews`), format
@@ -102,8 +103,14 @@ extension/
     spotify/              feature code: run (`home audio …` through home/run's spawn + osascript for the MacBook's Spotify + LocalStorage `spotify-state`, the impure bit), parse (pure: defensive `home audio` JSON, volume args, HUD line, Detail markdown), actions (no-view core: action → args, run + one HUD line, injected ports), command (binds to showHUD), types.
                            Play on MacBook = `home audio release`, then `tell application "Spotify" to play`: UNVERIFIED that the desktop app resumes locally; macOS may ask once for Automation permission for Spotify
     walkingpad/           feature code: client (pure: the host's HTTP API behind an injected `Transport`, `WalkingPadError`, `describeError`), config (pure with an injected `Exec`: host URL + token + start speed from the WalkingPad Mac app's own storage), parse (pure: defensive /status JSON, belt phase, speed grid, text), actions (no-view core: fresh /status, one decision, at most one call, one HUD line), run (the impure bit: execFile + fetch transport + LocalStorage `walkingpad-status`), command (binds to showHUD), fixtures (golden responses copied from walkingpad-mac `contracts/fixtures`), types
+    scan/                 feature code: escl (pure: settings XML, status parser, job URL, `dns-sd` parsers, file names), pdf (pure: JPEG frame
+                           header + minimal PDF writer), runner (the eSCL protocol against injected `ScanPorts`; returns `{pages, complete, reason?}`),
+                           transport (curl `ScanHttp`), discover (`dns-sd` + `scanner.json` cache), deliver (copy into the inbox, verified, else
+                           `unsent/`; injected fs), job (checks, lock, scan, PDF, delivery, state files, log, notification; injected deps),
+                           continue (pure: Scan More decisions) + last-scan (the kept pages and `last-scan.json`), blank + ink (blank-batch guard: pure BMP ink share, `sips` runner), log (rotating `scan.log`), keep-awake (`caffeinate`), parse (the `--check` JSON line), actions (no-view core: check, spawn,
+                           HUD; injected ports), command (binds to Raycast), fixtures (synthetic JPEG), fake-scanner (in-process eSCL fake, tests only)
     apple-llm/            feature code: run (spawns the helper, the only impure bit), parse (pure)
-    lib/                  shared: argo.ts (fetch client), secrets.ts (Keychain/1Password chain),
+    lib/                  shared: argo.ts (fetch client), secrets.ts (Keychain/1Password chain), notify.ts (osascript notification, van + scan),
                            action-log.ts (persistent log file), svg.ts + chart/ (hero/chart library, see svg-charts skill), preferences.ts (Preferences type),
                            action-log.ts (persistent log file, pure fs)
   helpers/
@@ -114,6 +121,7 @@ extension/
     chart-previews.ts     `make previews` entry — renders every hero + chart gallery to PNGs
     hyper-sheet.ts        `make hyper-sheet` entry — printable Hyper key sheet from the live Tinycast + WalkingPad settings → build/hyper-sheet.{html,pdf,png} (PDF/PNG need Google Chrome)
     coresvg-render.swift   renders an SVG through macOS' own decoder (previews `--coresvg`)
+    scan.ts               scan CLI (`make scan`; bundled by `make scan-cli` to assets/scan-cli.js, gitignored): `--check` or one scan, run detached by the scan commands
   assets/
     *.png                 command icons — generated, don't hand-edit
     src/*.svg              command icon sources — edit these, then `make icons`
@@ -274,6 +282,8 @@ icon (`ticktick-menu-bar` → `tasks.png`, `claude-usage-menu-bar` →
 | `netgearPasswordRef` | textfield | yes | `op://Private/Netgear M2 Jo/Admin Passwort` |
 | `victronKey` | password | no | — (override; see Secrets) |
 | `victronKeyRef` | textfield | yes | `op://Private/Solar Camper Victron/Instant Readout Key` |
+| `scanInbox` | textfield | no | `/Volumes/SSD/Dokumente/Eingang/Scans` |
+| `scannerHost` | textfield | no | — (empty: find the scanner via Bonjour) |
 
 ## Secrets
 
@@ -599,6 +609,66 @@ The
   `/stop`, `/speed` or `/pref/*` from a test or a proof** — a person stands on the belt;
   tests use a fake `PadClient`/`Transport`, a proof is `GET /status` only.
 
+- **Scanner** — document scanning over eSCL (AirScan, plain HTTP) through curl
+  (`scan/transport.ts`); four no-view commands (feeder, fronts, backs, flatbed) replace Apple
+  Image Capture. A Tinycast no-view run ends when another command starts and an ADF batch
+  takes 1–2 minutes, so the command only runs `scan-cli --check` (inbox mounted, no scan
+  running, scanner idle with paper) and **spawns `scan-cli` detached**
+  (`scripts/scan.ts`, bundled to `assets/scan-cli.js` by `make scan-cli`, run with
+  `/opt/homebrew/bin/bun`); the result is a macOS notification. State dir
+  `~/.local/state/scan/` (`SCAN_STATE_DIR`): `lock` (pid; a dead pid is taken over),
+  `scanner.json` (host cache), `last-fronts.json`, `scan.log` (every page with index, bytes
+  and duration, the final feeder state, the result; rotates to `scan.log.1` at 512 KB),
+  `partial/`, `blank/`, `unsent/`, `last-scan.json` + `last-pages/` (what Scan More continues). The scanner is found by `dns-sd` (`_uscan._tcp`, read until the
+  line needed, then killed; cached, discovered again once when the cached host does not
+  answer) — no hostname in the repo; `scannerHost` overrides. The job is created with
+  **`Content-Type: application/xml`** (with `text/xml` the device silently ignores
+  resolution and region and returns 200 dpi); 503 is retried (10× on the job, 30× on a
+  page); between two page requests the runner waits `min(1 s, half the previous page's
+  duration)` because the device answers 404 to an immediate next request while pages
+  remain, and a 404 in a feeder mode while `AdfState` still says `ScannerAdfLoaded` is
+  asked again (≤ 5×). Pages are JPEG (A4, 300 dpi); `scan/pdf.ts` embeds them untouched
+  into one PDF per scan (`DCTDecode`). **File names** (the consumer only reads the pair
+  suffixes): `scan-YYYY-MM-DD-HHmmss.pdf`; fronts `…-vorne.pdf`; backs `<fronts stem>-hinten.pdf`
+  (the stem comes from `last-fronts.json`, valid 30 min, else "Scan the fronts first"), so
+  the consumer can collate a double-sided stack; never overwritten (`-2`, `-3`).
+  **Hardening for long batches.** (1) The CLI keeps the Mac awake for the run
+  (`caffeinate -i -w <pid>`, a failure to start it is only logged). (2) A scan returns the pages
+  it has instead of throwing once one was downloaded: a page that fails for good, a job the
+  scanner did not complete with the page count received, or the 20 minute run deadline make the
+  batch **incomplete** — it goes to `partial/`, never into the inbox, `last-fronts.json` is left
+  alone and the notification says why. **Completeness comes from the scanner's own job record,
+  not the feeder state**: from the 2nd second of a running feeder job this device reads
+  `State` `Processing` and `AdfState` `ScannerAdfEmpty`, so after a 404 the runner reads
+  `<scan:Jobs>` and matches our job by the uuid in its URI. `Completed` with `ImagesCompleted`
+  equal to the pages received is complete; another count, or `Canceled`/`Aborted` (e.g.
+  `JobCanceledAtDevice`), is incomplete. A running job is not listed, so an unlisted job while
+  the scanner is `Processing` (or one listed `Processing`/`Pending`) means ask again (1 s apart,
+  at most 5 times per page, then "scanner still busy after the last page"); only an unlisted
+  job on an idle scanner falls back to the feeder state (`ScannerAdfEmpty` = complete). A
+  finished job's record stays listed after DELETE, but the status is read before it anyway; the
+  run's last `scan.log` line is `final: state=… adf=… job=… imagesCompleted=… received=…`. (3) A finished PDF is copied into the inbox and verified by size before the temp dir is
+  removed; if the copy fails (share dropped, permission, disk) it is kept in `unsent/` and the
+  notification says so.
+  **Blank guard**: a stack that went in upside down scans as blank pages whose JPEGs are only
+  slightly smaller than real ones, so `scan/ink.ts` reduces each page with `sips` to a 400 px BMP
+  and `scan/blank.ts` counts the share of dark pixels (luminance < `INK_LUMA`, outer 8 % at the
+  sides and 3 % at top and bottom ignored); a complete feeder or fronts batch in which every page
+  is below `BLANK_INK_SHARE` goes to `blank/` instead of the inbox (fronts record no
+  `last-fronts.json`), never for backs (blank backs are normal) or the flatbed, and a page that
+  cannot be measured counts as not blank. Thresholds live in `blank.ts`; `bun
+  extension/scripts/scan.ts --measure <file.jpg>…` prints each file's ink share for calibration.
+  **Backs count**: `last-fronts.json` also holds the fronts page count; a backs batch with another
+  count is still delivered, the message adds `(fronts had N)`. A fronts success message ends with
+  "Flip the stack, then Scan Backs".
+  **Scan More**: this device reports a feeder that stopped mid-stack (12 of 29 sheets) as a clean
+  success — job `Completed`, `ImagesCompleted` equal to the pages received, feeder empty — so the
+  page count in the notification is the only check. Every scan delivered to the inbox keeps its
+  JPEGs in `last-pages/` and `last-scan.json`; `more` (a feeder scan, 30 minutes) appends the
+  reloaded sheets as one PDF under the same name while that file is still in the inbox and the
+  consumer's `.fin-inbox.lock` is absent (decisions in `scan/continue.ts`), otherwise it files
+  them as a new file and says the first part was picked up. Tests run against `scan/fake-scanner.ts` only (see § Safety).
+
 - **Apple on-device model** — `extension/helpers/apple-llm/main.swift` (built
   by `make helper` into the gitignored `assets/apple-llm`, `--selftest` in
   `make check`): an agnostic CLI over `SystemLanguageModel` (macOS 26+, Apple
@@ -714,7 +784,7 @@ The
     one quiet line says "Background sampling every 15 min · last 12:40" or
     "paused" — a paused run returns at once, so pausing for a month costs
     nothing. **Low-battery alert**: a reading at or below 30 % or 15 % posts one
-    macOS notification (`van/notify.ts`, `osascript display notification` via
+    macOS notification (`lib/notify.ts`, `osascript display notification` via
     callback-style `execFile`, never throws: "Van battery 28 % — stop charging
     devices from the van"); a threshold is latched once reported and re-armed
     only after the charge is ≥ 5 points above it (`alertStep`); a reading that
@@ -987,6 +1057,11 @@ direct dependency in `package.json` is pinned to an **exact version** (no
 no target.
 
 ## Safety
+
+**Tests and proofs never talk to a real scanner.** Every scan test (`scan/*.test.ts`,
+`scan/fake-scanner.integration.test.ts`) uses an injected fake or the in-process
+`scan/fake-scanner.ts` on a loopback port; never point `scannerHost` or `--host` at the
+real device from a test, and never start a scan from an unattended script.
 
 Mutating flows are exercised against the **fake router** (§ Fake router),
 never the real device. **Never trigger a Netgear action (reboot / connect / disconnect / SIM PIN,

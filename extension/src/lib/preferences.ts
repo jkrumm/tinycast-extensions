@@ -13,6 +13,8 @@ export interface Preferences {
   netgearHost?: string;
   netgearPassword?: string;
   netgearPasswordRef: string;
+  scanInbox?: string;
+  scannerHost?: string;
   victronKey?: string;
   victronKeyRef: string;
 }

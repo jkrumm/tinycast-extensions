@@ -10,7 +10,7 @@
 // Van Power. Returns the launcher subtitle.
 
 import { loadVictronHistory, readAndPersist } from "./load";
-import { postNotification } from "./notify";
+import { postNotification } from "../lib/notify";
 import {
   SamplerResult,
   SamplerState,

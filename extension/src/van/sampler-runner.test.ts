@@ -27,7 +27,7 @@ vi.mock("./run", () => ({
 }));
 const notifyMock =
   vi.fn<(opts: { title: string; body: string }) => Promise<boolean>>();
-vi.mock("./notify", () => ({
+vi.mock("../lib/notify", () => ({
   postNotification: (opts: { title: string; body: string }) => notifyMock(opts),
 }));
 
