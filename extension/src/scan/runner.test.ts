@@ -3,6 +3,8 @@ import { ScanMode } from "./escl";
 import { syntheticJpeg } from "./fixtures";
 import {
   BUSY_RETRIES,
+  CANCELLED_TRY_AGAIN,
+  FEEDER_CANCELLED,
   adfProblem,
   checkScanner,
   runScan,
@@ -189,6 +191,17 @@ describe("runScan", () => {
     );
   });
 
+  it("reports the number of pages after every downloaded page", async () => {
+    const dev = makeDevice({
+      statuses: [loaded, done(3)],
+      nexts: [{ status: 200 }, { status: 200 }, { status: 200 }],
+    });
+    const seen: number[] = [];
+    dev.ports.onPage = (n) => seen.push(n);
+    await runScan(dev.ports, feeder());
+    expect(seen).toEqual([1, 2, 3]);
+  });
+
   it("retries a 503 on the job creation, 1 s apart", async () => {
     const dev = makeDevice({
       statuses: [loaded, done(1)],
@@ -362,7 +375,7 @@ describe("runScan", () => {
     const cases: [JobSpec, string][] = [
       [
         { state: "Canceled", images: 1, reason: "JobCanceledAtDevice" },
-        "cancelled at the scanner",
+        "the scanner cancelled the scan (the feeder did not pick up the paper)",
       ],
       [
         { state: "Aborted", images: 1, reason: "JobAbortedBySystem" },
@@ -503,6 +516,24 @@ describe("runScan", () => {
     expect(result).toMatchObject({ complete: false, reason: "timed out" });
     expect(dev.calls.at(-1)).toMatch(/^DELETE/);
     expect(Math.max(...dev.downloadTimeouts)).toBeLessThanOrEqual(120);
+  });
+
+  it("explains a 410 on the first page, and keeps the pages of a later one", async () => {
+    const first = makeDevice({ statuses: [loaded], nexts: [{ status: 410 }] });
+    await expect(runScan(first.ports, feeder())).rejects.toThrow(
+      CANCELLED_TRY_AGAIN,
+    );
+    expect(first.logs).toContain("page 1: HTTP 410"); // the raw status stays in the log
+    expect(first.calls.at(-1)).toMatch(/^DELETE/);
+
+    const later = makeDevice({
+      statuses: [loaded],
+      nexts: [{ status: 200 }, { status: 410 }],
+    });
+    const result = await runScan(later.ports, feeder());
+    expect(result.pages).toHaveLength(1);
+    expect(result).toMatchObject({ complete: false, reason: FEEDER_CANCELLED });
+    expect(later.logs).toContain("page 2: HTTP 410");
   });
 
   it("refuses an empty feeder before any POST", async () => {

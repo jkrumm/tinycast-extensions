@@ -1,5 +1,5 @@
-// The one line `scan-cli --check` prints, read defensively: anything that is
-// not the documented JSON becomes a plain failure, never a thrown error.
+// The one line `scan-cli` prints, read defensively: anything that is not the
+// documented JSON becomes a plain failure, never a thrown error.
 
 import { CheckResult } from "./runner";
 
@@ -29,4 +29,32 @@ export function parseCheckLine(stdout: string): CheckResult {
     // fall through
   }
   return CHECK_FAILED;
+}
+
+export const COMMAND_FAILED = "Scan command failed";
+
+// The one-line result of `--file` / `--discard`: `{ ok, message }`, the
+// message is what the HUD shows either way.
+export function parseResultLine(stdout: string): {
+  ok: boolean;
+  message: string;
+} {
+  const line = stdout
+    .split(/\r?\n/)
+    .map((l) => l.trim())
+    .filter((l) => l.startsWith("{"))
+    .pop();
+  try {
+    const value = line ? JSON.parse(line) : null;
+    if (
+      typeof value?.ok === "boolean" &&
+      typeof value.message === "string" &&
+      value.message
+    ) {
+      return { ok: value.ok, message: value.message };
+    }
+  } catch {
+    // fall through
+  }
+  return { ok: false, message: COMMAND_FAILED };
 }

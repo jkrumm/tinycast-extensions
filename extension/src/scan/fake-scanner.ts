@@ -28,6 +28,7 @@ export interface FakeScannerState {
   failNextDocuments: number; // answer the next N page requests with 503
   failPageAt: number | null; // 1-based page that answers 500
   cancelAfter: number | null; // the job ends Canceled at the device after N pages
+  pickupFails: boolean; // the feeder never picks up the paper: first page request answers 410
   scanning: boolean;
   requests: FakeScannerRequest[];
   settings: string | null; // body of the last accepted job
@@ -82,6 +83,7 @@ export async function startFakeScanner(
     failNextDocuments: 0,
     failPageAt: null,
     cancelAfter: null,
+    pickupFails: false,
     scanning: false,
     requests: [],
     settings: null,
@@ -163,6 +165,10 @@ export async function startFakeScanner(
       if (state.failNextDocuments > 0) {
         state.failNextDocuments--;
         return reply(res, 503);
+      }
+      if (state.pickupFails && served === 0) {
+        finishJob({ state: "Canceled", reason: "JobCanceledAtDevice" });
+        return reply(res, 410);
       }
       if (state.cancelAfter !== null && served >= state.cancelAfter) {
         finishJob({ state: "Canceled", reason: "JobCanceledAtDevice" });

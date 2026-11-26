@@ -2,22 +2,26 @@ import { environment, getPreferenceValues, showHUD } from "@raycast/api";
 import { execFile, spawn } from "child_process";
 import { Preferences } from "../lib/preferences";
 import { ScanMode } from "./escl";
-import { runScanCommand, ScanCommandPorts } from "./actions";
+import {
+  DirectAction,
+  runDirectCommand,
+  runScanCommand,
+  ScanCommandPorts,
+} from "./actions";
 
 const BUN_BIN = "/opt/homebrew/bin/bun";
 const PATH = "/opt/homebrew/bin:/usr/bin:/bin";
-const CHECK_TIMEOUT_MS = 15_000;
 
 const cliPath = (): string => `${environment.assetsPath}/scan-cli.js`;
 
 const ports: ScanCommandPorts = {
   preferences: () => getPreferenceValues<Preferences>(),
-  runCheck: (args) =>
+  runCli: (args, timeoutMs) =>
     new Promise((resolve) => {
       execFile(
         BUN_BIN,
         [cliPath(), ...args],
-        { timeout: CHECK_TIMEOUT_MS, env: { ...process.env, PATH } },
+        { timeout: timeoutMs, env: { ...process.env, PATH } },
         (_error, stdout) => resolve(String(stdout ?? "")),
       );
     }),
@@ -35,3 +39,7 @@ const ports: ScanCommandPorts = {
 // One-liner command bodies: `export default scanCommand("fronts");`
 export const scanCommand = (mode: ScanMode) => () =>
   runScanCommand(mode, ports);
+
+// `export default scanDirectCommand("submit");` — Submit Scan / Discard Scan.
+export const scanDirectCommand = (action: DirectAction) => () =>
+  runDirectCommand(action, ports);

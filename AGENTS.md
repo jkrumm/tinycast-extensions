@@ -21,7 +21,7 @@ docs and, for render-size/layout facts, directly against Tinycast's
 
 ```
 extension/
-  package.json          ← manifest: name "jkrumm", 47 commands, 11 preferences
+  package.json          ← manifest: name "jkrumm", 49 commands, 11 preferences
   src/
     my-tasks.tsx         command — TickTick task list
     quick-add.tsx        command — TickTick quick add
@@ -42,7 +42,7 @@ extension/
     spotify-<name>.tsx      7 no-view commands (play-pause, next, previous, louder, quieter, play-on-mine, play-on-macbook) — one-liners over `spotify/command.ts`, HUD shows the resulting track + volume
     walkingpad.tsx          command — WalkingPad Detail: state, speed, the walk in progress and today's totals in one table; start/stop, faster/slower, speed presets (⌘1–5); polls every 3 s while open; LocalStorage stale-while-revalidate
     walkingpad-<name>.tsx   8 no-view commands (toggle, faster, slower, speed-3-0 … speed-5-0) — one-liners over `walkingpad/command.ts`, HUD shows the result. **No global hotkeys**: the WalkingPad Mac app owns Hyper+W and the speed hotkeys, a second binding would fire twice
-    scan.tsx, scan-fronts.tsx, scan-backs.tsx, scan-flatbed.tsx, scan-more.tsx  5 no-view commands (Scan Document / Fronts / Backs / Flatbed / More) — one-liners over `scan/command.ts`: pre-check, then a detached scan process; HUD, the result is a notification
+    scan.tsx, scan-fronts.tsx, scan-backs.tsx, scan-flatbed.tsx, scan-more.tsx, scan-submit.tsx, scan-discard.tsx  7 no-view commands (Scan Document / Fronts / Backs / Flatbed / More / Submit Scan / Discard Scan) — one-liners over `scan/command.ts`: a scan command pre-checks, then spawns a detached scan process (HUD, the result is a notification); Submit Scan and Discard Scan run the CLI and show its one-line result as the HUD
     hub.tsx                 command — Grid dashboard, one tile per command
     ticktick/             feature code: client, types, format, parse, search, create-task
     usage/                feature code: quota (argo + local picker + fs read), local (spawns `claude-account`,
@@ -106,8 +106,9 @@ extension/
     scan/                 feature code: escl (pure: settings XML, status parser, job URL, `dns-sd` parsers, file names), pdf (pure: JPEG frame
                            header + minimal PDF writer), runner (the eSCL protocol against injected `ScanPorts`; returns `{pages, complete, reason?}`),
                            transport (curl `ScanHttp`), discover (`dns-sd` + `scanner.json` cache), deliver (copy into the inbox, verified, else
-                           `unsent/`; injected fs), job (checks, lock, scan, PDF, delivery, state files, log, notification; injected deps),
-                           continue (pure: Scan More decisions) + last-scan (the kept pages and `last-scan.json`), blank + ink (blank-batch guard: pure BMP ink share, `sips` runner), log (rotating `scan.log`), keep-awake (`caffeinate`), parse (the `--check` JSON line), actions (no-view core: check, spawn,
+                           `unsent/`; injected fs), job (checks, scan lock, scan, PDF, pending scan, log, notification; injected deps),
+                           pending-rules (pure: what a start does with the pending scan, messages) + pending (the `pending/` files, their lock, `progress.json`) + filing (Submit Scan,
+                           Discard Scan, `--status`) + job-types, blank + ink (blank-batch guard: pure BMP ink share, `sips` runner), log (rotating `scan.log`), keep-awake (`caffeinate`), parse (the `--check` JSON line), actions (no-view core: check, spawn,
                            HUD; injected ports), command (binds to Raycast), fixtures (synthetic JPEG), fake-scanner (in-process eSCL fake, tests only)
     apple-llm/            feature code: run (spawns the helper, the only impure bit), parse (pure)
     lib/                  shared: argo.ts (fetch client), secrets.ts (Keychain/1Password chain), notify.ts (osascript notification, van + scan),
@@ -617,27 +618,26 @@ The
   (`scripts/scan.ts`, bundled to `assets/scan-cli.js` by `make scan-cli`, run with
   `/opt/homebrew/bin/bun`); the result is a macOS notification. State dir
   `~/.local/state/scan/` (`SCAN_STATE_DIR`): `lock` (pid; a dead pid is taken over),
-  `scanner.json` (host cache), `last-fronts.json`, `scan.log` (every page with index, bytes
-  and duration, the final feeder state, the result; rotates to `scan.log.1` at 512 KB),
-  `partial/`, `blank/`, `unsent/`, `last-scan.json` + `last-pages/` (what Scan More continues). The scanner is found by `dns-sd` (`_uscan._tcp`, read until the
+  `scanner.json` (host cache), `progress.json` (the running scan), `scan.log` (every page with index, bytes
+  and duration, the final job record, the result; rotates to `scan.log.1` at 512 KB),
+  `pending/` (the scan waiting for a submit), `pending.lock`, `discarded/`,
+  `partial/`, `blank/`, `unsent/`. The scanner is found by `dns-sd` (`_uscan._tcp`, read until the
   line needed, then killed; cached, discovered again once when the cached host does not
   answer) — no hostname in the repo; `scannerHost` overrides. The job is created with
   **`Content-Type: application/xml`** (with `text/xml` the device silently ignores
   resolution and region and returns 200 dpi); 503 is retried (10× on the job, 30× on a
   page); between two page requests the runner waits `min(1 s, half the previous page's
   duration)` because the device answers 404 to an immediate next request while pages
-  remain, and a 404 in a feeder mode while `AdfState` still says `ScannerAdfLoaded` is
-  asked again (≤ 5×). Pages are JPEG (A4, 300 dpi); `scan/pdf.ts` embeds them untouched
+  remain, and a 404 in a feeder mode while the scanner is still busy is asked again. Pages are JPEG (A4, 300 dpi); `scan/pdf.ts` embeds them untouched
   into one PDF per scan (`DCTDecode`). **File names** (the consumer only reads the pair
   suffixes): `scan-YYYY-MM-DD-HHmmss.pdf`; fronts `…-vorne.pdf`; backs `<fronts stem>-hinten.pdf`
-  (the stem comes from `last-fronts.json`, valid 30 min, else "Scan the fronts first"), so
+  (the stem comes from the pending fronts), so
   the consumer can collate a double-sided stack; never overwritten (`-2`, `-3`).
   **Hardening for long batches.** (1) The CLI keeps the Mac awake for the run
   (`caffeinate -i -w <pid>`, a failure to start it is only logged). (2) A scan returns the pages
   it has instead of throwing once one was downloaded: a page that fails for good, a job the
   scanner did not complete with the page count received, or the 20 minute run deadline make the
-  batch **incomplete** — it goes to `partial/`, never into the inbox, `last-fronts.json` is left
-  alone and the notification says why. **Completeness comes from the scanner's own job record,
+  batch **incomplete** — it goes to `partial/`, never into the inbox, and the notification says why. **Completeness comes from the scanner's own job record,
   not the feeder state**: from the 2nd second of a running feeder job this device reads
   `State` `Processing` and `AdfState` `ScannerAdfEmpty`, so after a 404 the runner reads
   `<scan:Jobs>` and matches our job by the uuid in its URI. `Completed` with `ImagesCompleted`
@@ -647,27 +647,43 @@ The
   at most 5 times per page, then "scanner still busy after the last page"); only an unlisted
   job on an idle scanner falls back to the feeder state (`ScannerAdfEmpty` = complete). A
   finished job's record stays listed after DELETE, but the status is read before it anyway; the
-  run's last `scan.log` line is `final: state=… adf=… job=… imagesCompleted=… received=…`. (3) A finished PDF is copied into the inbox and verified by size before the temp dir is
-  removed; if the copy fails (share dropped, permission, disk) it is kept in `unsent/` and the
-  notification says so.
+  run's last `scan.log` line is `final: state=… adf=… job=… imagesCompleted=… received=…`. (3) A PDF is copied into the inbox
+  (`scan/deliver.ts`) and verified by size before anything is removed; if the copy fails (share
+  dropped, permission, disk) it is kept in `unsent/` and the notification says so.
   **Blank guard**: a stack that went in upside down scans as blank pages whose JPEGs are only
   slightly smaller than real ones, so `scan/ink.ts` reduces each page with `sips` to a 400 px BMP
   and `scan/blank.ts` counts the share of dark pixels (luminance < `INK_LUMA`, outer 8 % at the
   sides and 3 % at top and bottom ignored); a complete feeder or fronts batch in which every page
-  is below `BLANK_INK_SHARE` goes to `blank/` instead of the inbox (fronts record no
-  `last-fronts.json`), never for backs (blank backs are normal) or the flatbed, and a page that
+  is below `BLANK_INK_SHARE` goes to `blank/` instead of becoming pending, never for backs (blank backs are normal) or the flatbed, and a page that
   cannot be measured counts as not blank. Thresholds live in `blank.ts`; `bun
   extension/scripts/scan.ts --measure <file.jpg>…` prints each file's ink share for calibration.
-  **Backs count**: `last-fronts.json` also holds the fronts page count; a backs batch with another
-  count is still delivered, the message adds `(fronts had N)`. A fronts success message ends with
-  "Flip the stack, then Scan Backs".
-  **Scan More**: this device reports a feeder that stopped mid-stack (12 of 29 sheets) as a clean
-  success — job `Completed`, `ImagesCompleted` equal to the pages received, feeder empty — so the
-  page count in the notification is the only check. Every scan delivered to the inbox keeps its
-  JPEGs in `last-pages/` and `last-scan.json`; `more` (a feeder scan, 30 minutes) appends the
-  reloaded sheets as one PDF under the same name while that file is still in the inbox and the
-  consumer's `.fin-inbox.lock` is absent (decisions in `scan/continue.ts`), otherwise it files
-  them as a new file and says the first part was picked up. Tests run against `scan/fake-scanner.ts` only (see § Safety).
+  **Nothing reaches the inbox without a submit.** This device reports a feeder that stopped
+  mid-stack (12 or 15 of 29 sheets) as a clean success, so the page count in the notification is
+  the only check, and the user may need several tries to push the rest through; the inbox
+  consumer once filed an incomplete 19-page PDF in the meantime. So a complete, non-blank scan
+  stays in `pending/` (`scan.json` + `part-<n>/` with `scan.pdf` and the page JPEGs), **without
+  expiry and without a timer**: the detached process posts the notification (`17 pages scanned.
+  Scan More to append, Submit Scan to file it.`) and exits. **Submit Scan** (`scan-cli --submit`,
+  `Filed: 19 pages -> <name>.pdf`, "Nothing to submit") files it through `scan/deliver.ts`;
+  **Discard Scan** (`--discard`) moves the PDFs to `discarded/` (the newest five files stay).
+  Both run without a scanner, take the pending lock, and are refused while a scan runs. A new
+  feeder, fronts or flatbed scan while something is pending files the pending scan first (a
+  forgotten submit is never lost and never blocks). **Scan More** (`--mode more`, a feeder scan)
+  appends to the part scanned last and rebuilds its PDF; with nothing pending it says "Nothing to
+  continue (the last scan is already filed)"; a Scan More that fails, is blank or incomplete
+  leaves the pending scan as it was (an incomplete one's new pages go to `partial/`).
+  **Double-sided**: `backs` after a pending `fronts` does not file the fronts; `pending/` then
+  holds both parts, Scan More appends to the one scanned last, Submit files `…-vorne.pdf` and
+  `…-hinten.pdf` (same stem) together and Discard drops both; `backs` without pending fronts is
+  refused ("Scan the fronts first", no age rule), and the message notes `(fronts had N)` when
+  the counts differ. `scan-cli --status` prints one JSON line for a UI, no scanner:
+  `{ pending: null | { parts: [{ mode, fileName, pages, at, pagePaths }], scanning } }`, plus
+  `progress` (`{ mode, page, startedAt, pid }`, from `progress.json`, which a scan updates after
+  every page and removes at its end) while a live process holds the scan lock; the pure rules
+  are `scan/pending-rules.ts`. A page request that answers **HTTP 410** (job record
+  `Canceled` / `JobCanceledAtDevice`, no images) means the feeder did not pick up the paper:
+  "The scanner cancelled the scan … Push the stack in and try again" (the raw status stays in
+  `scan.log`). Tests run against `scan/fake-scanner.ts` only (see § Safety).
 
 - **Apple on-device model** — `extension/helpers/apple-llm/main.swift` (built
   by `make helper` into the gitignored `assets/apple-llm`, `--selftest` in

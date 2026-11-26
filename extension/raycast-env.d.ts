@@ -130,6 +130,10 @@ declare namespace Preferences {
   export type ScanFlatbed = ExtensionPreferences & {}
   /** Preferences accessible in the `scan-more` command */
   export type ScanMore = ExtensionPreferences & {}
+  /** Preferences accessible in the `scan-submit` command */
+  export type ScanSubmit = ExtensionPreferences & {}
+  /** Preferences accessible in the `scan-discard` command */
+  export type ScanDiscard = ExtensionPreferences & {}
 }
 
 declare namespace Arguments {
@@ -227,5 +231,9 @@ declare namespace Arguments {
   export type ScanFlatbed = {}
   /** Arguments passed to the `scan-more` command */
   export type ScanMore = {}
+  /** Arguments passed to the `scan-submit` command */
+  export type ScanSubmit = {}
+  /** Arguments passed to the `scan-discard` command */
+  export type ScanDiscard = {}
 }
 

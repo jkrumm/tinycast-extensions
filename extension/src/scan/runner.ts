@@ -40,6 +40,8 @@ export interface ScanPorts {
   pagePath(index: number): string;
   readFile(path: string): Promise<Uint8Array>;
   log(line: string): void;
+  // Called after every downloaded page with the number of pages so far.
+  onPage?(pages: number): void;
 }
 
 export class ScanError extends Error {
@@ -116,6 +118,14 @@ export function adfProblem(adfState: string | null): string {
   }
 }
 
+// The device cancels a job itself when the feeder does not pick up the paper
+// (page requests then answer 410, the job record reads Canceled with
+// JobCanceledAtDevice and no images).
+export const FEEDER_CANCELLED =
+  "the scanner cancelled the scan (the feeder did not pick up the paper)";
+export const CANCELLED_TRY_AGAIN =
+  "The scanner cancelled the scan (the feeder did not pick up the paper). Push the stack in and try again";
+
 type Verdict =
   | { kind: "complete" }
   | { kind: "incomplete"; reason: string }
@@ -150,7 +160,7 @@ export function judgeBatch(
           kind: "incomplete",
           reason:
             record.reason === "JobCanceledAtDevice"
-              ? "cancelled at the scanner"
+              ? FEEDER_CANCELLED
               : record.reason
                 ? words(record.reason)
                 : `job ${record.state.toLowerCase()}`,
@@ -241,6 +251,9 @@ export async function runScan(
         await ports.sleep(RETRY_WAIT_MS);
         continue;
       }
+      ports.log(`page ${n}: HTTP ${res.status}`);
+      if (res.status === 410)
+        return { kind: "failed", reason: FEEDER_CANCELLED };
       const why =
         res.status === 0 ? "no answer from the scanner" : `HTTP ${res.status}`;
       return { kind: "failed", reason: `page ${n} failed (${why})` };
@@ -263,6 +276,7 @@ export async function runScan(
         const bytes = await ports.readFile(ports.pagePath(pages.length));
         pages.push(bytes);
         ports.log(`page ${pages.length}: ${bytes.length} bytes, ${res.ms} ms`);
+        ports.onPage?.(pages.length);
         previousMs = res.ms;
         busyRetries = 0;
         if (!isFeederMode(mode)) break; // the flatbed holds one sheet
@@ -323,6 +337,8 @@ export async function runScan(
   if (pages.length === 0) {
     if (outcome.reason === "timed out")
       throw new ScanError("The scan timed out");
+    if (outcome.reason === FEEDER_CANCELLED)
+      throw new ScanError(CANCELLED_TRY_AGAIN);
     throw new ScanError(outcome.reason ?? "The scanner returned no pages");
   }
   return { pages, ...outcome };

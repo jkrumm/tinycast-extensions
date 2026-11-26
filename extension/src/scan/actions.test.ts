@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { runScanCommand, scanArgs, ScanCommandPorts } from "./actions";
+import {
+  runDirectCommand,
+  runScanCommand,
+  scanArgs,
+  ScanCommandPorts,
+} from "./actions";
 
 function makePorts(opts: {
   prefs?: { scanInbox?: string; scannerHost?: string };
@@ -10,7 +15,7 @@ function makePorts(opts: {
   const spawned: string[][] = [];
   const ports: ScanCommandPorts = {
     preferences: () => opts.prefs ?? { scanInbox: "/inbox" },
-    runCheck: async (args) => {
+    runCli: async (args) => {
       checks.push(args);
       return opts.checkOutput ?? '{"ok":true}';
     },
@@ -100,5 +105,50 @@ describe("runScanCommand", () => {
     await runScanCommand("feeder", ports);
     expect(huds).toEqual(["Set the scan inbox in the extension preferences"]);
     expect(checks).toEqual([]);
+  });
+});
+
+describe("runDirectCommand", () => {
+  it("runs the CLI flag and shows its message as the HUD", async () => {
+    const { ports, huds, checks, spawned } = makePorts({
+      checkOutput: '{"ok":true,"message":"Filed: 19 pages -> a.pdf"}',
+    });
+    await runDirectCommand("submit", ports);
+    expect(checks).toEqual([
+      ["--submit", "--out-dir", "/inbox", "--no-notify"],
+    ]);
+    expect(huds).toEqual(["Filed: 19 pages -> a.pdf"]);
+    expect(spawned).toEqual([]); // nothing is spawned: it is done in a second
+  });
+
+  it("shows a failure message too", async () => {
+    const { ports, huds } = makePorts({
+      checkOutput: '{"ok":false,"message":"Nothing to discard"}',
+    });
+    await runDirectCommand("discard", ports);
+    expect(huds).toEqual(["Nothing to discard"]);
+  });
+
+  it("shows a plain failure for output it cannot read", async () => {
+    const { ports, huds } = makePorts({ checkOutput: "" });
+    await runDirectCommand("submit", ports);
+    expect(huds).toEqual(["Scan command failed"]);
+  });
+
+  it("discards without an inbox preference, files only with one", async () => {
+    const discard = makePorts({
+      prefs: { scanInbox: "" },
+      checkOutput: '{"ok":true,"message":"Discarded 3 pages"}',
+    });
+    await runDirectCommand("discard", discard.ports);
+    expect(discard.checks).toEqual([["--discard", "--no-notify"]]);
+    expect(discard.huds).toEqual(["Discarded 3 pages"]);
+
+    const file = makePorts({ prefs: { scanInbox: "" } });
+    await runDirectCommand("submit", file.ports);
+    expect(file.huds).toEqual([
+      "Set the scan inbox in the extension preferences",
+    ]);
+    expect(file.checks).toEqual([]);
   });
 });

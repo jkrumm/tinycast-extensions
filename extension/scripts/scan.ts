@@ -7,11 +7,18 @@
 //   --out-dir <dir>                      the inbox (or SCAN_INBOX)
 //   --host <url>                         skip the Bonjour lookup
 //   --check                              pre-flight only
+//   --submit                             Submit Scan: file the pending scan in the inbox, no scanner
+//   --discard                            Discard Scan: drop the pending scan, no scanner
+//   --status                             the pending scan (and the running scan's progress) for a UI
 //   --no-notify                          no macOS notification
 //   --measure <file.jpg> [more...]       print each file's ink share (blank guard calibration), no scanner
 //
-// SCAN_STATE_DIR overrides ~/.local/state/scan. Prints ONE JSON line
-// `{ ok, message? }`; exit 0 for --check either way, 1 for a failed scan.
+// A finished scan stays pending in the state dir until --submit files it (or
+// --discard drops it): nothing reaches the inbox on its own
+// (src/scan/pending-rules.ts). SCAN_STATE_DIR overrides ~/.local/state/scan.
+// Prints ONE JSON line (`{ ok, message? }`, or for --status the pending scan);
+// exit 0 for --check, --submit, --discard and --status either way, 1 for a
+// failed scan.
 
 import { mkdirSync } from "fs";
 import { homedir } from "os";
@@ -21,7 +28,15 @@ import { isBlankPage } from "../src/scan/blank";
 import { SCAN_MODES, ScanMode } from "../src/scan/escl";
 import { measureInk } from "../src/scan/ink";
 import { keepAwake } from "../src/scan/keep-awake";
-import { checkJob, JobOptions, runJob, systemJobDeps } from "../src/scan/job";
+import {
+  checkJob,
+  discardPending,
+  JobOptions,
+  runJob,
+  scanStatus,
+  submitNow,
+  systemJobDeps,
+} from "../src/scan/job";
 import { appendScanLog } from "../src/scan/log";
 
 const { values, positionals } = parseArgs({
@@ -32,6 +47,9 @@ const { values, positionals } = parseArgs({
     "out-dir": { type: "string" },
     host: { type: "string" },
     check: { type: "boolean", default: false },
+    submit: { type: "boolean", default: false },
+    discard: { type: "boolean", default: false },
+    status: { type: "boolean", default: false },
     "no-notify": { type: "boolean", default: false },
   },
 });
@@ -53,18 +71,19 @@ if (values.measure) {
   process.exit(0);
 }
 
+const direct = values.check || values.submit || values.discard || values.status;
 const mode = values.mode as ScanMode;
 const outDir = values["out-dir"] || process.env.SCAN_INBOX;
 if (!SCAN_MODES.includes(mode)) {
   print({ ok: false, message: `Unknown mode "${values.mode}"` });
-  process.exit(values.check ? 0 : 1);
+  process.exit(direct ? 0 : 1);
 }
-if (!outDir) {
+if (!outDir && !values.discard && !values.status) {
   print({
     ok: false,
     message: "No scan inbox given (--out-dir or SCAN_INBOX)",
   });
-  process.exit(values.check ? 0 : 1);
+  process.exit(direct ? 0 : 1);
 }
 
 const stateDir =
@@ -72,23 +91,32 @@ const stateDir =
 mkdirSync(stateDir, { recursive: true });
 const opts: JobOptions = {
   mode,
-  outDir,
+  outDir: outDir ?? "",
   host: values.host?.trim() || undefined,
   stateDir,
   notify: !values["no-notify"],
 };
 const deps = systemJobDeps(stateDir);
 
+const log = (line: string): void =>
+  appendScanLog(join(stateDir, "scan.log"), line, new Date());
+
 if (values.check) {
   print(await checkJob(opts, deps));
   process.exit(0);
 }
+// The pending scan, without a scanner.
+if (values.status) {
+  console.log(JSON.stringify(scanStatus(opts, deps)));
+  process.exit(0);
+}
+if (values.submit || values.discard) {
+  print(await (values.submit ? submitNow : discardPending)(opts, deps, log));
+  process.exit(0);
+}
 
 // A batch takes minutes; an idle sleep would end it halfway.
-keepAwake({
-  pid: process.pid,
-  log: (line) => appendScanLog(join(stateDir, "scan.log"), line, new Date()),
-});
+keepAwake({ pid: process.pid, log });
 
 const result = await runJob(opts, deps);
 print(result);

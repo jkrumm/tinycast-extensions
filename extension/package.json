@@ -589,6 +589,39 @@
         "fortsetzen"
       ],
       "icon": "scan.png"
+    },
+    {
+      "name": "scan-submit",
+      "title": "Submit Scan",
+      "subtitle": "Scanner",
+      "description": "File the pending scan into the scan inbox",
+      "mode": "no-view",
+      "keywords": [
+        "scan",
+        "scanner",
+        "submit",
+        "file",
+        "ablegen",
+        "senden"
+      ],
+      "icon": "scan.png"
+    },
+    {
+      "name": "scan-discard",
+      "title": "Discard Scan",
+      "subtitle": "Scanner",
+      "description": "Drop the pending scan instead of filing it",
+      "mode": "no-view",
+      "keywords": [
+        "scan",
+        "scanner",
+        "discard",
+        "drop",
+        "delete",
+        "verwerfen",
+        "löschen"
+      ],
+      "icon": "scan.png"
     }
   ],
   "dependencies": {
