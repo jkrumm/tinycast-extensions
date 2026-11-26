@@ -21,8 +21,9 @@ import { DeliverFs } from "./deliver";
 import { FakeScanner, startFakeScanner } from "./fake-scanner";
 import { discardPending, scanStatus, submitNow } from "./filing";
 import { checkJob, JobDeps, JobOptions, runJob } from "./job";
-import { readPending, readProgress } from "./pending";
+import { readLastResult, readPending, readProgress } from "./pending";
 import { CANCELLED_TRY_AGAIN } from "./runner";
+import { submitRefusal } from "./pending-rules";
 import { curlScanHttp } from "./transport";
 
 const T0 = new Date(2026, 10, 26, 18, 0, 0).getTime();
@@ -332,7 +333,7 @@ describe("Scan More", () => {
     clock += 10_000;
     const result = await runJob(opts("more"), deps());
     expect(result).toEqual({ ok: false, message: CANCELLED_TRY_AGAIN });
-    expect(readPending(stateDir)).toEqual(before);
+    expect(readPending(stateDir)?.parts).toEqual(before?.parts);
   });
 
   it("leaves the pending scan as it was when the continuation is blank", async () => {
@@ -343,7 +344,7 @@ describe("Scan More", () => {
     clock += 10_000;
     const result = await runJob(opts("more"), deps(blank, 100));
     expect(result.message).toMatch(/^Scan stopped: all 2 pages look blank/);
-    expect(readPending(stateDir)).toEqual(before);
+    expect(readPending(stateDir)?.parts).toEqual(before?.parts);
     expect(readdirSync(join(stateDir, "blank"))).toHaveLength(1);
   });
 
@@ -358,7 +359,213 @@ describe("Scan More", () => {
     expect(result.ok).toBe(false);
     const [partial] = readdirSync(join(stateDir, "partial"));
     expect(pdfPages(join(stateDir, "partial", partial))).toBe(2);
-    expect(readPending(stateDir)).toEqual(before);
+    expect(readPending(stateDir)?.parts).toEqual(before?.parts);
+  });
+});
+
+describe("a failed Scan More needs attention", () => {
+  const blankMore = async () => {
+    fake.state.adfState = "ScannerAdfLoaded";
+    fake.state.pages = 3;
+    clock += 10_000;
+    return runJob(opts("more"), deps(blank, 100));
+  };
+
+  it("marks the pending scan when Scan More fails, in every way it can", async () => {
+    await run("feeder", 5);
+    expect(readPending(stateDir)?.attention).toBeUndefined();
+
+    // blank
+    const blanks = await blankMore();
+    expect(readPending(stateDir)?.attention).toBe(blanks.message);
+
+    // incomplete (the next successful more clears it, see below)
+    await run("more", 1);
+    expect(readPending(stateDir)?.attention).toBeUndefined();
+    fake.state.pages = 5;
+    fake.state.cancelAfter = 2;
+    clock += 10_000;
+    const cut = await runJob(opts("more"), deps());
+    expect(readPending(stateDir)?.attention).toBe(cut.message);
+
+    // cancelled by the device (feeder did not pick up the paper)
+    await run("more", 1);
+    fake.state.adfState = "ScannerAdfLoaded";
+    fake.state.pickupFails = true;
+    clock += 10_000;
+    const cancelled = await runJob(opts("more"), deps());
+    expect(cancelled.message).toBe(CANCELLED_TRY_AGAIN);
+    expect(readPending(stateDir)?.attention).toBe(CANCELLED_TRY_AGAIN);
+
+    // refused by the scanner
+    await run("more", 1);
+    fake.state.adfState = "ScannerAdfLoaded";
+    fake.state.pickupFails = false;
+    fake.state.failPosts = 100;
+    clock += 10_000;
+    const refused = await runJob(opts("more"), deps());
+    expect(refused.ok).toBe(false);
+    expect(readPending(stateDir)?.attention).toBe(refused.message);
+  });
+
+  it("is in --status, and the last result says what happened", async () => {
+    await run("feeder", 5);
+    const blanks = await blankMore();
+    const status = scanStatus(opts(), deps());
+    expect(status.pending).toMatchObject({
+      needsAttention: true,
+      attention: blanks.message,
+    });
+    expect(status.lastResult).toEqual({
+      at: clock,
+      action: "more",
+      ok: false,
+      message: blanks.message,
+    });
+  });
+
+  it("refuses Submit after a failed more, with the message, and files nothing", async () => {
+    await run("feeder", 5);
+    const blanks = await blankMore();
+    const refused = await submit();
+    expect(refused).toEqual({
+      ok: false,
+      message: submitRefusal(blanks.message),
+    });
+    expect(refused.message).toMatch(
+      /^The last Scan More failed: Scan stopped: all 3 pages look blank.*\. Scan those sheets again, or submit anyway$/,
+    );
+    expect(parts()).toHaveLength(1);
+    expect(inboxFiles()).toEqual([]);
+    expect(readLastResult(stateDir)).toMatchObject({
+      action: "submit",
+      ok: false,
+      message: refused.message,
+    });
+  });
+
+  it("files it with --force, and clears the mark", async () => {
+    await run("feeder", 5);
+    await blankMore();
+    const forced = await submitNow({ ...opts(), force: true }, deps(), noop);
+    expect(forced.ok).toBe(true);
+    expect(inboxFiles()).toHaveLength(1);
+    expect(pdfPages(join(inbox, inboxFiles()[0]))).toBe(5);
+    expect(readPending(stateDir)).toBeNull();
+    expect(readLastResult(stateDir)).toMatchObject({
+      action: "submit",
+      ok: true,
+      pages: 5,
+    });
+  });
+
+  it("is cleared by a successful Scan More", async () => {
+    await run("feeder", 5);
+    await blankMore();
+    const ok = await run("more", 2);
+    expect(ok.ok).toBe(true);
+    expect(readPending(stateDir)?.attention).toBeUndefined();
+    expect(scanStatus(opts(), deps()).pending?.needsAttention).toBe(false);
+    expect((await submit()).ok).toBe(true);
+    expect(pdfPages(join(inbox, inboxFiles()[0]))).toBe(7);
+  });
+
+  it("is cleared by Discard, and a new scan files the pending one without asking", async () => {
+    await run("feeder", 3);
+    await blankMore();
+    expect((await discardPending(opts(), deps(), noop)).ok).toBe(true);
+    expect(readPending(stateDir)).toBeNull();
+
+    await run("feeder", 3);
+    await blankMore();
+    const next = await run("feeder", 2);
+    expect(next.ok).toBe(true);
+    expect(inboxFiles()).toHaveLength(1); // the first, filed by the new scan
+    expect(parts()[0].pages).toBe(2);
+    expect(readPending(stateDir)?.attention).toBeUndefined();
+  });
+
+  it("does not mark anything for a failed scan other than Scan More, or with nothing pending", async () => {
+    fake.state.pickupFails = true;
+    await runJob(opts(), deps());
+    expect(readPending(stateDir)).toBeNull();
+    const more = await runJob(opts("more"), deps());
+    expect(more.message).toBe(
+      "Nothing to continue (the last scan is already filed)",
+    );
+    expect(readPending(stateDir)).toBeNull();
+    // the first still left its last result
+    expect(readLastResult(stateDir)).toMatchObject({
+      action: "more",
+      ok: false,
+    });
+  });
+
+  it("writes last-result.json for scan, submit and discard", async () => {
+    await run("feeder", 3);
+    expect(readLastResult(stateDir)).toEqual({
+      at: clock,
+      action: "feeder",
+      ok: true,
+      message: SCANNED_3,
+      pages: 3,
+    });
+    expect((await submit()).ok).toBe(true);
+    expect(readLastResult(stateDir)).toMatchObject({
+      action: "submit",
+      ok: true,
+      pages: 3,
+    });
+    await run("feeder", 2);
+    await discardPending(opts(), deps(), noop);
+    expect(readLastResult(stateDir)).toMatchObject({
+      action: "discard",
+      ok: true,
+      pages: 2,
+    });
+    expect(readLastResult(join(root, "nowhere"))).toBeNull();
+  });
+});
+
+describe("a 200 that is not a JPEG while the scanner cancels the job", () => {
+  it("is not a page: the first request ends in the cancel message, nothing pending, no temp dir", async () => {
+    fake.state.junkPageAt = 1;
+    const result = await runJob(opts(), deps());
+    expect(result).toEqual({ ok: false, message: CANCELLED_TRY_AGAIN });
+    expect(bodies()).toEqual([`Scan failed: ${CANCELLED_TRY_AGAIN}`]);
+    expect(readPending(stateDir)).toBeNull();
+    expect(tmpDirs()).toEqual([]);
+    const log = readFileSync(join(stateDir, "scan.log"), "utf8");
+    expect(log).toMatch(/page 1: not a JPEG, 26 bytes, starts 3c 68 74 6d 6c/);
+    expect(log).not.toContain("Not a JPEG image");
+    expect(log).not.toContain("temp dir kept");
+  });
+
+  it("after two good pages the batch is incomplete: partial/ holds the two pages", async () => {
+    fake.state.pages = 5;
+    fake.state.junkPageAt = 3;
+    const result = await runJob(opts(), deps());
+    expect(result.ok).toBe(false);
+    expect(result.message).toMatch(
+      /^Scan stopped after 2 pages: the scanner cancelled the scan \(the feeder did not pick up the paper\)\. Partial PDF kept in /,
+    );
+    const [kept] = readdirSync(join(stateDir, "partial"));
+    expect(pdfPages(join(stateDir, "partial", kept))).toBe(2);
+    expect(readPending(stateDir)).toBeNull();
+    expect(inboxFiles()).toEqual([]);
+    expect(tmpDirs()).toEqual([]);
+  });
+
+  it("marks a pending scan when it happens in Scan More", async () => {
+    await run("feeder", 3);
+    fake.state.adfState = "ScannerAdfLoaded";
+    fake.state.pages = 4;
+    fake.state.junkPageAt = 1;
+    clock += 10_000;
+    const result = await runJob(opts("more"), deps());
+    expect(result.message).toBe(CANCELLED_TRY_AGAIN);
+    expect(readPending(stateDir)?.attention).toBe(CANCELLED_TRY_AGAIN);
+    expect(parts()[0].pages).toBe(3);
   });
 });
 

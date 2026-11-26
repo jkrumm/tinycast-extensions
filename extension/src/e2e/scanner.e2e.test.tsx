@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import React from "react";
 import { ReactTestInstance, ReactTestRenderer } from "react-test-renderer";
 import { Grid } from "@raycast/api";
+import { __resetToasts, __toasts } from "./raycast-fake";
 import { assertNoBadSubstrings, renderCommand, waitFor } from "./render";
 import type { DocThumb, DocumentsResult, ScanStatus } from "../scan/view";
 
@@ -213,7 +214,11 @@ describe("scanner view", () => {
 
   it("renders one pending part with its thumbnails and every kind of document", async () => {
     state.status = {
-      pending: { parts: [part("feeder", 3, [1])], scanning: false },
+      pending: {
+        parts: [part("feeder", 3, [1])],
+        scanning: false,
+        needsAttention: false,
+      },
     };
     state.docs = allDocs;
     state.thumbs = [
@@ -302,6 +307,7 @@ describe("scanner view", () => {
       pending: {
         parts: [part("fronts", 3), part("backs", 2)],
         scanning: false,
+        needsAttention: false,
       },
     };
     const r = await mount();
@@ -323,7 +329,13 @@ describe("scanner view", () => {
   });
 
   it("offers Scan Backs and Submit Fronts Only for pending fronts", async () => {
-    state.status = { pending: { parts: [part("fronts", 3)], scanning: false } };
+    state.status = {
+      pending: {
+        parts: [part("fronts", 3)],
+        scanning: false,
+        needsAttention: false,
+      },
+    };
     const r = await mount();
     expect(itemActions(sections(r)[0].items[0]).slice(0, 4)).toEqual([
       "Scan Backs",
@@ -331,6 +343,85 @@ describe("scanner view", () => {
       "Submit Fronts Only",
       "Discard Scan",
     ]);
+  });
+
+  it("marks a failed Scan More: section title, a warning tile first, Submit asks", async () => {
+    state.status = {
+      pending: {
+        parts: [part("feeder", 26)],
+        scanning: false,
+        needsAttention: true,
+        attention:
+          "Scan stopped: all 3 pages look blank. Stack upside down? PDF kept in ~/.local/state/scan/blank",
+      },
+    };
+    const r = await mount();
+    const [first] = sections(r);
+    expect(first.title).toBe("Scan · 26 pages · last batch failed");
+    const [warning, page1] = first.items;
+    expect(warning.props.title).toBe("Last batch failed");
+    expect(warning.props.content).toBe("icon:Warning");
+    expect(warning.props.subtitle).toMatch(
+      /^Scan stopped: all 3 pages look blank/,
+    );
+    expect(warning.props.subtitle.length).toBeLessThanOrEqual(60);
+    expect(page1.props.title).toBe("Page 1");
+    expect(itemActions(warning)[0]).toBe("Submit Scan");
+    assertNoBadSubstrings(allText(r), "scanner attention");
+  });
+
+  // The onAction of the action with this title in a panel passed as a prop.
+  function onActionOf(item: ReactTestInstance, title: string) {
+    let found: (() => void) | undefined;
+    const walk = (node: React.ReactNode): void => {
+      React.Children.forEach(node, (child) => {
+        if (!React.isValidElement(child)) return;
+        const props = child.props as {
+          title?: string;
+          onAction?: () => void;
+          children?: React.ReactNode;
+        };
+        if (props.title === title && props.onAction) found ??= props.onAction;
+        walk(props.children);
+      });
+    };
+    walk(item.props.actions);
+    return found;
+  }
+
+  it("toasts a result that appears after the view opened, not the one that was there", async () => {
+    __resetToasts();
+    state.status = {
+      pending: null,
+      lastResult: {
+        at: 100,
+        action: "feeder",
+        ok: true,
+        message: "old",
+        pages: 3,
+      },
+    };
+    const r = await mount();
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(__toasts).toEqual([]);
+
+    // a scan ended: the next poll sees a newer lastResult
+    state.status = {
+      pending: null,
+      lastResult: {
+        at: 200,
+        action: "more",
+        ok: false,
+        message: "Scanner is busy",
+      },
+    };
+    onActionOf(r.root.findByType(Grid.EmptyView), "Refresh")!();
+    await waitFor(() => __toasts.length > 0);
+    expect(__toasts).toHaveLength(1);
+    expect(__toasts[0]).toMatchObject({
+      style: "failure",
+      title: "Scanner is busy",
+    });
   });
 
   it("shows the progress while a scan runs and offers no scan action", async () => {

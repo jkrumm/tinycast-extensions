@@ -126,6 +126,29 @@ export const FEEDER_CANCELLED =
 export const CANCELLED_TRY_AGAIN =
   "The scanner cancelled the scan (the feeder did not pick up the paper). Push the stack in and try again";
 
+const isCancelled = (record: { state: string | null }): boolean =>
+  record.state === "Canceled" || record.state === "Aborted";
+
+// A cancelled or aborted job record in words.
+function cancelReason(record: {
+  state: string | null;
+  reason: string | null;
+}): string {
+  if (record.reason === "JobCanceledAtDevice") return FEEDER_CANCELLED;
+  if (record.reason) return words(record.reason);
+  return `job ${(record.state ?? "unknown").toLowerCase()}`;
+}
+
+// A page is a JPEG: it starts with the SOI marker. A cancelling scanner was
+// seen answering a page request with 200 and something else.
+const isJpeg = (bytes: Uint8Array): boolean =>
+  bytes.length >= 2 && bytes[0] === 0xff && bytes[1] === 0xd8;
+
+const hexHead = (bytes: Uint8Array): string =>
+  Array.from(bytes.slice(0, 16), (b) => b.toString(16).padStart(2, "0")).join(
+    " ",
+  ) || "(empty)";
+
 type Verdict =
   | { kind: "complete" }
   | { kind: "incomplete"; reason: string }
@@ -156,15 +179,7 @@ export function judgeBatch(
             };
       case "Canceled":
       case "Aborted":
-        return {
-          kind: "incomplete",
-          reason:
-            record.reason === "JobCanceledAtDevice"
-              ? FEEDER_CANCELLED
-              : record.reason
-                ? words(record.reason)
-                : `job ${record.state.toLowerCase()}`,
-        };
+        return { kind: "incomplete", reason: cancelReason(record) };
       case "Processing":
       case "Pending":
         return { kind: "running" };
@@ -217,6 +232,22 @@ type PageRequest =
   | { kind: "page"; ms: number }
   | { kind: "end" }
   | { kind: "failed"; reason: string };
+
+// The status once the job is no longer running (a few tries): after a bad
+// page the device may need a moment to write the job record.
+async function settledStatus(
+  ports: ScanPorts,
+  host: string,
+  job: string,
+): Promise<ScannerStatus | null> {
+  let status: ScannerStatus | null = null;
+  for (let attempt = 0; attempt < 5; attempt++) {
+    status = await readStatus(ports, host).catch(() => null);
+    if (judgeBatch(status, job, 0).kind !== "running") break;
+    await ports.sleep(RETRY_WAIT_MS);
+  }
+  return status;
+}
 
 export async function runScan(
   ports: ScanPorts,
@@ -273,7 +304,25 @@ export async function runScan(
       const res = await requestPage();
 
       if (res.kind === "page") {
-        const bytes = await ports.readFile(ports.pagePath(pages.length));
+        const bytes = await ports
+          .readFile(ports.pagePath(pages.length))
+          .catch(() => new Uint8Array());
+        if (!isJpeg(bytes)) {
+          // Not a page: a failed page request, and the job record decides why.
+          ports.log(
+            `page ${pages.length + 1}: not a JPEG, ${bytes.length} bytes, starts ${hexHead(bytes)}`,
+          );
+          finalStatus = await settledStatus(ports, host, job);
+          const record = finalStatus ? findJob(finalStatus, job) : null;
+          outcome = {
+            complete: false,
+            reason:
+              record && isCancelled(record)
+                ? cancelReason(record)
+                : `page ${pages.length + 1} was not a valid image`,
+          };
+          break;
+        }
         pages.push(bytes);
         ports.log(`page ${pages.length}: ${bytes.length} bytes, ${res.ms} ms`);
         ports.onPage?.(pages.length);
@@ -314,7 +363,7 @@ export async function runScan(
 
     // Before the DELETE: the job record is what the log (and a failed page's
     // post-mortem) needs.
-    if (isFeederMode(mode) && pages.length > 0) {
+    if (isFeederMode(mode) && (pages.length > 0 || finalStatus !== undefined)) {
       if (finalStatus === undefined) {
         finalStatus = await readStatus(ports, host).catch(() => null);
       }
@@ -322,6 +371,10 @@ export async function runScan(
       ports.log(
         `final: state=${finalStatus?.state ?? "unknown"} adf=${finalStatus?.adfState ?? "unknown"} job=${record?.state ?? "unlisted"} imagesCompleted=${record?.imagesCompleted ?? "n/a"} received=${pages.length}`,
       );
+      // A cancelled or aborted job is never a complete batch, whatever came in.
+      if (record && isCancelled(record) && outcome.complete) {
+        outcome = { complete: false, reason: cancelReason(record) };
+      }
     }
   } catch (error) {
     // Pages already scanned are never thrown away with the error.

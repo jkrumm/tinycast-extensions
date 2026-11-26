@@ -17,7 +17,9 @@ type JobSpec = { state: string; images?: number; reason?: string };
 type StatusSpec =
   { state?: string; adf?: string | null; job?: JobSpec } | "unreachable";
 type PostSpec = { status: number; location?: string | null };
-type NextSpec = { status: number; ms?: number } | "throw";
+// `body`: what a 200 carries instead of a JPEG
+type NextSpec =
+  { status: number; ms?: number; body?: "junk" | "empty" } | "throw";
 
 // A scripted device: each queue is consumed in order; the last status repeats,
 // an empty POST queue answers 201, an empty NextDocument queue answers 404.
@@ -88,7 +90,11 @@ function makeDevice(opts: {
         if (spec.status === 200) {
           files.set(
             destPath,
-            syntheticJpeg({ width: 100 + ++pageNo, height: 50 }),
+            spec.body === "junk"
+              ? new TextEncoder().encode("<html>cancelled</html>")
+              : spec.body === "empty"
+                ? new Uint8Array()
+                : syntheticJpeg({ width: 100 + ++pageNo, height: 50 }),
           );
         }
         return { status: spec.status, ms };
@@ -392,6 +398,85 @@ describe("runScan", () => {
       expect(result.pages).toHaveLength(1);
       expect(result).toMatchObject({ complete: false, reason });
     }
+  });
+
+  it("does not count a 200 whose body is not a JPEG as a page", async () => {
+    const cancelled: StatusSpec = {
+      state: "Idle",
+      adf: "ScannerAdfEmpty",
+      job: { state: "Canceled", images: 0, reason: "JobCanceledAtDevice" },
+    };
+    for (const body of ["junk", "empty"] as const) {
+      // first request: no page, the cancel message
+      const first = makeDevice({
+        statuses: [loaded, cancelled],
+        nexts: [{ status: 200, body }],
+      });
+      await expect(runScan(first.ports, feeder())).rejects.toThrow(
+        new ScanError(CANCELLED_TRY_AGAIN),
+      );
+      expect(
+        first.logs.some((l) => /page 1: not a JPEG, \d+ bytes/.test(l)),
+      ).toBe(true);
+      expect(first.calls.at(-1)).toBe(`DELETE ${HOST}/eSCL/ScanJobs/1`);
+
+      // after two good pages: an incomplete batch with the two pages
+      const later = makeDevice({
+        statuses: [loaded, cancelled],
+        nexts: [{ status: 200 }, { status: 200 }, { status: 200, body }],
+      });
+      const result = await runScan(later.ports, feeder());
+      expect(result.pages).toHaveLength(2);
+      expect(result).toMatchObject({
+        complete: false,
+        reason: FEEDER_CANCELLED,
+      });
+    }
+  });
+
+  it("logs the size and the first 16 bytes of a rejected body", async () => {
+    const dev = makeDevice({
+      statuses: [loaded, empty],
+      nexts: [{ status: 200 }, { status: 200, body: "junk" }],
+    });
+    const result = await runScan(dev.ports, feeder());
+    expect(result.pages).toHaveLength(1);
+    expect(dev.logs).toContain(
+      "page 2: not a JPEG, 22 bytes, starts 3c 68 74 6d 6c 3e 63 61 6e 63 65 6c 6c 65 64 3c",
+    );
+  });
+
+  it("an invalid body without a cancelled job record is a plain invalid page", async () => {
+    const dev = makeDevice({
+      statuses: [loaded, empty],
+      nexts: [{ status: 200, body: "junk" }],
+    });
+    await expect(runScan(dev.ports, feeder())).rejects.toThrow(
+      "page 1 was not a valid image",
+    );
+    const flat = makeDevice({ nexts: [{ status: 200, body: "empty" }] });
+    await expect(runScan(flat.ports, feeder("flatbed"))).rejects.toThrow(
+      "page 1 was not a valid image",
+    );
+  });
+
+  it("waits for the job record to settle after a bad page", async () => {
+    const dev = makeDevice({
+      statuses: [
+        loaded,
+        running,
+        {
+          state: "Idle",
+          adf: "ScannerAdfEmpty",
+          job: { state: "Canceled", reason: "JobCanceledAtDevice" },
+        },
+      ],
+      nexts: [{ status: 200, body: "junk" }],
+    });
+    await expect(runScan(dev.ports, feeder())).rejects.toThrow(
+      CANCELLED_TRY_AGAIN,
+    );
+    expect(dev.sleeps).toContain(1000);
   });
 
   it("does not take an empty feeder as proof when the job is Canceled", async () => {

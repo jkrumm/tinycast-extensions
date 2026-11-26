@@ -20,6 +20,7 @@ import {
   FlowAction,
   FlowActionId,
   SCAN_MODE_OF,
+  attentionTile,
   documentSignature,
   filedDetailMarkdown,
   filedSectionTitle,
@@ -28,9 +29,11 @@ import {
   partTitle,
   pollInterval,
   reviewDetailMarkdown,
+  resultToToast,
   reviewTile,
   scannerActions,
   scanningTitle,
+  submitConfirmation,
   thumbMap,
   waitingDetailMarkdown,
   waitingTile,
@@ -137,6 +140,16 @@ export default function Scanner() {
   docsBusy.current = docsLoading;
   const fastUntil = useRef(0);
 
+  // How a scan ended, as a toast: only a result that appears after the view
+  // opened (the first live answer is the baseline).
+  const seenResultAt = useRef<number | null>(null);
+  useEffect(() => {
+    if (!status || statusLoading) return;
+    const next = resultToToast(status.lastResult, seenResultAt.current);
+    seenResultAt.current = next.seenAt;
+    if (next.toast) void toast(next.toast);
+  }, [status, statusLoading]);
+
   const interval = pollInterval({
     status,
     fastUntil: fastUntil.current,
@@ -183,7 +196,17 @@ export default function Scanner() {
       await toast(await discardScan());
       return refresh();
     }
-    await toast(await submitScan());
+    // After a failed Scan More the pending scan lacks sheets: ask first.
+    const ask = submitConfirmation(status);
+    if (ask) {
+      const sure = await confirmAlert({
+        title: ask.title,
+        message: ask.message,
+        primaryAction: { title: "File Anyway" },
+      });
+      if (!sure) return;
+    }
+    await toast(await submitScan(ask !== null));
     refresh();
   };
 
@@ -234,6 +257,7 @@ export default function Scanner() {
   );
 
   const parts = status?.pending?.parts ?? [];
+  const warning = attentionTile(status);
   const scanning = isScanning(status);
   const headline = scanningTitle(status);
 
@@ -319,8 +343,17 @@ export default function Scanner() {
       {parts.map((part, partIndex) => (
         <Grid.Section
           key={`part-${partIndex}`}
-          title={partTitle(parts, partIndex)}
+          title={partTitle(parts, partIndex, warning !== null)}
         >
+          {partIndex === 0 && warning ? (
+            <Grid.Item
+              key="attention"
+              content={Icon.Warning}
+              title={warning.title}
+              subtitle={warning.subtitle}
+              actions={flowPanel()}
+            />
+          ) : null}
           {part.pagePaths.map((pagePath, i) => (
             <Grid.Item
               key={`part-${partIndex}-page-${i}`}

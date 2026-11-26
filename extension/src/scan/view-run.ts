@@ -76,13 +76,18 @@ export async function loadDocThumbs(): Promise<DocThumb[]> {
   );
 }
 
-async function direct(action: "submit" | "discard"): Promise<ActionResult> {
-  const args = directArgs(action, prefs());
+async function direct(
+  action: "submit" | "discard",
+  force = false,
+): Promise<ActionResult> {
+  const args = directArgs(action, prefs(), force);
   if (!args) return { ok: false, message: NO_INBOX };
   return parseResultLine(await runCli(args, ACTION_TIMEOUT_MS));
 }
 
-export const submitScan = (): Promise<ActionResult> => direct("submit");
+// `force`: file although the last Scan More failed.
+export const submitScan = (force = false): Promise<ActionResult> =>
+  direct("submit", force);
 export const discardScan = (): Promise<ActionResult> => direct("discard");
 
 // File a document the consumer held in review/ as one document.

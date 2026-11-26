@@ -9,6 +9,7 @@ import {
   ReviewDoc,
   ScanStatus,
   WaitingDoc,
+  attentionTile,
   clockTime,
   documentSignature,
   filedDetailMarkdown,
@@ -24,10 +25,12 @@ import {
   pendingPageCount,
   pollInterval,
   proposalKind,
+  resultToToast,
   reviewDetailMarkdown,
   reviewTile,
   scannerActions,
   scanningTitle,
+  submitConfirmation,
   thumbMap,
   tileStatus,
   waitingDetailMarkdown,
@@ -50,7 +53,10 @@ const part = (mode: string, pages: number): Part => ({
   pdfPath: `/s/${mode}/scan.pdf`,
 });
 const pending = (scanning: boolean, ...parts: Part[]): ScanStatus => ({
-  pending: { parts, scanning },
+  pending: { parts, scanning, needsAttention: false },
+});
+const attention = (message: string, ...parts: Part[]): ScanStatus => ({
+  pending: { parts, scanning: false, needsAttention: true, attention: message },
 });
 const idle: ScanStatus = { pending: null };
 const running: ScanStatus = {
@@ -185,6 +191,121 @@ describe("status helpers", () => {
     expect(POLL_SCANNING_MS).toBe(2000);
     expect(POLL_IDLE_MS).toBe(10_000);
     expect(POLL_AFTER_ACTION_MS).toBeGreaterThan(POLL_SCANNING_MS);
+  });
+});
+
+describe("a failed Scan More", () => {
+  const blank =
+    "Scan stopped: all 3 pages look blank. Stack upside down? PDF kept in ~/.local/state/scan/blank";
+
+  it("titles the first section only", () => {
+    const parts = [part("fronts", 3), part("backs", 2)];
+    expect(partTitle(parts, 0, true)).toBe(
+      "Fronts · 3 pages · last batch failed",
+    );
+    expect(partTitle(parts, 1, true)).toBe("Backs · 2 pages (fronts had 3)");
+    expect(partTitle(parts, 0, false)).toBe("Fronts · 3 pages");
+  });
+
+  it("makes a warning tile with the message truncated to fit", () => {
+    expect(attentionTile(idle)).toBeNull();
+    expect(attentionTile(pending(false, part("feeder", 3)))).toBeNull();
+    const tile = attentionTile(attention(blank, part("feeder", 26)));
+    expect(tile?.title).toBe("Last batch failed");
+    expect(tile?.subtitle).toMatch(/^Scan stopped: all 3 pages look blank.*…$/);
+    expect(tile?.subtitle.length).toBeLessThanOrEqual(60);
+    expect(
+      attentionTile(attention("Scanner is busy", part("feeder", 3)))?.subtitle,
+    ).toBe("Scanner is busy");
+  });
+
+  it("asks before Submit only in that state", () => {
+    expect(submitConfirmation(pending(false, part("feeder", 26)))).toBeNull();
+    expect(submitConfirmation(idle)).toBeNull();
+    expect(
+      submitConfirmation(attention("Scanner is busy.", part("feeder", 26))),
+    ).toEqual({
+      title: "File without the last batch?",
+      message:
+        "The last batch failed: Scanner is busy. File the 26 pages without it?",
+    });
+  });
+
+  it("parses needsAttention, attention and lastResult from --status", () => {
+    const status = parseStatus(
+      JSON.stringify({
+        pending: {
+          parts: [part("feeder", 2)],
+          scanning: false,
+          needsAttention: true,
+          attention: "boom",
+        },
+        lastResult: {
+          at: 5,
+          action: "more",
+          ok: false,
+          message: "boom",
+          pages: 2,
+        },
+      }),
+    );
+    expect(status?.pending).toMatchObject({
+      needsAttention: true,
+      attention: "boom",
+    });
+    expect(status?.lastResult).toEqual({
+      at: 5,
+      action: "more",
+      ok: false,
+      message: "boom",
+      pages: 2,
+    });
+    // an older CLI without the fields
+    const old = parseStatus(
+      JSON.stringify({
+        pending: { parts: [part("feeder", 2)], scanning: false },
+      }),
+    );
+    expect(old?.pending?.needsAttention).toBe(false);
+    expect(old?.lastResult).toBeUndefined();
+    expect(parseStatus('{"pending":null,"lastResult":{"at":"x"}}')).toEqual({
+      pending: null,
+    });
+  });
+
+  const result = (at: number, action = "more", ok = false) => ({
+    at,
+    action,
+    ok,
+    message: "m",
+  });
+
+  it("toasts only a result newer than the one the view opened with", () => {
+    // the first answer is the baseline, whatever it holds
+    expect(resultToToast(result(100), null)).toEqual({
+      toast: null,
+      seenAt: 100,
+    });
+    expect(resultToToast(undefined, null)).toEqual({ toast: null, seenAt: 0 });
+    // the same one again
+    expect(resultToToast(result(100), 100)).toEqual({
+      toast: null,
+      seenAt: 100,
+    });
+    // a new one, success or failure
+    expect(resultToToast(result(200, "feeder", true), 100)).toEqual({
+      toast: result(200, "feeder", true),
+      seenAt: 200,
+    });
+    expect(resultToToast(result(300), 200).toast).toEqual(result(300));
+    // a result vanishing does not toast or reset
+    expect(resultToToast(undefined, 200)).toEqual({ toast: null, seenAt: 200 });
+    // Submit and Discard are shown by the view itself: seen, not toasted again
+    expect(resultToToast(result(400, "submit", true), 300)).toEqual({
+      toast: null,
+      seenAt: 400,
+    });
+    expect(resultToToast(result(500, "discard", true), 400).toast).toBeNull();
   });
 });
 

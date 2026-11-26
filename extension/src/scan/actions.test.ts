@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  directArgs,
   runDirectCommand,
   runScanCommand,
   scanArgs,
@@ -150,5 +151,30 @@ describe("runDirectCommand", () => {
       "Set the scan inbox in the extension preferences",
     ]);
     expect(file.checks).toEqual([]);
+  });
+});
+
+describe("Submit Scan after a failed Scan More", () => {
+  it("the launcher command never forces and shows the refusal", async () => {
+    const refusal =
+      "The last Scan More failed: Scanner is busy. Scan those sheets again, or submit anyway";
+    const { ports, checks, huds } = makePorts({
+      checkOutput: JSON.stringify({ ok: false, message: refusal }),
+    });
+    await runDirectCommand("submit", ports);
+    expect(checks[0]).not.toContain("--force");
+    expect(huds).toEqual([refusal]);
+  });
+
+  it("only the view passes --force, and only for a submit", () => {
+    const prefs = { scanInbox: "/in" };
+    expect(directArgs("submit", prefs)).toEqual([
+      "--submit",
+      "--out-dir",
+      "/in",
+      "--no-notify",
+    ]);
+    expect(directArgs("submit", prefs, true)).toContain("--force");
+    expect(directArgs("discard", prefs, true)).not.toContain("--force");
   });
 });

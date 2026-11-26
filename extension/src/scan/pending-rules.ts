@@ -21,6 +21,10 @@ export interface PendingPart {
 // are filed and discarded together.
 export interface Pending {
   parts: PendingPart[];
+  // Set when the last Scan More failed (blank, incomplete, cancelled, refused):
+  // sheets the user thinks are in the scan are not. The failure message; cleared
+  // by the next successful scan or Scan More on it, by Submit and by Discard.
+  attention?: string;
 }
 
 export function parsePending(raw: unknown): Pending | null {
@@ -47,8 +51,18 @@ export function parsePending(raw: unknown): Pending | null {
   ) {
     return null;
   }
-  return { parts };
+  const attention = (raw as { attention?: unknown }).attention;
+  return typeof attention === "string" && attention
+    ? { parts, attention }
+    : { parts };
 }
+
+const withoutPeriod = (message: string): string =>
+  message.replace(/[.!?]+$/, "");
+
+// Submit Scan after a failed Scan More: refused unless forced.
+export const submitRefusal = (attention: string): string =>
+  `The last Scan More failed: ${withoutPeriod(attention)}. Scan those sheets again, or submit anyway`;
 
 export type StartDecision =
   | { kind: "go" } // nothing in the way

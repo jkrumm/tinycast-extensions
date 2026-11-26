@@ -9,6 +9,7 @@
 //   --check                              pre-flight only
 //   --submit                             Submit Scan: file the pending scan in the inbox, no scanner
 //   --discard                            Discard Scan: drop the pending scan, no scanner
+//   --force                              with --submit: file even though the last Scan More failed
 //   --status                             the pending scan (and the running scan's progress) for a UI
 //   --documents                          the inbox: waiting, review, filed (read-only, no scanner)
 //   --doc-thumbs                         cache-file thumbnails of those documents
@@ -58,6 +59,7 @@ const { values, positionals } = parseArgs({
     host: { type: "string" },
     check: { type: "boolean", default: false },
     submit: { type: "boolean", default: false },
+    force: { type: "boolean", default: false },
     discard: { type: "boolean", default: false },
     status: { type: "boolean", default: false },
     documents: { type: "boolean", default: false },
@@ -113,6 +115,7 @@ const opts: JobOptions = {
   host: values.host?.trim() || undefined,
   stateDir,
   notify: !values["no-notify"],
+  force: values.force,
 };
 const deps = systemJobDeps(stateDir);
 

@@ -28,6 +28,7 @@ export interface FakeScannerState {
   failNextDocuments: number; // answer the next N page requests with 503
   failPageAt: number | null; // 1-based page that answers 500
   cancelAfter: number | null; // the job ends Canceled at the device after N pages
+  junkPageAt: number | null; // 1-based page request answered 200 with a non-JPEG body; the job ends Canceled
   pickupFails: boolean; // the feeder never picks up the paper: first page request answers 410
   scanning: boolean;
   requests: FakeScannerRequest[];
@@ -83,6 +84,7 @@ export async function startFakeScanner(
     failNextDocuments: 0,
     failPageAt: null,
     cancelAfter: null,
+    junkPageAt: null,
     pickupFails: false,
     scanning: false,
     requests: [],
@@ -179,6 +181,16 @@ export async function startFakeScanner(
         return reply(res, 404);
       }
       if (state.failPageAt === served + 1) return reply(res, 500);
+      if (state.junkPageAt === served + 1) {
+        // seen live: a cancelling scanner answered a page request with a 200
+        finishJob({ state: "Canceled", reason: "JobCanceledAtDevice" });
+        return reply(
+          res,
+          200,
+          { "Content-Type": "text/html" },
+          "<html>job cancelled</html>",
+        );
+      }
       served++;
       const jpeg = syntheticJpeg({ width: 2480, height: 3507 });
       // The job is listed as Completed once its last page was fetched.

@@ -15,6 +15,8 @@ export interface JobOptions {
   host?: string;
   stateDir: string;
   notify: boolean;
+  // Submit Scan: file the pending scan although its last Scan More failed.
+  force?: boolean;
 }
 
 export interface JobDeps {

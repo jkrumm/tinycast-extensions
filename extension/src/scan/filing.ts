@@ -20,6 +20,9 @@ import {
 import {
   clearPending,
   discardPendingFiles,
+  LastResult,
+  readLastResult,
+  writeLastResult,
   partPagePaths,
   partThumbPaths,
   partPdfPath,
@@ -28,12 +31,19 @@ import {
   readProgress,
   withPendingLock,
 } from "./pending";
-import { discardedMessage, filedMessage, Pending } from "./pending-rules";
+import {
+  discardedMessage,
+  filedMessage,
+  Pending,
+  pendingPages,
+  submitRefusal,
+} from "./pending-rules";
 
 export type SubmitOutcome =
   | { kind: "none" } // nothing pending
   | { kind: "busy" } // a scan is running
-  | { kind: "filed"; result: JobResult };
+  | { kind: "attention"; message: string } // the last Scan More failed, not forced
+  | { kind: "filed"; result: JobResult; pages: number };
 
 // Files every part of the pending scan, the fronts before the backs. A part
 // the inbox cannot take is kept in `unsent/`; either way the pending scan is
@@ -50,9 +60,13 @@ export function submitPending(
       const pending = readPending(opts.stateDir);
       if (!pending) return { kind: "none" };
       if (scanRunning(opts.stateDir, deps)) return { kind: "busy" };
+      if (pending.attention && !opts.force) {
+        return { kind: "attention", message: submitRefusal(pending.attention) };
+      }
       return {
         kind: "filed",
         result: await fileParts(opts, deps, log, pending),
+        pages: pendingPages(pending),
       };
     },
   );
@@ -101,7 +115,8 @@ export async function submitBeforeScan(
   log: (line: string) => void,
 ): Promise<void> {
   log("pending scan: submitting it before the new scan");
-  const out = await submitPending(opts, deps, log);
+  // a forgotten Submit is never lost, whatever the last Scan More did
+  const out = await submitPending({ ...opts, force: true }, deps, log);
   if (out.kind !== "filed" || !opts.notify) return;
   const result = out.result;
   await deps.notify({
@@ -117,22 +132,50 @@ export async function submitNow(
   deps: JobDeps,
   log: (line: string) => void,
 ): Promise<JobResult> {
-  const problem = inboxProblem(opts.outDir);
-  if (problem) return problem;
-  const out = await submitPending(opts, deps, log);
-  if (out.kind === "filed") return out.result;
-  return fail(
-    out.kind === "busy" ? "A scan is already running" : "Nothing to submit",
-  );
+  let pages: number | undefined;
+  const result = await (async (): Promise<JobResult> => {
+    const problem = inboxProblem(opts.outDir);
+    if (problem) return problem;
+    const out = await submitPending(opts, deps, log);
+    if (out.kind === "filed") {
+      pages = out.pages;
+      return out.result;
+    }
+    if (out.kind === "attention") return fail(out.message);
+    return fail(
+      out.kind === "busy" ? "A scan is already running" : "Nothing to submit",
+    );
+  })();
+  recordResult(opts, deps, "submit", result, pages);
+  return result;
+}
+
+// What a UI toasts: how the last scan, Submit or Discard ended.
+export function recordResult(
+  opts: JobOptions,
+  deps: JobDeps,
+  action: string,
+  result: JobResult,
+  pages?: number,
+): void {
+  const last: LastResult = {
+    at: deps.now(),
+    action,
+    ok: result.ok,
+    message: result.message,
+    ...(pages !== undefined ? { pages } : {}),
+  };
+  writeLastResult(opts.stateDir, last);
 }
 
 // Discard Scan: the PDFs move to `discarded/` (the newest five files stay).
-export function discardPending(
+export async function discardPending(
   opts: JobOptions,
   deps: JobDeps,
   log: (line: string) => void,
 ): Promise<JobResult> {
-  return withPendingLock(opts.stateDir, deps, (): JobResult => {
+  let pages: number | undefined;
+  const result = await withPendingLock(opts.stateDir, deps, (): JobResult => {
     const pending = readPending(opts.stateDir);
     if (!pending) return fail("Nothing to discard");
     if (scanRunning(opts.stateDir, deps)) {
@@ -141,8 +184,11 @@ export function discardPending(
     for (const kept of discardPendingFiles(opts.stateDir, pending)) {
       log(`discarded: ${kept}`);
     }
+    pages = pendingPages(pending);
     return { ok: true, message: discardedMessage(pending) };
   });
+  recordResult(opts, deps, "discard", result, pages);
+  return result;
 }
 
 export interface ScanStatus {
@@ -159,7 +205,12 @@ export interface ScanStatus {
     }[];
     // true while a live process holds the scan lock
     scanning: boolean;
+    // the last Scan More failed: the failure message (Submit asks first)
+    needsAttention: boolean;
+    attention?: string;
   } | null;
+  // How the last scan, Submit or Discard ended (what a UI toasts once).
+  lastResult?: LastResult;
   // What the running scan reports; only while the scan lock is held.
   progress?: Progress;
 }
@@ -169,6 +220,7 @@ export function scanStatus(opts: JobOptions, deps: JobDeps): ScanStatus {
   const pending = readPending(opts.stateDir);
   const scanning = scanRunning(opts.stateDir, deps);
   const progress = scanning ? readProgress(opts.stateDir) : null;
+  const lastResult = readLastResult(opts.stateDir);
   return {
     pending: pending
       ? {
@@ -179,8 +231,11 @@ export function scanStatus(opts: JobOptions, deps: JobDeps): ScanStatus {
             pdfPath: partPdfPath(opts.stateDir, index),
           })),
           scanning,
+          needsAttention: pending.attention !== undefined,
+          ...(pending.attention ? { attention: pending.attention } : {}),
         }
       : null,
     ...(progress ? { progress } : {}),
+    ...(lastResult ? { lastResult } : {}),
   };
 }

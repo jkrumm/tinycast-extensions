@@ -32,7 +32,7 @@ import { inkLogLine, isBlankBatch } from "./blank";
 import { DeliverFs, keepPdf } from "./deliver";
 import { fileScannerCache, resolveScannerHost, runDnsSd } from "./discover";
 import { scanFileName, SCAN_DPI } from "./escl";
-import { submitBeforeScan } from "./filing";
+import { recordResult, submitBeforeScan } from "./filing";
 import { measureInk } from "./ink";
 import { makeThumbs } from "./thumbs";
 import {
@@ -54,6 +54,7 @@ import {
   clearProgress,
   readStoredParts,
   readPending,
+  setAttention,
   StoredPart,
   withPendingLock,
   writePending,
@@ -159,10 +160,11 @@ export async function runJob(
 
   let result: JobResult;
   let locked = false;
+  const info: { pages?: number } = {};
   try {
     locked = acquireLock(opts.stateDir, deps);
     result = locked
-      ? await execute(opts, deps, log)
+      ? await execute(opts, deps, log, info)
       : fail("A scan is already running");
   } catch (error) {
     if (!(error instanceof ScanError)) log(`error: ${String(error)}`);
@@ -172,6 +174,17 @@ export async function runJob(
       clearProgress(opts.stateDir);
       releaseLock(opts.stateDir, deps);
     }
+  }
+
+  if (locked) {
+    // A Scan More that failed leaves sheets out of the pending scan: mark it,
+    // so Submit asks first. (The next good scan on it clears the mark.)
+    if (opts.mode === "more" && !result.ok) {
+      await withPendingLock(opts.stateDir, deps, () =>
+        setAttention(opts.stateDir, result.message),
+      ).catch((error) => log(`attention: not set: ${String(error)}`));
+    }
+    recordResult(opts, deps, opts.mode, result, info.pages);
   }
 
   log(result.ok ? `done: ${result.message}` : `failed: ${result.message}`);
@@ -188,6 +201,7 @@ async function execute(
   opts: JobOptions,
   deps: JobDeps,
   log: (line: string) => void,
+  info: { pages?: number },
 ): Promise<JobResult> {
   const problem = inboxProblem(opts.outDir);
   if (problem) return problem;
@@ -304,6 +318,7 @@ async function execute(
       }),
     );
     keepTmp = false;
+    info.pages = count;
     return { ok: true, message };
   } finally {
     if (keepTmp) log(`temp dir kept: ${tmp}`);

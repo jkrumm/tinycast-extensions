@@ -19,11 +19,14 @@ import {
   partThumbPaths,
   partPdfPath,
   pendingDir,
+  readLastResult,
   readPending,
   readProgress,
+  setAttention,
   readStoredParts,
   StoredPart,
   withPendingLock,
+  writeLastResult,
   writePending,
   writeProgress,
 } from "./pending";
@@ -125,6 +128,55 @@ describe("the pending scan on disk", () => {
     mkdirSync(pendingDir(dir));
     writeFileSync(join(pendingDir(dir), "scan.json"), "{nope");
     expect(readPending(dir)).toBeNull();
+  });
+});
+
+describe("attention", () => {
+  it("is set in place, kept by nothing else, and cleared", () => {
+    writePending(dir, [stored()]);
+    setAttention(dir, "Scanner is busy");
+    expect(readPending(dir)?.attention).toBe("Scanner is busy");
+    expect(readStoredParts(dir)[0].pages).toHaveLength(2); // the files are untouched
+    setAttention(dir, null);
+    expect(readPending(dir)).toEqual({ parts: [stored().part] });
+    // a rewrite (a successful Scan More) drops it
+    setAttention(dir, "x");
+    writePending(dir, [stored()]);
+    expect(readPending(dir)?.attention).toBeUndefined();
+    // and writing one explicitly keeps it
+    writePending(dir, [stored()], "y");
+    expect(readPending(dir)?.attention).toBe("y");
+  });
+
+  it("marks nothing when nothing is pending", () => {
+    setAttention(dir, "x");
+    expect(readPending(dir)).toBeNull();
+    expect(existsSync(pendingDir(dir))).toBe(false);
+  });
+});
+
+describe("last result", () => {
+  it("is written and read back, and is null when missing or broken", () => {
+    expect(readLastResult(dir)).toBeNull();
+    writeLastResult(dir, { at: 5, action: "more", ok: false, message: "m" });
+    expect(readLastResult(dir)).toEqual({
+      at: 5,
+      action: "more",
+      ok: false,
+      message: "m",
+    });
+    writeLastResult(dir, {
+      at: 6,
+      action: "submit",
+      ok: true,
+      message: "m",
+      pages: 4,
+    });
+    expect(readLastResult(dir)?.pages).toBe(4);
+    writeFileSync(join(dir, "last-result.json"), '{"at":"x"}');
+    expect(readLastResult(dir)).toBeNull();
+    writeFileSync(join(dir, "last-result.json"), "{");
+    expect(readLastResult(dir)).toBeNull();
   });
 });
 

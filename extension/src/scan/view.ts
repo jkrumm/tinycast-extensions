@@ -11,6 +11,7 @@ import type {
   WaitingDoc,
 } from "./documents";
 import type { ScanStatus } from "./filing";
+import type { LastResult } from "./pending";
 
 export type { ScanStatus } from "./filing";
 export type { DocThumb } from "./doc-thumbs";
@@ -44,6 +45,22 @@ function lastJson(stdout: string): unknown {
 const isStringArray = (v: unknown): v is string[] =>
   Array.isArray(v) && v.every((x) => typeof x === "string");
 
+function parseLastResult(raw: unknown): LastResult | undefined {
+  const v = raw as Record<string, unknown> | null | undefined;
+  return typeof v?.at === "number" &&
+    typeof v.action === "string" &&
+    typeof v.ok === "boolean" &&
+    typeof v.message === "string"
+    ? {
+        at: v.at,
+        action: v.action,
+        ok: v.ok,
+        message: v.message,
+        ...(Number.isInteger(v.pages) ? { pages: v.pages as number } : {}),
+      }
+    : undefined;
+}
+
 // `scan-cli --status`; null when the line is not the documented shape.
 export function parseStatus(stdout: string): ScanStatus | null {
   const value = lastJson(stdout) as {
@@ -58,10 +75,16 @@ export function parseStatus(stdout: string): ScanStatus | null {
     Number.isInteger(progress.page)
       ? { progress }
       : {};
-  if (value.pending === null) return { pending: null, ...validProgress };
+  const lastResult = parseLastResult(
+    (value as { lastResult?: unknown }).lastResult,
+  );
+  const extra = { ...validProgress, ...(lastResult ? { lastResult } : {}) };
+  if (value.pending === null) return { pending: null, ...extra };
   const pending = value.pending as {
     parts?: unknown;
     scanning?: unknown;
+    needsAttention?: unknown;
+    attention?: unknown;
   };
   if (!Array.isArray(pending?.parts)) return null;
   const parts: Part[] = [];
@@ -90,8 +113,15 @@ export function parseStatus(stdout: string): ScanStatus | null {
     });
   }
   return {
-    pending: { parts, scanning: pending.scanning === true },
-    ...validProgress,
+    pending: {
+      parts,
+      scanning: pending.scanning === true,
+      needsAttention: pending.needsAttention === true,
+      ...(typeof pending.attention === "string" && pending.attention
+        ? { attention: pending.attention }
+        : {}),
+    },
+    ...extra,
   };
 }
 
@@ -258,8 +288,18 @@ export function tileStatus(status: ScanStatus): string {
   return pages > 0 ? `${pagesText(pages)} pending` : "Ready";
 }
 
-// `Scan · 17 pages`, `Fronts · 17 pages`, `Backs · 16 pages (fronts had 17)`.
-export function partTitle(parts: Part[], index: number): string {
+// `Scan · 17 pages`, `Fronts · 17 pages`, `Backs · 16 pages (fronts had 17)`;
+// the first section also says when the last batch failed.
+export function partTitle(
+  parts: Part[],
+  index: number,
+  needsAttention = false,
+): string {
+  const title = partBaseTitle(parts, index);
+  return needsAttention && index === 0 ? `${title} · last batch failed` : title;
+}
+
+function partBaseTitle(parts: Part[], index: number): string {
   const part = parts[index];
   const label =
     part.mode === "fronts"
@@ -275,6 +315,56 @@ export function partTitle(parts: Part[], index: number): string {
       ? ` (fronts had ${fronts.pages})`
       : "";
   return `${label} · ${pagesText(part.pages)}${note}`;
+}
+
+// ─── a failed Scan More ─────────────────────────────────────────────────────
+
+export const ATTENTION_TITLE = "Last batch failed";
+const ATTENTION_SUBTITLE_MAX = 60;
+
+// The warning tile at the top of the first section, or null.
+export function attentionTile(
+  status: ScanStatus | undefined,
+): { title: string; subtitle: string } | null {
+  const pending = status?.pending;
+  if (!pending?.needsAttention) return null;
+  const message = (pending.attention ?? "The last Scan More failed")
+    .replace(/\s+/g, " ")
+    .trim();
+  return {
+    title: ATTENTION_TITLE,
+    subtitle:
+      message.length > ATTENTION_SUBTITLE_MAX
+        ? `${message.slice(0, ATTENTION_SUBTITLE_MAX - 1).trimEnd()}…`
+        : message,
+  };
+}
+
+// Submit Scan while the last Scan More failed: ask first (`--force` on yes).
+export function submitConfirmation(
+  status: ScanStatus | undefined,
+): { title: string; message: string } | null {
+  const pending = status?.pending;
+  if (!pending?.needsAttention) return null;
+  const failure = (pending.attention ?? "").replace(/[.!?]+$/, "");
+  return {
+    title: "File without the last batch?",
+    message: `The last batch failed${failure ? `: ${failure}` : ""}. File the ${pagesText(pendingPageCount(status))} without it?`,
+  };
+}
+
+// What to toast from a status poll. The first answer only sets the baseline
+// (a result that was there when the view opened is not toasted); after that a
+// result with a newer `at` is toasted, except Submit and Discard, which the
+// view shows itself. Returns the new baseline.
+export function resultToToast(
+  lastResult: LastResult | undefined,
+  seenAt: number | null,
+): { toast: LastResult | null; seenAt: number } {
+  if (seenAt === null) return { toast: null, seenAt: lastResult?.at ?? 0 };
+  if (!lastResult || lastResult.at <= seenAt) return { toast: null, seenAt };
+  const own = lastResult.action === "submit" || lastResult.action === "discard";
+  return { toast: own ? null : lastResult, seenAt: lastResult.at };
 }
 
 export const pageTitle = (index: number): string => `Page ${index + 1}`;

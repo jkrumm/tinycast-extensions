@@ -97,7 +97,11 @@ export function readStoredParts(stateDir: string): StoredPart[] {
 
 // Replaces pending/ as a whole. scan.json is written last, so a crash midway
 // leaves either the old scan or none, never a half-written one.
-export function writePending(stateDir: string, parts: StoredPart[]): void {
+export function writePending(
+  stateDir: string,
+  parts: StoredPart[],
+  attention?: string,
+): void {
   const staging = join(stateDir, "pending.new");
   rmSync(staging, { recursive: true, force: true });
   parts.forEach((stored, index) => {
@@ -116,10 +120,22 @@ export function writePending(stateDir: string, parts: StoredPart[]): void {
   });
   writeFileSync(
     pendingJson(staging),
-    JSON.stringify({ parts: parts.map((p) => p.part) }),
+    JSON.stringify({ parts: parts.map((p) => p.part), attention }),
   );
   rmSync(pendingDir(stateDir), { recursive: true, force: true });
   renameSync(staging, pendingDir(stateDir));
+}
+
+// Sets or clears (`null`) the pending scan's attention mark in place. Under the
+// pending lock; nothing to mark when nothing is pending.
+export function setAttention(stateDir: string, message: string | null): void {
+  const pending = readPending(stateDir);
+  if (!pending) return;
+  const next: Pending = { parts: pending.parts };
+  if (message) next.attention = message;
+  const json = pendingJson(pendingDir(stateDir));
+  writeFileSync(`${json}.tmp`, JSON.stringify(next));
+  renameSync(`${json}.tmp`, json);
 }
 
 export const clearPending = (stateDir: string): void =>
@@ -159,6 +175,47 @@ export function readProgress(stateDir: string): Progress | null {
 
 export const clearProgress = (stateDir: string): void =>
   rmSync(progressPath(stateDir), { force: true });
+
+// How the last scan, Scan More, Submit or Discard ended: what a view toasts.
+export interface LastResult {
+  at: number;
+  action: string; // a scan mode, "submit" or "discard"
+  ok: boolean;
+  message: string;
+  pages?: number;
+}
+const lastResultPath = (stateDir: string): string =>
+  join(stateDir, "last-result.json");
+
+export function writeLastResult(stateDir: string, result: LastResult): void {
+  try {
+    const tmp = `${lastResultPath(stateDir)}.tmp`;
+    writeFileSync(tmp, JSON.stringify(result));
+    renameSync(tmp, lastResultPath(stateDir));
+  } catch {
+    // a courtesy: a scan never fails on it
+  }
+}
+
+export function readLastResult(stateDir: string): LastResult | null {
+  try {
+    const v = JSON.parse(readFileSync(lastResultPath(stateDir), "utf8"));
+    return typeof v?.at === "number" &&
+      typeof v.action === "string" &&
+      typeof v.ok === "boolean" &&
+      typeof v.message === "string"
+      ? {
+          at: v.at,
+          action: v.action,
+          ok: v.ok,
+          message: v.message,
+          ...(Number.isInteger(v.pages) ? { pages: v.pages } : {}),
+        }
+      : null;
+  } catch {
+    return null;
+  }
+}
 
 export interface PendingLockDeps {
   pid: number;

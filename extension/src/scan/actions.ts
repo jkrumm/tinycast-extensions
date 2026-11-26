@@ -35,12 +35,14 @@ export type DirectAction = "submit" | "discard";
 export function directArgs(
   action: DirectAction,
   prefs: { scanInbox?: string },
+  force = false,
 ): string[] | null {
   const outDir = prefs.scanInbox?.trim();
   if (!outDir && action === "submit") return null;
   return [
     `--${action}`,
     ...(outDir ? ["--out-dir", outDir] : []),
+    ...(force && action === "submit" ? ["--force"] : []),
     "--no-notify",
   ];
 }

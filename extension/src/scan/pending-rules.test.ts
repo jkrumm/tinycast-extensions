@@ -9,6 +9,7 @@ import {
   PendingPart,
   scannedMessage,
   startDecision,
+  submitRefusal,
 } from "./pending-rules";
 
 const part = (patch: Partial<PendingPart> = {}): PendingPart => ({
@@ -32,6 +33,31 @@ const backs = part({
   pages: 28,
 });
 const pair: Pending = { parts: [fronts, backs] };
+
+describe("attention (the last Scan More failed)", () => {
+  it("is read when it is a non-empty string, else dropped", () => {
+    expect(parsePending({ ...single(), attention: "Scanner is busy" })).toEqual(
+      {
+        ...single(),
+        attention: "Scanner is busy",
+      },
+    );
+    for (const attention of ["", 3, null, {}]) {
+      expect(parsePending({ ...single(), attention })).toEqual(single());
+    }
+  });
+
+  it("makes the Submit refusal", () => {
+    expect(
+      submitRefusal("Scan stopped: all 3 pages look blank. Stack upside down?"),
+    ).toBe(
+      "The last Scan More failed: Scan stopped: all 3 pages look blank. Stack upside down. Scan those sheets again, or submit anyway",
+    );
+    expect(submitRefusal("Scanner is busy.")).toBe(
+      "The last Scan More failed: Scanner is busy. Scan those sheets again, or submit anyway",
+    );
+  });
+});
 
 describe("parsePending", () => {
   it("reads one part or a fronts/backs pair", () => {
