@@ -103,9 +103,13 @@ export const List = Object.assign(makePassthrough("List"), {
 // ─── Grid ───────────────────────────────────────────────────────────────────
 
 const GridItem = makePassthrough("Grid.Item");
+const GridSection = makePassthrough("Grid.Section");
+const GridEmptyView = makePassthrough("Grid.EmptyView");
 export const Grid = Object.assign(makePassthrough("Grid"), {
   Item: GridItem,
-  Fit: { Fill: "fill", Fit: "fit" } as const,
+  Section: GridSection,
+  EmptyView: GridEmptyView,
+  Fit: { Contain: "contain", Fill: "fill", Fit: "fit" } as const,
   Inset: {
     Zero: "zero",
     Small: "small",
@@ -151,12 +155,16 @@ const ActionOpenInBrowser = makePassthrough("Action.OpenInBrowser");
 const ActionCopyToClipboard = makePassthrough("Action.CopyToClipboard");
 const ActionSubmitForm = makePassthrough("Action.SubmitForm");
 const ActionPush = makePassthrough("Action.Push");
+const ActionOpen = makePassthrough("Action.Open");
+const ActionShowInFinder = makePassthrough("Action.ShowInFinder");
 export const Action = Object.assign(makePassthrough("Action"), {
   Style: { Regular: "regular", Destructive: "destructive" } as const,
   OpenInBrowser: ActionOpenInBrowser,
   CopyToClipboard: ActionCopyToClipboard,
   SubmitForm: ActionSubmitForm,
   Push: ActionPush,
+  Open: ActionOpen,
+  ShowInFinder: ActionShowInFinder,
 });
 
 // ─── Enums / value namespaces ───────────────────────────────────────────────

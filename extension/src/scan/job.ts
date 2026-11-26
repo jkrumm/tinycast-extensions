@@ -34,6 +34,7 @@ import { fileScannerCache, resolveScannerHost, runDnsSd } from "./discover";
 import { scanFileName, SCAN_DPI } from "./escl";
 import { submitBeforeScan } from "./filing";
 import { measureInk } from "./ink";
+import { makeThumbs } from "./thumbs";
 import {
   fail,
   failureBody,
@@ -282,8 +283,25 @@ async function execute(
       }
     }
 
+    // Thumbnails for the Scanner view; a scan never fails on them.
+    const thumbs = await deps
+      .makeThumbs(
+        scan.pages.map((_, i) => scanPagePath(tmp, i)),
+        log,
+      )
+      .catch((error) => {
+        log(`thumbs: failed: ${String(error)}`);
+        return scan.pages.map(() => null);
+      });
+
     const message = await withPendingLock(opts.stateDir, deps, () =>
-      store(opts, { pages: scan.pages, pdf, plainName, at: deps.now() }),
+      store(opts, {
+        pages: scan.pages,
+        thumbs,
+        pdf,
+        plainName,
+        at: deps.now(),
+      }),
     );
     keepTmp = false;
     return { ok: true, message };
@@ -298,7 +316,13 @@ async function execute(
 // lock; returns the message.
 function store(
   opts: JobOptions,
-  scan: { pages: Uint8Array[]; pdf: Uint8Array; plainName: string; at: number },
+  scan: {
+    pages: Uint8Array[];
+    thumbs: (Uint8Array | null)[];
+    pdf: Uint8Array;
+    plainName: string;
+    at: number;
+  },
 ): string {
   const stored = readStoredParts(opts.stateDir);
   const count = scan.pages.length;
@@ -314,11 +338,15 @@ function store(
       pages: pages.length,
       at: scan.at,
     };
-    const parts = [
+    const parts: StoredPart[] = [
       ...stored.slice(0, -1),
       {
         part,
         pages,
+        thumbs: [
+          ...(last.thumbs ?? last.pages.map(() => null)),
+          ...scan.thumbs,
+        ],
         pdf: jpegsToPdf(pages.map((jpeg) => ({ jpeg, dpi: SCAN_DPI }))),
       },
     ];
@@ -336,7 +364,12 @@ function store(
     pages: count,
     at: scan.at,
   };
-  const added: StoredPart = { part, pdf: scan.pdf, pages: scan.pages };
+  const added: StoredPart = {
+    part,
+    pdf: scan.pdf,
+    pages: scan.pages,
+    thumbs: scan.thumbs,
+  };
   let parts: StoredPart[] = [added];
   if (opts.mode === "backs") {
     if (stored.length !== 1 || stored[0].part.mode !== "fronts") throw changed;
@@ -386,5 +419,6 @@ export function systemJobDeps(stateDir: string): JobDeps {
     deliverFs: nodeDeliverFs,
     tmpRoot: tmpdir(),
     measureInk,
+    makeThumbs,
   };
 }

@@ -10,6 +10,10 @@
 //   --submit                             Submit Scan: file the pending scan in the inbox, no scanner
 //   --discard                            Discard Scan: drop the pending scan, no scanner
 //   --status                             the pending scan (and the running scan's progress) for a UI
+//   --documents                          the inbox: waiting, review, filed (read-only, no scanner)
+//   --doc-thumbs                         cache-file thumbnails of those documents
+//   --release <name> --as single         file a document held in review/ as one document
+//   --brain-dir <dir> --dokumente-dir <dir>   where the filed documents' index notes and files are
 //   --no-notify                          no macOS notification
 //   --measure <file.jpg> [more...]       print each file's ink share (blank guard calibration), no scanner
 //
@@ -25,6 +29,11 @@ import { homedir } from "os";
 import { join } from "path";
 import { parseArgs } from "util";
 import { isBlankPage } from "../src/scan/blank";
+import {
+  docThumbsResult,
+  documentsResult,
+  releaseResult,
+} from "../src/scan/inbox-cli";
 import { SCAN_MODES, ScanMode } from "../src/scan/escl";
 import { measureInk } from "../src/scan/ink";
 import { keepAwake } from "../src/scan/keep-awake";
@@ -38,6 +47,7 @@ import {
   systemJobDeps,
 } from "../src/scan/job";
 import { appendScanLog } from "../src/scan/log";
+import { stateDirOf } from "../src/scan/state-dir";
 
 const { values, positionals } = parseArgs({
   allowPositionals: true,
@@ -50,6 +60,12 @@ const { values, positionals } = parseArgs({
     submit: { type: "boolean", default: false },
     discard: { type: "boolean", default: false },
     status: { type: "boolean", default: false },
+    documents: { type: "boolean", default: false },
+    "doc-thumbs": { type: "boolean", default: false },
+    release: { type: "string" },
+    as: { type: "string" },
+    "brain-dir": { type: "string" },
+    "dokumente-dir": { type: "string" },
     "no-notify": { type: "boolean", default: false },
   },
 });
@@ -71,7 +87,10 @@ if (values.measure) {
   process.exit(0);
 }
 
-const direct = values.check || values.submit || values.discard || values.status;
+const query =
+  values.documents || values["doc-thumbs"] || values.release !== undefined;
+const direct =
+  values.check || values.submit || values.discard || values.status || query;
 const mode = values.mode as ScanMode;
 const outDir = values["out-dir"] || process.env.SCAN_INBOX;
 if (!SCAN_MODES.includes(mode)) {
@@ -86,8 +105,7 @@ if (!outDir && !values.discard && !values.status) {
   process.exit(direct ? 0 : 1);
 }
 
-const stateDir =
-  process.env.SCAN_STATE_DIR || join(homedir(), ".local/state/scan");
+const stateDir = stateDirOf(process.env, homedir());
 mkdirSync(stateDir, { recursive: true });
 const opts: JobOptions = {
   mode,
@@ -97,6 +115,31 @@ const opts: JobOptions = {
   notify: !values["no-notify"],
 };
 const deps = systemJobDeps(stateDir);
+
+// The inbox queries: read-only, no scanner.
+if (query) {
+  const dirs = {
+    inbox: outDir ?? "",
+    brainDir: values["brain-dir"],
+    dokumenteDir: values["dokumente-dir"],
+  };
+  if (values.documents) {
+    console.log(JSON.stringify(documentsResult(dirs)));
+  } else if (values["doc-thumbs"]) {
+    console.log(JSON.stringify(await docThumbsResult({ ...dirs, stateDir })));
+  } else {
+    console.log(
+      JSON.stringify(
+        releaseResult({
+          inbox: dirs.inbox,
+          name: values.release ?? "",
+          as: values.as ?? "",
+        }),
+      ),
+    );
+  }
+  process.exit(0);
+}
 
 const log = (line: string): void =>
   appendScanLog(join(stateDir, "scan.log"), line, new Date());

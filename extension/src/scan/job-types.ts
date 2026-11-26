@@ -32,6 +32,11 @@ export interface JobDeps {
     pagePaths: string[],
     log?: (line: string) => void,
   ): Promise<(number | null)[]>;
+  // A thumbnail (JPEG bytes) of each page file, `null` where one failed.
+  makeThumbs(
+    pagePaths: string[],
+    log?: (line: string) => void,
+  ): Promise<(Uint8Array | null)[]>;
 }
 
 export type Failure = { ok: false; message: string };

@@ -92,6 +92,9 @@ function deps(overrides: Partial<JobDeps> = {}, pid = 100): JobDeps {
     // The fake's JPEGs are not decodable: every page reads as inked unless a
     // test says otherwise (blank.test.ts and ink.test.ts cover the real thing).
     measureInk: async (paths) => paths.map(() => 0.05),
+    // A distinct fake thumbnail per page; the real sips one is thumbs.ts.
+    makeThumbs: async (paths) =>
+      paths.map((_, i) => Uint8Array.of(i + 1, paths.length)),
     ...overrides,
   };
 }
@@ -512,13 +515,78 @@ describe("--status", () => {
         expect(existsSync(path)).toBe(true);
       }
     }
+  });
+
+  it("gives every pending part its PDF path and a thumbnail path per page", async () => {
+    await run("fronts");
+    await run("backs", 2);
+    const status = scanStatus(opts(), deps({}, 200));
+    for (const p of status.pending!.parts) {
+      expect(existsSync(p.pdfPath)).toBe(true);
+      expect(p.pdfPath.endsWith("scan.pdf")).toBe(true);
+      expect(p.thumbPaths).toHaveLength(p.pages);
+      for (const t of p.thumbPaths) {
+        expect(t).toMatch(/\/thumb-\d{3}-[0-9a-f]{8}\.jpg$/);
+        expect(existsSync(t!)).toBe(true);
+      }
+    }
     expect(Object.keys(status.pending!.parts[0]).sort()).toEqual([
       "at",
       "fileName",
       "mode",
       "pagePaths",
       "pages",
+      "pdfPath",
+      "thumbPaths",
     ]);
+  });
+
+  it("adds thumbnails for the pages Scan More appends and keeps the fronts' ones", async () => {
+    await run("fronts"); // 3 pages
+    const before = scanStatus(opts(), deps()).pending!.parts[0].thumbPaths;
+    await run("backs", 2);
+    await run("more", 2);
+    const parts = scanStatus(opts(), deps()).pending!.parts;
+    expect(parts[0].thumbPaths).toEqual(before); // untouched content, same names
+    expect(parts[1].pages).toBe(4);
+    expect(parts[1].thumbPaths.every((t) => t !== null)).toBe(true);
+    // the appended pages are page 3 and 4 of the backs
+    expect(parts[1].thumbPaths[2]).toMatch(/thumb-003-/);
+    expect(parts[1].thumbPaths[3]).toMatch(/thumb-004-/);
+  });
+
+  it("never fails a scan on a thumbnail: null for one that failed, all null when thumbs throw", async () => {
+    const some = await runJob(
+      opts(),
+      deps({
+        makeThumbs: async (paths) =>
+          paths.map((_, i) => (i === 1 ? null : Uint8Array.of(i))),
+      }),
+    );
+    expect(some.ok).toBe(true);
+    const thumbs = scanStatus(opts(), deps()).pending!.parts[0].thumbPaths;
+    expect(thumbs.map((t) => t !== null)).toEqual([true, false, true]);
+
+    await discardPending(opts(), deps(), noop);
+    fake.state.adfState = "ScannerAdfLoaded";
+    clock += 10_000;
+    const none = await runJob(
+      opts(),
+      deps({
+        makeThumbs: async () => {
+          throw new Error("sips is gone");
+        },
+      }),
+    );
+    expect(none.ok).toBe(true);
+    expect(scanStatus(opts(), deps()).pending!.parts[0].thumbPaths).toEqual([
+      null,
+      null,
+      null,
+    ]);
+    expect(readFileSync(join(stateDir, "scan.log"), "utf8")).toContain(
+      "thumbs: failed",
+    );
   });
 
   it("reports the running scan's progress while the scan lock is held", async () => {

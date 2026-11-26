@@ -21,6 +21,7 @@ import {
   clearPending,
   discardPendingFiles,
   partPagePaths,
+  partThumbPaths,
   partPdfPath,
   Progress,
   readPending,
@@ -152,6 +153,9 @@ export interface ScanStatus {
       pages: number;
       at: number;
       pagePaths: string[];
+      // Aligned to the pages; null where no thumbnail was made.
+      thumbPaths: (string | null)[];
+      pdfPath: string;
     }[];
     // true while a live process holds the scan lock
     scanning: boolean;
@@ -171,6 +175,8 @@ export function scanStatus(opts: JobOptions, deps: JobDeps): ScanStatus {
           parts: pending.parts.map((part, index) => ({
             ...part,
             pagePaths: partPagePaths(opts.stateDir, index),
+            thumbPaths: partThumbPaths(opts.stateDir, index, part.pages),
+            pdfPath: partPdfPath(opts.stateDir, index),
           })),
           scanning,
         }

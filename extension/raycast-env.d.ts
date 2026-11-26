@@ -29,7 +29,11 @@ type ExtensionPreferences = {
   /** Scan Inbox - Folder the scanned PDFs are saved into (picked up by another automation) */
   "scanInbox": string,
   /** Scanner Host - Leave empty to find the scanner on the network */
-  "scannerHost"?: string
+  "scannerHost"?: string,
+  /** Document Index (Brain Vault) - Folder of the brain vault whose Areas/Documents notes describe the filed documents (read-only; a local clone may lag) */
+  "scanBrainDir": string,
+  /** Documents Folder - Folder the filed documents' share paths are relative to */
+  "scanDokumenteDir": string
 }
 
 /** Preferences accessible in all the extension's commands */
@@ -134,6 +138,8 @@ declare namespace Preferences {
   export type ScanSubmit = ExtensionPreferences & {}
   /** Preferences accessible in the `scan-discard` command */
   export type ScanDiscard = ExtensionPreferences & {}
+  /** Preferences accessible in the `scanner` command */
+  export type Scanner = ExtensionPreferences & {}
 }
 
 declare namespace Arguments {
@@ -235,5 +241,7 @@ declare namespace Arguments {
   export type ScanSubmit = {}
   /** Arguments passed to the `scan-discard` command */
   export type ScanDiscard = {}
+  /** Arguments passed to the `scanner` command */
+  export type Scanner = {}
 }
 

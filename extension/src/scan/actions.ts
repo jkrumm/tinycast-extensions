@@ -31,22 +31,30 @@ const DIRECT_TIMEOUT_MS = 60_000;
 
 export type DirectAction = "submit" | "discard";
 
+// The CLI args of Submit Scan / Discard Scan; null when filing has no inbox.
+export function directArgs(
+  action: DirectAction,
+  prefs: { scanInbox?: string },
+): string[] | null {
+  const outDir = prefs.scanInbox?.trim();
+  if (!outDir && action === "submit") return null;
+  return [
+    `--${action}`,
+    ...(outDir ? ["--out-dir", outDir] : []),
+    "--no-notify",
+  ];
+}
+
 // Submit Scan / Discard Scan: the CLI does it in a second or two without a
 // scanner, and its one-line result is the HUD.
 export async function runDirectCommand(
   action: DirectAction,
   ports: ScanCommandPorts,
 ): Promise<void> {
-  const prefs = ports.preferences();
-  const outDir = prefs.scanInbox?.trim();
-  if (!outDir && action === "submit") {
+  const args = directArgs(action, ports.preferences());
+  if (!args) {
     return ports.hud("Set the scan inbox in the extension preferences");
   }
-  const args = [
-    `--${action}`,
-    ...(outDir ? ["--out-dir", outDir] : []),
-    "--no-notify",
-  ];
   const result = parseResultLine(await ports.runCli(args, DIRECT_TIMEOUT_MS));
   return ports.hud(result.message);
 }
@@ -67,17 +75,24 @@ export function scanArgs(
   ];
 }
 
+// true when the scan was started (the pre-check passed).
 export async function runScanCommand(
   mode: ScanMode,
   ports: ScanCommandPorts,
-): Promise<void> {
+): Promise<boolean> {
   const args = scanArgs(mode, ports.preferences());
-  if (!args)
-    return ports.hud("Set the scan inbox in the extension preferences");
+  if (!args) {
+    await ports.hud("Set the scan inbox in the extension preferences");
+    return false;
+  }
   const check = parseCheckLine(
     await ports.runCli(["--check", ...args], CHECK_TIMEOUT_MS),
   );
-  if (!check.ok) return ports.hud(check.message);
+  if (!check.ok) {
+    await ports.hud(check.message);
+    return false;
+  }
   ports.spawnScan(args);
-  return ports.hud(`${HUD_WORDS[mode]} - a notification follows`);
+  await ports.hud(`${HUD_WORDS[mode]} - a notification follows`);
+  return true;
 }

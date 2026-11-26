@@ -17,6 +17,7 @@ import {
 } from "fs";
 import { join } from "path";
 import { parsePending, Pending, PendingPart } from "./pending-rules";
+import { thumbFileName, thumbIndex } from "./thumbs";
 
 export const pendingDir = (stateDir: string): string =>
   join(stateDir, "pending");
@@ -50,11 +51,33 @@ export function partPagePaths(stateDir: string, index: number): string[] {
   }
 }
 
-// A part with its files in memory (a scan is a few MB).
+// The thumbnail files of a part, aligned to its pages (`null`: none made).
+export function partThumbPaths(
+  stateDir: string,
+  index: number,
+  pageCount: number,
+): (string | null)[] {
+  const paths: (string | null)[] = new Array(pageCount).fill(null);
+  try {
+    for (const name of readdirSync(partDir(stateDir, index))) {
+      const at = thumbIndex(name);
+      if (at !== null && at < pageCount) {
+        paths[at] = join(partDir(stateDir, index), name);
+      }
+    }
+  } catch {
+    // no part dir: no thumbnails
+  }
+  return paths;
+}
+
+// A part with its files in memory (a scan is a few MB). `thumbs` are aligned
+// to `pages`; absent or `null` where no thumbnail was made.
 export interface StoredPart {
   part: PendingPart;
   pdf: Uint8Array;
   pages: Uint8Array[];
+  thumbs?: (Uint8Array | null)[];
 }
 
 export function readStoredParts(stateDir: string): StoredPart[] {
@@ -65,6 +88,9 @@ export function readStoredParts(stateDir: string): StoredPart[] {
     pdf: new Uint8Array(readFileSync(partPdfPath(stateDir, index))),
     pages: partPagePaths(stateDir, index).map(
       (path) => new Uint8Array(readFileSync(path)),
+    ),
+    thumbs: partThumbPaths(stateDir, index, part.pages).map((path) =>
+      path ? new Uint8Array(readFileSync(path)) : null,
     ),
   }));
 }
@@ -83,6 +109,9 @@ export function writePending(stateDir: string, parts: StoredPart[]): void {
         page,
       ),
     );
+    stored.thumbs?.forEach((thumb, i) => {
+      if (thumb) writeFileSync(join(dir, thumbFileName(i, thumb)), thumb);
+    });
     writeFileSync(join(dir, "scan.pdf"), stored.pdf);
   });
   writeFileSync(

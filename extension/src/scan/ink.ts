@@ -3,14 +3,12 @@
 // `execFile`. A page that cannot be converted or parsed is `null` — the guard
 // never blocks a scan on a failed measurement.
 
-import { execFile } from "child_process";
 import { mkdtempSync, readFileSync, rmSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 import { inkShare } from "./blank";
+import { sips } from "./sips";
 
-const SIPS_BIN = "/usr/bin/sips";
-const SIPS_TIMEOUT_MS = 20_000;
 const BMP_MAX_SIZE = "400";
 
 export interface InkPorts {
@@ -22,14 +20,7 @@ export interface InkPorts {
 
 const sipsPorts: InkPorts = {
   convert: (src, dest) =>
-    new Promise((resolve, reject) => {
-      execFile(
-        SIPS_BIN,
-        ["-s", "format", "bmp", "-Z", BMP_MAX_SIZE, src, "--out", dest],
-        { timeout: SIPS_TIMEOUT_MS },
-        (error) => (error ? reject(error) : resolve()),
-      );
-    }),
+    sips(["-s", "format", "bmp", "-Z", BMP_MAX_SIZE, src, "--out", dest]),
   readFile: (path) => new Uint8Array(readFileSync(path)),
   makeTmpDir: () => mkdtempSync(join(tmpdir(), "scan-ink-")),
   remove: (path) => rmSync(path, { recursive: true, force: true }),

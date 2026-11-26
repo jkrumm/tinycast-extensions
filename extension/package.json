@@ -622,6 +622,21 @@
         "löschen"
       ],
       "icon": "scan.png"
+    },
+    {
+      "name": "scanner",
+      "title": "Scanner",
+      "subtitle": "Scan and file documents",
+      "description": "One window for scanning: scan, check the pages, submit, and see what happened to earlier scans",
+      "mode": "view",
+      "keywords": [
+        "scan",
+        "scanner",
+        "dokumente",
+        "documents",
+        "inbox"
+      ],
+      "icon": "scan.png"
     }
   ],
   "dependencies": {
@@ -744,6 +759,22 @@
       "description": "Leave empty to find the scanner on the network",
       "type": "textfield",
       "required": false
+    },
+    {
+      "name": "scanBrainDir",
+      "title": "Document Index (Brain Vault)",
+      "description": "Folder of the brain vault whose Areas/Documents notes describe the filed documents (read-only; a local clone may lag)",
+      "type": "textfield",
+      "required": false,
+      "default": "~/SourceRoot/brain"
+    },
+    {
+      "name": "scanDokumenteDir",
+      "title": "Documents Folder",
+      "description": "Folder the filed documents' share paths are relative to",
+      "type": "textfield",
+      "required": false,
+      "default": "/Volumes/SSD/Dokumente"
     }
   ]
 }

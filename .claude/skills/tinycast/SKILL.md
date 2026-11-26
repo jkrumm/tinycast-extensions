@@ -240,7 +240,16 @@ ExtensionMenuBarImage}.swift`, `Features/Extensions/Model/ExtensionImageSize.swi
   and tile content scales — including a `data:` SVG, which is how
   `hub.tsx`'s dashboard tiles work (a Grid tile's sizing is unrelated to the
   Detail column-width rule above — `Grid.Item.content` scales to the grid
-  cell, not a markdown column).
+  cell, not a markdown column). **`Grid.Item.content` also takes an absolute file path**
+  (a string starting with `/` is a file image, loaded with `NSImage(contentsOfFile:)`; read in
+  Tinycast `main` `ExtensionImage` / `IconCache`, commits cf4c613, 6d036ae, 4d0fddb, 2026-11) —
+  `scanner.tsx` shows page and document thumbnails that way. The cache is **keyed by the path**, so a
+  file whose content changed under the same path would show stale: write thumbnails under a
+  content-unique name (a hash in the file name). A `data:` URI is not cached. `Grid.Section`,
+  `Grid.EmptyView`, `Grid.Fit.Contain`, `Action.Open`, `Action.ShowInFinder` exist in the runtime;
+  a screen-level `actions` panel applies when the selected tile has none, and the search covers
+  title, subtitle and `keywords` (verified generically on the RenderNode; for a Grid specifically
+  not observed live).
 - **`Icon.*` maps to SF Symbols** — a bare SF Symbol string (`"gauge"`) does
   not work as an icon value, only the `Icon` enum. A per-command `icon` in
   `package.json` must be an asset file under `assets/`.

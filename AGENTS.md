@@ -21,7 +21,7 @@ docs and, for render-size/layout facts, directly against Tinycast's
 
 ```
 extension/
-  package.json          ← manifest: name "jkrumm", 49 commands, 11 preferences
+  package.json          ← manifest: name "jkrumm", 50 commands, 13 preferences
   src/
     my-tasks.tsx         command — TickTick task list
     quick-add.tsx        command — TickTick quick add
@@ -43,6 +43,7 @@ extension/
     walkingpad.tsx          command — WalkingPad Detail: state, speed, the walk in progress and today's totals in one table; start/stop, faster/slower, speed presets (⌘1–5); polls every 3 s while open; LocalStorage stale-while-revalidate
     walkingpad-<name>.tsx   8 no-view commands (toggle, faster, slower, speed-3-0 … speed-5-0) — one-liners over `walkingpad/command.ts`, HUD shows the result. **No global hotkeys**: the WalkingPad Mac app owns Hyper+W and the speed hotkeys, a second binding would fire twice
     scan.tsx, scan-fronts.tsx, scan-backs.tsx, scan-flatbed.tsx, scan-more.tsx, scan-submit.tsx, scan-discard.tsx  7 no-view commands (Scan Document / Fronts / Backs / Flatbed / More / Submit Scan / Discard Scan) — one-liners over `scan/command.ts`: a scan command pre-checks, then spawns a detached scan process (HUD, the result is a notification); Submit Scan and Discard Scan run the CLI and show its one-line result as the HUD
+    scanner.tsx             command — Scanner Grid, ONE window for the whole flow: the pending scan's page thumbnails (Scan / Fronts / Backs sections) and, below, the inbox documents with their classification (Needs review, Waiting in the inbox, Recently filed from the brain index notes); the flow actions (Scan Document / Fronts / Flatbed / Backs / More, Submit Scan, Submit Fronts Only, Discard Scan, Open Scan Log, Refresh) come from the pure `scannerActions(status)` and sit on every tile; polls the scan state every 2 s while scanning (10 s idle), the documents every 30 s
     hub.tsx                 command — Grid dashboard, one tile per command
     ticktick/             feature code: client, types, format, parse, search, create-task
     usage/                feature code: quota (argo + local picker + fs read), local (spawns `claude-account`,
@@ -109,7 +110,8 @@ extension/
                            `unsent/`; injected fs), job (checks, scan lock, scan, PDF, pending scan, log, notification; injected deps),
                            pending-rules (pure: what a start does with the pending scan, messages) + pending (the `pending/` files, their lock, `progress.json`) + filing (Submit Scan,
                            Discard Scan, `--status`) + job-types, blank + ink (blank-batch guard: pure BMP ink share, `sips` runner), log (rotating `scan.log`), keep-awake (`caffeinate`), parse (the `--check` JSON line), actions (no-view core: check, spawn,
-                           HUD; injected ports), command (binds to Raycast), fixtures (synthetic JPEG), fake-scanner (in-process eSCL fake, tests only)
+                           HUD; injected ports), command (binds to Raycast), fixtures (synthetic JPEG), fake-scanner (in-process eSCL fake, tests only);
+                           the Scanner view: sips (shared `sips` runner + `mapLimit`) + thumbs (page thumbnails, content-hashed names), frontmatter (pure YAML-frontmatter reader) + filed-notes (pure: index note -> filed document) + documents (inbox listing, `review/` reasons, filed list, Release; injected `DocsFs`) + docs-fs (real fs) + doc-thumbs (cached first-page thumbnails of documents) + inbox-cli (the `--documents` / `--doc-thumbs` / `--release` queries), state-dir, cli-run (the impure bun call, shared by command and view-run), view (pure: CLI line parsers, `scannerActions`, tiles, detail texts, poll rhythm), view-run (the impure bit the component calls; e2e mocks it)
     apple-llm/            feature code: run (spawns the helper, the only impure bit), parse (pure)
     lib/                  shared: argo.ts (fetch client), secrets.ts (Keychain/1Password chain), notify.ts (osascript notification, van + scan),
                            action-log.ts (persistent log file), svg.ts + chart/ (hero/chart library, see svg-charts skill), preferences.ts (Preferences type),
@@ -122,7 +124,7 @@ extension/
     chart-previews.ts     `make previews` entry — renders every hero + chart gallery to PNGs
     hyper-sheet.ts        `make hyper-sheet` entry — printable Hyper key sheet from the live Tinycast + WalkingPad settings → build/hyper-sheet.{html,pdf,png} (PDF/PNG need Google Chrome)
     coresvg-render.swift   renders an SVG through macOS' own decoder (previews `--coresvg`)
-    scan.ts               scan CLI (`make scan`; bundled by `make scan-cli` to assets/scan-cli.js, gitignored): `--check` or one scan, run detached by the scan commands
+    scan.ts               scan CLI (`make scan`; bundled by `make scan-cli` to assets/scan-cli.js, gitignored): `--check` or one scan, run detached by the scan commands; also the read-only inbox queries `--documents`, `--doc-thumbs`, `--release <name> --as single` (no scanner)
   assets/
     *.png                 command icons — generated, don't hand-edit
     src/*.svg              command icon sources — edit these, then `make icons`
@@ -285,6 +287,8 @@ icon (`ticktick-menu-bar` → `tasks.png`, `claude-usage-menu-bar` →
 | `victronKeyRef` | textfield | yes | `op://Private/Solar Camper Victron/Instant Readout Key` |
 | `scanInbox` | textfield | no | `/Volumes/SSD/Dokumente/Eingang/Scans` |
 | `scannerHost` | textfield | no | — (empty: find the scanner via Bonjour) |
+| `scanBrainDir` | textfield | no | `~/SourceRoot/brain` (the Scanner view reads `Areas/Documents/<year>/*.md` index notes from it, read-only; a local clone may lag) |
+| `scanDokumenteDir` | textfield | no | `/Volumes/SSD/Dokumente` (the filed documents' `share_path`s are relative to it) |
 
 ## Secrets
 
@@ -677,13 +681,40 @@ The
   `…-hinten.pdf` (same stem) together and Discard drops both; `backs` without pending fronts is
   refused ("Scan the fronts first", no age rule), and the message notes `(fronts had N)` when
   the counts differ. `scan-cli --status` prints one JSON line for a UI, no scanner:
-  `{ pending: null | { parts: [{ mode, fileName, pages, at, pagePaths }], scanning } }`, plus
+  `{ pending: null | { parts: [{ mode, fileName, pages, at, pagePaths, thumbPaths, pdfPath }], scanning } }` (`thumbPaths`: one small JPEG per page, `thumb-NNN-<hash8>.jpg` next to the page files, made with `sips` after the scan and aligned to the pages, `null` where one failed; the hash is in the name because Tinycast caches a file image by its path), plus
   `progress` (`{ mode, page, startedAt, pid }`, from `progress.json`, which a scan updates after
   every page and removes at its end) while a live process holds the scan lock; the pure rules
   are `scan/pending-rules.ts`. A page request that answers **HTTP 410** (job record
   `Canceled` / `JobCanceledAtDevice`, no images) means the feeder did not pick up the paper:
   "The scanner cancelled the scan … Push the stack in and try again" (the raw status stays in
   `scan.log`). Tests run against `scan/fake-scanner.ts` only (see § Safety).
+  **The Scanner view** (`scanner.tsx`, one Grid) is the whole flow on one screen. Top: the pending parts
+  (a section per part, a tile per page showing its thumbnail; Enter on a page is the flow's primary
+  action for the state, Open Page / Open PDF alongside). Below, the inbox as the consumer sees it, from
+  `scan-cli --documents --out-dir <inbox> --brain-dir <dir> --dokumente-dir <dir>` (read-only, no
+  scanner): **Needs review** (`<inbox>/review/*`, the reason from `<name>.why.txt`, the proposed kind
+  shown when the text has `proposal: kind <x>`), **Waiting in the inbox** (documents lying in the
+  inbox, not yet consumed) and **Recently filed** (the 20 newest index notes in the brain vault,
+  `Areas/Documents/<year>/*.md`, frontmatter `kind`, `issuer`, `date`, `tags`, `share_path` + a
+  summary body; the section title says `as of HH:MM` of the newest note because the vault is a local
+  clone that lags; without the vault the section is one note, "Document index not found", and the rest
+  still works). A filed document whose file is gone shows "file not found" and has no Open. Tile
+  actions: Open, Show in Finder, Copy Path, Show Details (a pushed `Detail`); a review tile adds **File
+  as One Document** (`--release <name> --as single`: moves `review/<name>.pdf` to `<stem>.single.pdf`
+  in the inbox, the consumer's documented way to accept it as one document, and drops the `.why.txt`;
+  PDFs only, plain file names only). Document thumbnails (`--doc-thumbs`: `sips` first page of PDFs and
+  images, cached in `<state>/doc-thumbs/<sha1(path+mtime+size)>.jpg`, 4 at a time, pruned after 30
+  days) load in a second `useCachedPromise` keyed on the document list, so the grid paints first and
+  the covers arrive. The flow actions are the pure `scannerActions(status)` (nothing pending: the three
+  scans; fronts pending: Scan Backs first, Scan More, Submit Fronts Only, Discard; otherwise Submit
+  first, Scan More, Discard, and the new scans under a separate "files this one first" section;
+  while scanning only Open Scan Log and Refresh) and sit on every tile and on the empty view. Polling:
+  the scan state every 2 s while scanning or for 30 s after starting one, else every 10 s (a tick is
+  skipped while the previous read runs); the documents every 30 s and after every action. Discard asks
+  for confirmation. **Unverified without a running Tinycast**: how the grid looks, that `Grid.Item`
+  `keywords` feed the search, and what `Action.Open` / `Action.ShowInFinder` do in the runtime; real
+  `sips` PDF first-page rendering. The e2e suite (`e2e/scanner.e2e.test.tsx`) uses synthetic documents
+  only — the real index notes are private and never enter this repo.
 
 - **Apple on-device model** — `extension/helpers/apple-llm/main.swift` (built
   by `make helper` into the gitignored `assets/apple-llm`, `--selftest` in

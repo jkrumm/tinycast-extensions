@@ -16,6 +16,7 @@ import {
   clearProgress,
   discardPendingFiles,
   partPagePaths,
+  partThumbPaths,
   partPdfPath,
   pendingDir,
   readPending,
@@ -49,6 +50,7 @@ const stored = (
   },
   pdf,
   pages,
+  thumbs: pages.map(() => null),
 });
 
 describe("the pending scan on disk", () => {
@@ -94,6 +96,21 @@ describe("the pending scan on disk", () => {
     ]);
     expect(partPagePaths(dir, 1)).toHaveLength(2);
     expect(partPagePaths(dir, 2)).toEqual([]);
+  });
+
+  it("writes and reads the thumbnails of a part, aligned to its pages", () => {
+    const withThumbs = stored({}, bytes(1), [bytes(1), bytes(2), bytes(3)]);
+    withThumbs.thumbs = [bytes(7), null, bytes(9)];
+    writePending(dir, [withThumbs]);
+    expect(readStoredParts(dir)[0].thumbs).toEqual([bytes(7), null, bytes(9)]);
+    const paths = partThumbPaths(dir, 0, 3);
+    expect(paths[0]).toMatch(/part-1\/thumb-001-[0-9a-f]{8}\.jpg$/);
+    expect(paths[1]).toBeNull();
+    expect(paths[2]).toMatch(/thumb-003-/);
+    // a part written without thumbnails has none
+    writePending(dir, [stored()]);
+    expect(partThumbPaths(dir, 0, 2)).toEqual([null, null]);
+    expect(partThumbPaths(dir, 5, 2)).toEqual([null, null]);
   });
 
   it("is cleared", () => {

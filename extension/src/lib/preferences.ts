@@ -15,6 +15,8 @@ export interface Preferences {
   netgearPasswordRef: string;
   scanInbox?: string;
   scannerHost?: string;
+  scanBrainDir?: string;
+  scanDokumenteDir?: string;
   victronKey?: string;
   victronKeyRef: string;
 }
