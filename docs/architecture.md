@@ -28,10 +28,10 @@ usage) and the secrets chain (TickTick, Netgear, Victron) where useful.
 | `spotify-*` | no-view (7) | `src/spotify-<name>.tsx` | `spotify/{command,actions,run}.ts` | same `home audio` calls, HUD with the result |
 | `walkingpad` | view (Detail) | `src/walkingpad.tsx` | `walkingpad/{run,parse,actions,client,config,types}.ts` | the WalkingPad host's HTTP API over the tailnet door (URL from `defaults`, token from the login Keychain, both the Mac app's) + `LocalStorage` `walkingpad-status` |
 | `walkingpad-*` | no-view (8) | `src/walkingpad-<name>.tsx` | `walkingpad/{command,actions,client,config,run}.ts` | same host calls, HUD with the result |
-| `scan*` | no-view (7) | `src/scan.tsx`, `src/scan-{fronts,backs,flatbed,more,submit,discard}.tsx` | `scan/{command,actions,parse}.ts` (pre-check + spawn, or run the CLI and show its line for Submit Scan / Discard Scan); the scan itself is `scripts/scan.ts` → `scan/{job,filing,pending-rules,pending,runner,transport,discover,deliver,pdf,escl}.ts`, a detached bun process that leaves the scan in `pending/` until Submit Scan files it (or Discard Scan drops it) | the scanner's eSCL API over plain HTTP via curl, found by `dns-sd`; PDFs into the scan inbox (`scanInbox`) on a submit, results as macOS notifications |
-| `printer` | view (List) | `src/printer.tsx` (its Form: `print/print-form.tsx`) | `print/{view,view-run,cli-run}.ts` (pure view logic: state and job words, poll rhythm, hub tile, Form → args; the impure CLI calls); `print/{actions,command,finder}.ts` (the no-view core and the Finder selection) | `print-cli` (`scripts/print.ts`) → `print/{cli,options,parse,cups,system}.ts`: `ipptool -tv` for the queue state, toner and jobs, `lp` / `cancel` for the jobs themselves, through CUPS (`lpstat -d` for the default queue); `printQueue` preference |
-| `print-*` | no-view (3) | `src/print-selection.tsx`, `src/print-selection-simplex.tsx`, `src/print-cancel.tsx` | `print/command.ts` → `print/actions.ts` (run the CLI per Finder file, HUD the message) | the same `print-cli`; Finder selection through `getSelectedFinderItems` |
-| `scanner` | view (Grid) | `src/scanner.tsx` | `scan/{view,view-run,cli-run}.ts` (pure view logic: CLI line parsers, `scannerActions`, tiles, details, poll rhythm; the impure CLI calls); the engine's read-only queries `scripts/scan.ts --status/--documents/--doc-thumbs/--release` → `scan/{filing,documents,filed-notes,frontmatter,doc-thumbs,inbox-cli,thumbs,sips}.ts` | `scan-cli` (never a scanner for the queries); the scan inbox and its `review/` folder, the brain vault's `Areas/Documents` index notes (`scanBrainDir`, read-only), the documents folder (`scanDokumenteDir`), page and first-page thumbnails made with `sips` |
+| `scan*` | no-view (7) | `src/scan.tsx`, `src/scan-{fronts,backs,flatbed,more,submit,discard}.tsx` | `paper/{command,actions,result,run}.ts` (a command is one `paper` verb; the HUD shows paper's `message`) | `~/.local/bin/paper` (`scan start --mode …`, `scan submit`, `scan discard`): the scanner, the pending scan and the inbox live in the paper repo |
+| `documents` | no-view | `src/documents.tsx` | `lib/argo.ts` (`documentsUrl`: the `baseUrl` preference without `/api`, plus `/documents`) | Argo's Documents page, opened in the browser |
+| `printer` | view (List) | `src/printer.tsx` | `print/{parse,view,view-run}.ts` (pure: `paper print status` → the view, words, poll rhythm, hub tile; the impure paper calls), `print/finder.ts` (the Finder selection) | `paper print status`, `paper print cancel <id> \| --all`, `paper print <file>` |
+| `print-*` | no-view (3) | `src/print-selection.tsx`, `src/print-selection-simplex.tsx`, `src/print-cancel.tsx` | `paper/command.ts` → `paper/actions.ts` (one `paper print` per Finder file, HUD the message) | the same `paper`; Finder selection through `getSelectedFinderItems` |
 | `hub` | view | `src/hub.tsx` | reads every feature module above, one tile each | all of the above, loaded independently per tile |
 
 Shared: `lib/argo.ts` (bearer-authed fetch client, `prefs()`, `useAuthHeaders()`),
@@ -177,7 +177,7 @@ hero images). `netgear`'s "Connected Devices" and "SMS" sub-views are plain
 ## Testing boundary
 
 Everything under `ticktick/`, `usage/`, `netgear/`, `battery/`, `speed-test/`,
-`shortcuts/`, `van/`, `scan/`, and `lib/` that doesn't import `@raycast/api` is unit-tested with vitest
+`shortcuts/`, `van/`, `paper/`, `print/`, and `lib/` that doesn't import `@raycast/api` is unit-tested with vitest
 (`make test`) — parsing, formatting, aggregation, the netgear client against
 a fake transport, the secrets chain against a fake runner, and the SVG
 toolkit's string output. The eleven command entry files (`src/*.tsx`) are the

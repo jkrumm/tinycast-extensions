@@ -1,3 +1,3 @@
-import { cancelAllCommand } from "./print/command";
+import { cancelPrintsCommand } from "./paper/command";
 
-export default cancelAllCommand;
+export default cancelPrintsCommand;

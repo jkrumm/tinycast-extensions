@@ -1,28 +1,23 @@
-// The impure half of the printer view: every call into `print-cli` (the status,
-// the cancels, the print of a form) and the Finder selection. The component
-// (`printer.tsx`) and its form only call these, so the e2e suite mocks this one
-// module.
+// The impure half of the printer view: every call into paper (the status, the
+// cancels, the print of the Finder selection). The component (`printer.tsx`)
+// and the hub tile only call these, so the e2e suites mock this one module.
 
-import { runBunScript } from "../lib/bun-cli";
 import {
-  ActionResult,
   cancelAllPrints,
-  printerFlags,
+  cancelJob as cancelPaperJob,
   printPaths,
-} from "./actions";
-import { PRINT_CLI, printPorts } from "./cli-run";
+  Sides,
+} from "../paper/actions";
+import { PaperResult } from "../paper/result";
+import { runPaper } from "../paper/run";
 import { selectedFinderPaths } from "./finder";
-import { Sides } from "./options";
-import { parseCliResult, parsePrinterView, PrinterView } from "./parse";
-import { formArgs, PrintFormValues } from "./view";
+import { parsePrinterView, PrinterView } from "./parse";
 
 const STATUS_TIMEOUT_MS = 15_000;
-const ACTION_TIMEOUT_MS = 150_000;
 
 export async function loadPrinter(): Promise<PrinterView> {
-  const flags = printerFlags(printPorts.preferences());
   return parsePrinterView(
-    await runBunScript(PRINT_CLI, ["--status", ...flags], STATUS_TIMEOUT_MS),
+    await runPaper(["print", "status"], STATUS_TIMEOUT_MS),
   );
 }
 
@@ -35,27 +30,14 @@ export async function loadSelection(): Promise<string[]> {
 export function printSelection(
   sides: Sides,
   paths: string[],
-): Promise<ActionResult> {
-  return printPaths(sides, paths, printPorts);
+): Promise<PaperResult> {
+  return printPaths(sides, paths, runPaper);
 }
 
-export async function cancelJob(jobId: string): Promise<ActionResult> {
-  return parseCliResult(
-    await runBunScript(PRINT_CLI, ["--cancel", jobId], ACTION_TIMEOUT_MS),
-  );
+export function cancelJob(jobId: string): Promise<PaperResult> {
+  return cancelPaperJob(jobId, runPaper);
 }
 
-export function cancelAll(): Promise<ActionResult> {
-  return cancelAllPrints(printPorts);
-}
-
-export async function printFile(
-  values: PrintFormValues,
-): Promise<ActionResult> {
-  const args = formArgs(values);
-  if (!args.ok) return { ok: false, message: args.message };
-  const flags = printerFlags(printPorts.preferences());
-  return parseCliResult(
-    await runBunScript(PRINT_CLI, [...args.value, ...flags], ACTION_TIMEOUT_MS),
-  );
+export function cancelAll(): Promise<PaperResult> {
+  return cancelAllPrints(runPaper);
 }

@@ -21,7 +21,7 @@ docs and, for render-size/layout facts, directly against Tinycast's
 
 ```
 extension/
-  package.json          ← manifest: name "jkrumm", 54 commands, 14 preferences
+  package.json          ← manifest: name "jkrumm", 54 commands, 9 preferences
   src/
     my-tasks.tsx         command — TickTick task list
     quick-add.tsx        command — TickTick quick add
@@ -42,10 +42,10 @@ extension/
     spotify-<name>.tsx      7 no-view commands (play-pause, next, previous, louder, quieter, play-on-mine, play-on-macbook) — one-liners over `spotify/command.ts`, HUD shows the resulting track + volume
     walkingpad.tsx          command — WalkingPad Detail: state, speed, the walk in progress and today's totals in one table; start/stop, faster/slower, speed presets (⌘1–5); polls every 3 s while open; LocalStorage stale-while-revalidate
     walkingpad-<name>.tsx   8 no-view commands (toggle, faster, slower, speed-3-0 … speed-5-0) — one-liners over `walkingpad/command.ts`, HUD shows the result. **No global hotkeys**: the WalkingPad Mac app owns Hyper+W and the speed hotkeys, a second binding would fire twice
-    scan.tsx, scan-fronts.tsx, scan-backs.tsx, scan-flatbed.tsx, scan-more.tsx, scan-submit.tsx, scan-discard.tsx  7 no-view commands (Scan Document / Fronts / Backs / Flatbed / More / Submit Scan / Discard Scan) — one-liners over `scan/command.ts`: a scan command pre-checks, then spawns a detached scan process (HUD, the result is a notification); Submit Scan and Discard Scan run the CLI and show its one-line result as the HUD
-    scanner.tsx             command — Scanner Grid, ONE window for the whole flow: the pending scan's page thumbnails (Scan / Fronts / Backs sections) and, below, the inbox documents with their classification (Needs review, Waiting in the inbox, Recently filed from the brain index notes); the flow actions (Scan Document / Fronts / Flatbed / Backs / More, Submit Scan, Submit Fronts Only, Discard Scan, Open Scan Log, Refresh) come from the pure `scannerActions(status)` and sit on every tile; polls the scan state every 2 s while scanning (10 s idle), the documents every 30 s
-    printer.tsx             command — Printer List: the state and toner (a warning tag when low), the jobs (Cancel Job, ⌘⌫ Cancel All Jobs with confirmAlert), Print Selected Finder File (two-sided, one-sided) and Print File… (a Form); polls every 3 s while a job is active, else 15 s
-    print-selection.tsx, print-selection-simplex.tsx, print-cancel.tsx  3 no-view commands (Print Selected File two-sided / one-sided, Cancel Print Jobs) — one-liners over `print/command.ts`; HUD = the CLI's message
+    scan.tsx, scan-fronts.tsx, scan-backs.tsx, scan-flatbed.tsx, scan-more.tsx, scan-submit.tsx, scan-discard.tsx  7 no-view commands (Scan Document / Fronts / Backs / Flatbed / More / Submit Scan / Discard Scan) — one-liners over `paper/command.ts`: `paper scan start --mode …`, `scan submit`, `scan discard`; HUD = paper's message
+    documents.tsx           no-view command — opens Argo's Documents page in the browser (`lib/argo.ts` `documentsUrl`)
+    printer.tsx             command — Printer List over `paper print status`: the state and toner (a warning tag when low), the jobs (Cancel Job, ⌘⌫ Cancel All Jobs with confirmAlert), Print Selected Finder File (two-sided, one-sided); polls every 3 s while a job is active, else 15 s
+    print-selection.tsx, print-selection-simplex.tsx, print-cancel.tsx  3 no-view commands (Print Selected File two-sided / one-sided, Cancel Print Jobs) — one-liners over `paper/command.ts`; HUD = paper's message
     hub.tsx                 command — Grid dashboard, one tile per command
     ticktick/             feature code: client, types, format, parse, search, create-task
     usage/                feature code: quota (argo + local picker + fs read), local (spawns `claude-account`,
@@ -92,7 +92,7 @@ extension/
                            charged per local day + quality), sampler (pure: pause state, result
                            classification, low-battery alert state machine, subtitle/status words),
                            sampler-runner (one run), sampler-storage (file-backed `sampler.json` + `paused` flag, via `store.ts`),
-                           types, fixtures (the osascript notification is `lib/notify.ts`, shared with scan)
+                           types, fixtures (the osascript notification is `lib/notify.ts`)
     home/                 feature code: run (spawns `~/.local/bin/home`, which ssh-es to the mini; LocalStorage
                            `home-cache` + `home-status`, the only impure bit; `loadMenuBar` is the menu bar's never-rejecting
                            loader), parse (pure: scenes/doctor/status/device-map JSON, caches), climate (pure: `home climate` history -> points, range windows, downsampling, 24 h extents, Magnus absolute humidity + airing rule, menu line), heroes (pure: panel, metrics, temperature + humidity charts on lib/chart, Munich night shading), climate-view (pure: the Detail markdown, short-history message), fixtures (climate/status fixtures for tests + `make previews`), format
@@ -106,17 +106,10 @@ extension/
     spotify/              feature code: run (`home audio …` through home/run's spawn + osascript for the MacBook's Spotify + LocalStorage `spotify-state`, the impure bit), parse (pure: defensive `home audio` JSON, volume args, HUD line, Detail markdown), actions (no-view core: action → args, run + one HUD line, injected ports), command (binds to showHUD), types.
                            Play on MacBook = `home audio release`, then `tell application "Spotify" to play`: UNVERIFIED that the desktop app resumes locally; macOS may ask once for Automation permission for Spotify
     walkingpad/           feature code: client (pure: the host's HTTP API behind an injected `Transport`, `WalkingPadError`, `describeError`), config (pure with an injected `Exec`: host URL + token + start speed from the WalkingPad Mac app's own storage), parse (pure: defensive /status JSON, belt phase, speed grid, text), actions (no-view core: fresh /status, one decision, at most one call, one HUD line), run (the impure bit: execFile + fetch transport + LocalStorage `walkingpad-status`), command (binds to showHUD), fixtures (golden responses copied from walkingpad-mac `contracts/fixtures`), types
-    scan/                 feature code: escl (pure: settings XML, status parser, job URL, `dns-sd` parsers, file names), pdf (pure: JPEG frame
-                           header + minimal PDF writer), runner (the eSCL protocol against injected `ScanPorts`; returns `{pages, complete, reason?}`),
-                           transport (curl `ScanHttp`), discover (`dns-sd` + `scanner.json` cache), deliver (copy into the inbox, verified, else
-                           `unsent/`; injected fs), job (checks, scan lock, scan, PDF, pending scan, log, notification; injected deps),
-                           pending-rules (pure: what a start does with the pending scan, messages) + pending (the `pending/` files, their lock, `progress.json`) + filing (Submit Scan,
-                           Discard Scan, `--status`) + job-types, blank + ink (blank-batch guard: pure BMP ink share, `sips` runner), log (rotating `scan.log`), keep-awake (`caffeinate`), parse (the `--check` JSON line), actions (no-view core: check, spawn,
-                           HUD; injected ports), command (binds to Raycast), fixtures (synthetic JPEG), fake-scanner (in-process eSCL fake, tests only);
-                           the Scanner view: sips (shared `sips` runner + `mapLimit`) + thumbs (page thumbnails, content-hashed names), frontmatter (pure YAML-frontmatter reader) + filed-notes (pure: index note -> filed document) + documents (inbox listing, `review/` reasons, filed list, Release; injected `DocsFs`) + docs-fs (real fs) + doc-thumbs (cached first-page thumbnails of documents) + inbox-cli (the `--documents` / `--doc-thumbs` / `--release` queries), state-dir, cli-run (the impure bun call, shared by command and view-run), view (pure: CLI line parsers, `scannerActions`, tiles, detail texts, poll rhythm), view-run (the impure bit the component calls; e2e mocks it)
-    print/                feature code: options (pure: PrintRequest, page-list and copies checks, the `lp` argv), parse (pure: ipptool text, lpstat's default destination, lp's request id, the printer view), cups (the CUPS adapter behind an injected exec port: check, submit, jobs, cancel, waitFor), cli (argument parsing, modes, the one-line JSON contract), system (the real exec, temp files, stat), fake-cups (tests only), fixtures (captured CUPS output, names anonymised), actions (no-view core: print the Finder selection, cancel all), view (pure: the printer view's words, poll rhythm, tile, Form → args), view-run (the impure CLI calls), cli-run (the ports), finder (getSelectedFinderItems as paths), print-form (the Print File… Form), command (binds the no-view commands to showHUD)
+    paper/                feature code for the scan and print commands: run (spawns `~/.local/bin/paper`, the only impure bit), result (pure: paper's one JSON line → `{ok, message}`), actions (no-view core: a command → a paper verb, injected `RunPaper`), command (binds the no-view commands to showHUD)
+    print/                the Printer view: parse (pure: `paper print status` → `PrinterView`), view (pure: words, poll rhythm, hub tile), view-run (the impure paper calls), finder (getSelectedFinderItems as paths)
     apple-llm/            feature code: run (spawns the helper, the only impure bit), parse (pure)
-    lib/                  shared: argo.ts (fetch client), secrets.ts (Keychain/1Password chain), notify.ts (osascript notification, van + scan), bun-cli.ts (one bundled bun script call, shared by scan and print),
+    lib/                  shared: argo.ts (fetch client), secrets.ts (Keychain/1Password chain), notify.ts (osascript notification, van),
                            action-log.ts (persistent log file), svg.ts + chart/ (hero/chart library, see svg-charts skill), preferences.ts (Preferences type),
                            action-log.ts (persistent log file, pure fs)
   helpers/
@@ -127,8 +120,6 @@ extension/
     chart-previews.ts     `make previews` entry — renders every hero + chart gallery to PNGs
     hyper-sheet.ts        `make hyper-sheet` entry — printable Hyper key sheet from the live Tinycast + WalkingPad settings → build/hyper-sheet.{html,pdf,png} (PDF/PNG need Google Chrome)
     coresvg-render.swift   renders an SVG through macOS' own decoder (previews `--coresvg`)
-    print.ts              print CLI (`make print ARGS=…`; bundled by `make print-cli` to assets/print-cli.js, gitignored): one file per call, `--check`, `--status`, `--cancel`, `--cancel-all`; the agents' only way to print (`.claude/skills/print/SKILL.md`)
-    scan.ts               scan CLI (`make scan`; bundled by `make scan-cli` to assets/scan-cli.js, gitignored): `--check` or one scan, run detached by the scan commands; also the read-only inbox queries `--documents`, `--doc-thumbs`, `--release <name> --as single|split-<n>-<n>…` (no scanner)
   assets/
     *.png                 command icons — generated, don't hand-edit
     src/*.svg              command icon sources — edit these, then `make icons`
@@ -289,11 +280,6 @@ icon (`ticktick-menu-bar` → `tasks.png`, `claude-usage-menu-bar` →
 | `netgearPasswordRef` | textfield | yes | `op://Private/Netgear M2 Jo/Admin Passwort` |
 | `victronKey` | password | no | — (override; see Secrets) |
 | `victronKeyRef` | textfield | yes | `op://Private/Solar Camper Victron/Instant Readout Key` |
-| `scanInbox` | textfield | no | `/Volumes/SSD/Dokumente/Eingang/Scans` |
-| `scannerHost` | textfield | no | — (empty: find the scanner via Bonjour) |
-| `scanBrainDir` | textfield | no | `~/SourceRoot/brain` (the Scanner view reads `Areas/Documents/<year>/*.md` index notes from it, read-only; a local clone may lag) |
-| `scanDokumenteDir` | textfield | no | `/Volumes/SSD/Dokumente` (the filed documents' `share_path`s are relative to it) |
-| `printQueue` | textfield | no | empty: the Mac's system default printer (`lpstat -d`); `--printer` overrides it in the CLI |
 
 ## Secrets
 
@@ -619,115 +605,10 @@ The
   `/stop`, `/speed` or `/pref/*` from a test or a proof** — a person stands on the belt;
   tests use a fake `PadClient`/`Transport`, a proof is `GET /status` only.
 
-- **Scanner** — document scanning over eSCL (AirScan, plain HTTP) through curl
-  (`scan/transport.ts`); four no-view commands (feeder, fronts, backs, flatbed) replace Apple
-  Image Capture. A Tinycast no-view run ends when another command starts and an ADF batch
-  takes 1–2 minutes, so the command only runs `scan-cli --check` (inbox mounted, no scan
-  running, scanner idle with paper) and **spawns `scan-cli` detached**
-  (`scripts/scan.ts`, bundled to `assets/scan-cli.js` by `make scan-cli`, run with
-  `/opt/homebrew/bin/bun`); the result is a macOS notification. State dir
-  `~/.local/state/scan/` (`SCAN_STATE_DIR`): `lock` (pid; a dead pid is taken over),
-  `scanner.json` (host cache), `progress.json` (the running scan), `scan.log` (every page with index, bytes
-  and duration, the final job record, the result; rotates to `scan.log.1` at 512 KB),
-  `pending/` (the scan waiting for a submit), `pending.lock`, `discarded/`,
-  `partial/`, `blank/`, `unsent/`. The scanner is found by `dns-sd` (`_uscan._tcp`, read until the
-  line needed, then killed; cached, discovered again once when the cached host does not
-  answer) — no hostname in the repo; `scannerHost` overrides. The job is created with
-  **`Content-Type: application/xml`** (with `text/xml` the device silently ignores
-  resolution and region and returns 200 dpi); 503 is retried (10× on the job, 30× on a
-  page); between two page requests the runner waits `min(1 s, half the previous page's
-  duration)` because the device answers 404 to an immediate next request while pages
-  remain, and a 404 in a feeder mode while the scanner is still busy is asked again. Pages are JPEG (A4, 300 dpi); `scan/pdf.ts` embeds them untouched
-  into one PDF per scan (`DCTDecode`). **File names** (the consumer only reads the pair
-  suffixes): `scan-YYYY-MM-DD-HHmmss.pdf`; fronts `…-vorne.pdf`; backs `<fronts stem>-hinten.pdf`
-  (the stem comes from the pending fronts), so
-  the consumer can collate a double-sided stack; never overwritten (`-2`, `-3`).
-  **Hardening for long batches.** (1) The CLI keeps the Mac awake for the run
-  (`caffeinate -i -w <pid>`, a failure to start it is only logged). (2) A scan returns the pages
-  it has instead of throwing once one was downloaded: a page that fails for good, a job the
-  scanner did not complete with the page count received, or the 20 minute run deadline make the
-  batch **incomplete** — it goes to `partial/`, never into the inbox, and the notification says why. **Completeness comes from the scanner's own job record,
-  not the feeder state**: from the 2nd second of a running feeder job this device reads
-  `State` `Processing` and `AdfState` `ScannerAdfEmpty`, so after a 404 the runner reads
-  `<scan:Jobs>` and matches our job by the uuid in its URI. `Completed` with `ImagesCompleted`
-  equal to the pages received is complete; another count, or `Canceled`/`Aborted` (e.g.
-  `JobCanceledAtDevice`), is incomplete. A running job is not listed, so an unlisted job while
-  the scanner is `Processing` (or one listed `Processing`/`Pending`) means ask again (1 s apart,
-  at most 5 times per page, then "scanner still busy after the last page"); only an unlisted
-  job on an idle scanner falls back to the feeder state (`ScannerAdfEmpty` = complete). A
-  finished job's record stays listed after DELETE, but the status is read before it anyway; the
-  run's last `scan.log` line is `final: state=… adf=… job=… imagesCompleted=… received=…`. (3) A PDF is copied into the inbox
-  (`scan/deliver.ts`) and verified by size before anything is removed; if the copy fails (share
-  dropped, permission, disk) it is kept in `unsent/` and the notification says so.
-  **Blank guard**: a stack that went in upside down scans as blank pages whose JPEGs are only
-  slightly smaller than real ones, so `scan/ink.ts` reduces each page with `sips` to a 400 px BMP
-  and `scan/blank.ts` counts the share of dark pixels (luminance < `INK_LUMA`, outer 8 % at the
-  sides and 3 % at top and bottom ignored); a complete feeder or fronts batch in which every page
-  is below `BLANK_INK_SHARE` goes to `blank/` instead of becoming pending, never for backs (blank backs are normal) or the flatbed, and a page that
-  cannot be measured counts as not blank. Thresholds live in `blank.ts`; `bun
-  extension/scripts/scan.ts --measure <file.jpg>…` prints each file's ink share for calibration.
-  **Nothing reaches the inbox without a submit.** This device reports a feeder that stopped
-  mid-stack (12 or 15 of 29 sheets) as a clean success, so the page count in the notification is
-  the only check, and the user may need several tries to push the rest through; the inbox
-  consumer once filed an incomplete 19-page PDF in the meantime. So a complete, non-blank scan
-  stays in `pending/` (`scan.json` + `part-<n>/` with `scan.pdf` and the page JPEGs), **without
-  expiry and without a timer**: the detached process posts the notification (`17 pages scanned.
-  Scan More to append, Submit Scan to file it.`) and exits. **Submit Scan** (`scan-cli --submit`,
-  `Filed: 19 pages -> <name>.pdf`, "Nothing to submit") files it through `scan/deliver.ts`;
-  **Discard Scan** (`--discard`) moves the PDFs to `discarded/` (the newest five files stay).
-  Both run without a scanner, take the pending lock, and are refused while a scan runs. A new
-  feeder, fronts or flatbed scan while something is pending files the pending scan first (a
-  forgotten submit is never lost and never blocks). **Scan More** (`--mode more`, a feeder scan)
-  appends to the part scanned last and rebuilds its PDF; with nothing pending it says "Nothing to
-  continue (the last scan is already filed)"; a Scan More that fails, is blank or incomplete
-  leaves the pending scan as it was (an incomplete one's new pages go to `partial/`).
-  **Double-sided**: `backs` after a pending `fronts` does not file the fronts; `pending/` then
-  holds both parts, Scan More appends to the one scanned last, Submit files `…-vorne.pdf` and
-  `…-hinten.pdf` (same stem) together and Discard drops both; `backs` without pending fronts is
-  refused ("Scan the fronts first", no age rule), and the message notes `(fronts had N)` when
-  the counts differ. `scan-cli --status` prints one JSON line for a UI, no scanner:
-  `{ pending: null | { parts: [{ mode, fileName, pages, at, pagePaths, thumbPaths, pdfPath }], scanning, needsAttention, attention? }, lastResult? }` (`thumbPaths`: one small JPEG per page, `thumb-NNN-<hash8>.jpg` next to the page files, made with `sips` after the scan and aligned to the pages, `null` where one failed; the hash is in the name because Tinycast caches a file image by its path), plus
-  `progress` (`{ mode, page, startedAt, pid }`, from `progress.json`, which a scan updates after
-  every page and removes at its end) while a live process holds the scan lock; the pure rules
-  are `scan/pending-rules.ts`. A page request that answers **HTTP 410** (job record
-  `Canceled` / `JobCanceledAtDevice`, no images) means the feeder did not pick up the paper:
-  "The scanner cancelled the scan … Push the stack in and try again" (the raw status stays in
-  `scan.log`). **A 200 whose body is not a JPEG** (no FF D8, or empty; seen live while the scanner cancelled a job whose feeder did not pick up the paper) is not a page: the runner logs the size and the first 16 bytes, reads the job record (waiting up to ~5 s for it to settle) and fails like a page request, so zero valid pages is the "cancelled" ScanError and earlier ones make the batch incomplete (partial/); a final job record `Canceled`/`Aborted` never leaves a batch complete, and the temp dir is kept only when valid pages exist and no PDF was stored. Tests run against `scan/fake-scanner.ts` only (see § Safety); its `junkPageAt` answers that page with 200 + a non-JPEG body and ends the job Canceled.
-  **A failed Scan More is hard to miss.** Every scan, Scan More, Submit and Discard writes `<state>/last-result.json` (`{ at, action, ok, message, pages? }`, returned by `--status` as `lastResult`); a failed Scan More (blank, incomplete, cancelled, refused) also sets `attention` on the pending scan (`scan.json`; `--status`: `pending.needsAttention` + `pending.attention`), cleared by the next successful scan or Scan More on it, by Submit and by Discard. `--submit` while it is set refuses with "The last Scan More failed: <message>. Scan those sheets again, or submit anyway" unless `--force` (a new scan that files the pending one first never asks). In the view the first section's title ends `· last batch failed`, a first tile (`Icon.Warning`, "Last batch failed", the message truncated) says why, Submit Scan asks with `confirmAlert` and passes `--force`, and a `lastResult` newer than the first live answer is toasted (success or failure; Submit and Discard are shown by the view itself); the no-view Submit Scan shows the refusal as HUD and never forces.
-  **The Scanner view** (`scanner.tsx`, one Grid) is the whole flow on one screen. Top: the pending parts
-  (a section per part, a tile per page showing its thumbnail; Enter on a page is the flow's primary
-  action for the state, Open Page / Open PDF alongside). Below, the inbox as the consumer sees it, from
-  `scan-cli --documents --out-dir <inbox> --brain-dir <dir> --dokumente-dir <dir>` (read-only, no
-  scanner): **Needs review** (`<inbox>/review/*`, the reason from `<name>.why.txt`, the proposed kind
-  from `proposal: kind <x>`, or a proposed split from `proposal: <n> documents, pages <ranges>` (well-formed
-  only; shown as its page ranges); `<stem>-vorne.pdf` / `-hinten.pdf` (or `-front` / `-back`) are hidden while
-  `<stem>.pdf` is held there, `.txt` files never listed), **Waiting in the inbox** (documents lying in the
-  inbox, not yet consumed) and **Recently filed** (the 20 newest index notes in the brain vault,
-  `Areas/Documents/<year>/*.md`, frontmatter `kind`, `issuer`, `date`, `tags`, `share_path` + a
-  summary body; the section title says `as of HH:MM` of the newest note because the vault is a local
-  clone that lags; without the vault the section is one note, "Document index not found", and the rest
-  still works). A filed document whose file is gone shows "file not found" and has no Open. Tile
-  actions: Open, Show in Finder, Copy Path, Show Details (a pushed `Detail`); a review tile adds **File
-  as One Document** (`--release <name> --as single`: moves `review/<name>.pdf` to `<stem>.single.pdf`
-  in the inbox, the consumer's documented way to accept it as one document, and drops the `.why.txt`;
-  PDFs only, plain file names only). A review tile with a proposed split adds **File as Proposed (<n>
-  Documents)** first, then File as One Document (`--release <name> --as split-<n>-<n>…`, the first page
-  of each new document after the first: moves to `<stem>.split-<n>-<n>….pdf`; at most 50 numbers, from 2,
-  strictly ascending; an earlier `.single` / `.split-` part of the stem is replaced, never stacked). Document thumbnails (`--doc-thumbs`: `sips` first page of PDFs and
-  images, cached in `<state>/doc-thumbs/<sha1(path+mtime+size)>.jpg`, 4 at a time, pruned after 30
-  days) load in a second `useCachedPromise` keyed on the document list, so the grid paints first and
-  the covers arrive. The flow actions are the pure `scannerActions(status)` (nothing pending: the three
-  scans; fronts pending: Scan Backs first, Scan More, Submit Fronts Only, Discard; otherwise Submit
-  first, Scan More, Discard, and the new scans under a separate "files this one first" section;
-  while scanning only Open Scan Log and Refresh) and sit on every tile and on the empty view. Polling:
-  the scan state every 2 s while scanning or for 30 s after starting one, else every 10 s (a tick is
-  skipped while the previous read runs); the documents every 30 s and after every action. Discard asks
-  for confirmation. **Unverified without a running Tinycast**: how the grid looks, that `Grid.Item`
-  `keywords` feed the search, and what `Action.Open` / `Action.ShowInFinder` do in the runtime; real
-  `sips` PDF first-page rendering. The e2e suite (`e2e/scanner.e2e.test.tsx`) uses synthetic documents
-  only — the real index notes are private and never enter this repo.
+- **Scan and print** — the commands are thin callers of `~/.local/bin/paper` (the pattern of `home/run.ts`: `paper/run.ts` spawns it, `paper/result.ts` reads its one JSON line, `paper/actions.ts` maps a command to a verb); the HUD shows paper's own `message`. The scanner, the CUPS queue, the inbox, the document index and their state live in the paper repo (`~/SourceRoot/paper`, `paper schema`): its AGENTS.md owns the eSCL protocol, the pending scan, the blank guard, the print options and the Safety rules for them.
+  The Printer view is a list over `paper print status` (`print/parse.ts` reads it defensively, `print/view.ts` has the words and poll rhythm). **Documents** opens Argo's Documents page (`<baseUrl without /api>/documents`). Which scanner, queue, inbox and brain paths apply is paper's config (`~/.config/paper/config.json`); the extension has no scan or print preference.
+  **Tests never scan or print.** The unit and e2e suites mock `paper/run` (`runPaper`); a real `paper scan start` or `paper print` from a test or an unattended script is out of bounds.
 
-- **Printer** — `print-cli` (`scripts/print.ts`, bundled to `assets/print-cli.js` by `make print-cli`, run with `/opt/homebrew/bin/bun`) talks to CUPS only through `print/cups.ts`'s injected exec port, for the queue `printQueue` names (empty: `lpstat -d`). State, toner and jobs come from `ipptool -tv` (IPP keywords, stable across languages). macOS CUPS ignores `LC_ALL` for its messages (this Mac answers `lpstat` in German even with `LC_ALL=C`), so the code sets `LC_ALL=C` but never parses lpstat prose: the default destination is the text after the last colon, the request id the `<queue>-<n>` token. Before any submit the queue must exist, accept jobs and not be stopped; low toner is a `warnings` entry only. The submit is `lp -d <queue> -n <copies> -o sides=… -o media=… -o fit-to-page [-o number-up=] [-o print-quality=3|4|5] [-o InputSlot=manual] [-P <pages>] [-H hold] -t <name> -- <file>`, every option explicit. **Two-sided long edge is the default**; `--simplex` opts out, `--short-edge` picks the short edge. Copies 1–99, n-up 1/2/4/6/9/16, media A4 (default) A5 A6 Letter Legal, page lists `1-3,5,8-`. Files: pdf, png, jpg, jpeg, tif, tiff, txt. Cancel touches only the current user's active jobs on the queue (`cancel <queue>-<n>`). Finder selection comes from `getSelectedFinderItems` (rejects while Finder is not frontmost, read as "Select a file in Finder first"); the printer view reads it once on open. Contract and flags: the print skill; `make print ARGS="--help"`.
 - **Apple on-device model** — `extension/helpers/apple-llm/main.swift` (built
   by `make helper` into the gitignored `assets/apple-llm`, `--selftest` in
   `make check`): an agnostic CLI over `SystemLanguageModel` (macOS 26+, Apple
@@ -1117,11 +998,6 @@ no target.
 
 ## Safety
 
-**Tests and proofs never talk to a real scanner.** Every scan test (`scan/*.test.ts`,
-`scan/fake-scanner.integration.test.ts`) uses an injected fake or the in-process
-`scan/fake-scanner.ts` on a loopback port; never point `scannerHost` or `--host` at the
-real device from a test, and never start a scan from an unattended script.
-
 Mutating flows are exercised against the **fake router** (§ Fake router),
 never the real device. **Never trigger a Netgear action (reboot / connect / disconnect / SIM PIN,
 PUK, APN, or roaming change / SMS mark-read or delete) from a test or an
@@ -1159,8 +1035,6 @@ charger), not by device source. Still blocked and selftested: `0xEC5C` (trends
 clear — wipes the store), `0xEC63`/`0xEC64` (lists), `0xEC5F` set (the app
 sets the time tuple once per device boot; we never do), `0x1030`, every other
 setValues, other opcodes and instances, and a trend request in any other mode.
-
-**Tests and proofs never print.** No `lp`, `cancel` or other CUPS write outside an injected fake (`print/fake-cups.ts`); the print unit tests, the printer e2e and the hub e2e (which mocks the printer loader) never reach a queue. A live proof is `--dry-run`, `--check`, `--status`, or `--hold` followed by `--cancel`. The CLI itself refuses to submit without a passing check.
 
 ## SVG hero images and icon previews
 

@@ -624,17 +624,17 @@
       "icon": "scan.png"
     },
     {
-      "name": "scanner",
-      "title": "Scanner",
-      "subtitle": "Scan and file documents",
-      "description": "One window for scanning: scan, check the pages, submit, and see what happened to earlier scans",
-      "mode": "view",
+      "name": "documents",
+      "title": "Documents",
+      "subtitle": "Scanned and filed documents",
+      "description": "Open the Documents page of Argo in the browser: the inbox, what waits for review and the filed documents",
+      "mode": "no-view",
       "keywords": [
-        "scan",
-        "scanner",
-        "dokumente",
         "documents",
-        "inbox"
+        "dokumente",
+        "scan",
+        "inbox",
+        "paper"
       ],
       "icon": "scan.png"
     },
@@ -642,7 +642,7 @@
       "name": "printer",
       "title": "Printer",
       "subtitle": "Printer state, toner and jobs",
-      "description": "The printer's state and toner, its jobs (cancel one or all), and print a Finder file or a path",
+      "description": "The printer's state and toner and its jobs (cancel one or all), with Print Selected Finder File",
       "mode": "view",
       "keywords": [
         "print",
@@ -659,7 +659,7 @@
       "name": "print-selection",
       "title": "Print Selected File",
       "subtitle": "Printer, two-sided",
-      "description": "Print the file(s) selected in Finder, two-sided (long edge)",
+      "description": "Print the file(s) selected in Finder, two-sided (paper picks the edge)",
       "mode": "no-view",
       "keywords": [
         "print",
@@ -807,44 +807,6 @@
       "type": "textfield",
       "required": true,
       "default": "op://Private/Solar Camper Victron/Instant Readout Key"
-    },
-    {
-      "name": "scanInbox",
-      "title": "Scan Inbox",
-      "description": "Folder the scanned PDFs are saved into (picked up by another automation)",
-      "type": "textfield",
-      "required": false,
-      "default": "/Volumes/SSD/Dokumente/Eingang/Scans"
-    },
-    {
-      "name": "scannerHost",
-      "title": "Scanner Host",
-      "description": "Leave empty to find the scanner on the network",
-      "type": "textfield",
-      "required": false
-    },
-    {
-      "name": "scanBrainDir",
-      "title": "Document Index (Brain Vault)",
-      "description": "Folder of the brain vault whose Areas/Documents notes describe the filed documents (read-only; a local clone may lag)",
-      "type": "textfield",
-      "required": false,
-      "default": "~/SourceRoot/brain"
-    },
-    {
-      "name": "scanDokumenteDir",
-      "title": "Documents Folder",
-      "description": "Folder the filed documents' share paths are relative to",
-      "type": "textfield",
-      "required": false,
-      "default": "/Volumes/SSD/Dokumente"
-    },
-    {
-      "name": "printQueue",
-      "title": "Print Queue",
-      "description": "CUPS queue the print commands use; empty means the Mac's default printer",
-      "type": "textfield",
-      "required": false
     }
   ]
 }

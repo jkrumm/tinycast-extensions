@@ -1,8 +1,7 @@
 // The printer view's pure parts: the words it shows, the poll rhythm, the hub
-// tile, the cancel-all confirmation, and the Form-to-CLI argument mapping.
+// tile and the cancel-all confirmation.
 // No @raycast/api here, so the rules are unit-tested.
 
-import { Check, fail, ok } from "./options";
 import {
   ACTIVE_JOB_STATES,
   JobState,
@@ -91,43 +90,3 @@ export function cancelAllConfirmation(count: number): {
     message: "Jobs that are waiting or printing are removed from the queue.",
   };
 }
-
-export interface PrintFormValues {
-  file: string;
-  pages: string;
-  copies: string;
-  sides: string;
-  nUp: string;
-  manualFeed: boolean;
-}
-
-// Form values to the print-cli argv (the printer flag is added by the caller).
-// The CLI validates the values; this only maps them and refuses an empty file.
-export function formArgs(values: PrintFormValues): Check<string[]> {
-  const file = values.file.trim();
-  if (!file) return fail("Choose a file to print");
-  const pages = values.pages.trim();
-  return ok([
-    file,
-    ...(pages ? ["--pages", pages] : []),
-    "--copies",
-    values.copies.trim() || "1",
-    ...sidesArgs(values.sides),
-    "--n-up",
-    values.nUp,
-    ...(values.manualFeed ? ["--manual-feed"] : []),
-  ]);
-}
-
-function sidesArgs(sides: string): string[] {
-  if (sides === "one-sided") return ["--simplex"];
-  return sides === "two-sided-short-edge" ? ["--short-edge"] : [];
-}
-
-export const SIDES_OPTIONS: readonly { value: string; title: string }[] = [
-  { value: "two-sided-long-edge", title: "Two-sided, long edge" },
-  { value: "two-sided-short-edge", title: "Two-sided, short edge" },
-  { value: "one-sided", title: "One-sided" },
-];
-
-export const N_UP_OPTIONS: readonly string[] = ["1", "2", "4", "6", "9", "16"];

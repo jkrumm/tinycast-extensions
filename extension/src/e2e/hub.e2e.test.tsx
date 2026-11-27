@@ -35,10 +35,6 @@ vi.mock("../battery/collect", () => ({
     Promise.reject(new Error("batt: command not found")),
 }));
 
-vi.mock("../scan/view-run", () => ({
-  loadStatus: () => Promise.resolve({ pending: null }),
-}));
-
 // The printer tile must never reach the real queue from a test.
 vi.mock("../print/view-run", () => ({
   loadPrinter: () =>

@@ -1,3 +1,3 @@
-import { scanDirectCommand } from "./scan/command";
+import { scanSubmitCommand } from "./paper/command";
 
-export default scanDirectCommand("submit");
+export default scanSubmitCommand;

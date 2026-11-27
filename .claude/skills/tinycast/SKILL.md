@@ -243,7 +243,7 @@ ExtensionMenuBarImage}.swift`, `Features/Extensions/Model/ExtensionImageSize.swi
   cell, not a markdown column). **`Grid.Item.content` also takes an absolute file path**
   (a string starting with `/` is a file image, loaded with `NSImage(contentsOfFile:)`; read in
   Tinycast `main` `ExtensionImage` / `IconCache`, commits cf4c613, 6d036ae, 4d0fddb, 2026-11) —
-  `scanner.tsx` shows page and document thumbnails that way. The cache is **keyed by the path**, so a
+  a Grid view can show thumbnails that way. The cache is **keyed by the path**, so a
   file whose content changed under the same path would show stale: write thumbnails under a
   content-unique name (a hash in the file name). A `data:` URI is not cached. `Grid.Section`,
   `Grid.EmptyView`, `Grid.Fit.Contain`, `Action.Open`, `Action.ShowInFinder` exist in the runtime;

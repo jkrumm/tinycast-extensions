@@ -32,8 +32,6 @@ import { tileStatus as spotifyTileStatus } from "./spotify/parse";
 import { readCached as readSpotify } from "./spotify/run";
 import { tileStatus as walkingPadTileStatus } from "./walkingpad/parse";
 import { readCached as readWalkingPad } from "./walkingpad/run";
-import { loadStatus as loadScanStatus } from "./scan/view-run";
-import { tileStatus as scannerTileStatus } from "./scan/view";
 import { loadPrinter } from "./print/view-run";
 import { tileStatus as printerTileStatus } from "./print/view";
 import { RAYCAST_COLOR, RaycastColor, tile, toDataUri } from "./lib/svg";
@@ -125,10 +123,10 @@ const TILES: TileConfig[] = [
     color: RAYCAST_COLOR.orange,
   },
   {
-    command: "scanner",
+    command: "documents",
     icon: "scan",
     glyph: "D",
-    name: "Scanner",
+    name: "Documents",
     color: RAYCAST_COLOR.purple,
   },
   {
@@ -244,12 +242,7 @@ async function walkingPadStatus(): Promise<TileData> {
   };
 }
 
-// The scan state straight from the CLI (no thumbnails): a quick local read.
-async function scannerStatus(): Promise<TileData> {
-  return { status: scannerTileStatus(await loadScanStatus()) };
-}
-
-// The printer state from the CLI (a quick local read, no print job).
+// The printer state from `paper print status` (no print job).
 async function printerStatus(): Promise<TileData> {
   return { status: printerTileStatus(await loadPrinter()) };
 }
@@ -266,7 +259,7 @@ const STATUS_LOADERS: Record<string, () => Promise<TileData>> = {
   home: homeStatus,
   spotify: spotifyStatus,
   walkingpad: walkingPadStatus,
-  scanner: scannerStatus,
+  documents: async () => ({ status: "" }),
   printer: printerStatus,
 };
 

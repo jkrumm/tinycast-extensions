@@ -13,7 +13,6 @@ import {
 import { useCachedPromise } from "@raycast/utils";
 import { ReactNode, useEffect, useRef } from "react";
 import { PrintJob, PrinterView } from "./print/parse";
-import { PrintForm } from "./print/print-form";
 import {
   cancelAllConfirmation,
   jobSubtitle,
@@ -66,7 +65,7 @@ export default function Printer() {
   const finderPaths = selection ?? [];
   const jobs = view?.ok ? view.jobs : [];
 
-  const print = (sides: "two-sided-long-edge" | "one-sided") => async () => {
+  const print = (sides: "two-sided" | "one-sided") => async () => {
     await runWithToast("Sending to the printer", () =>
       printSelection(sides, finderPaths),
     );
@@ -96,19 +95,13 @@ export default function Printer() {
       key="print"
       title="Print Selected Finder File"
       icon={Icon.Print}
-      onAction={print("two-sided-long-edge")}
+      onAction={print("two-sided")}
     />,
     <Action
       key="print-simplex"
       title="Print Selected Finder File One-Sided"
       icon={Icon.Print}
       onAction={print("one-sided")}
-    />,
-    <Action.Push
-      key="print-file"
-      title="Print File…"
-      icon={Icon.Document}
-      target={<PrintForm initialFile={finderPaths[0] ?? ""} />}
     />,
   ];
 

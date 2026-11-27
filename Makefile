@@ -1,4 +1,4 @@
-.PHONY: help install van-sampler-build van-sampler-spike van-sampler-notify-test van-sampler-setup van-sampler-teardown van-sampler-status watchdog-setup watchdog-teardown watchdog-status build helper deploy check test lint typecheck clean secrets secrets-clear icons status e2e e2e-live fake-router previews van-eval tinycast-version van-sampler-check hyper-sheet scan-cli scan print-cli print
+.PHONY: help install van-sampler-build van-sampler-spike van-sampler-notify-test van-sampler-setup van-sampler-teardown van-sampler-status watchdog-setup watchdog-teardown watchdog-status build helper deploy check test lint typecheck clean secrets secrets-clear icons status e2e e2e-live fake-router previews van-eval tinycast-version van-sampler-check hyper-sheet
 
 EXT_DIR := extension
 RAY := node_modules/.bin/ray
@@ -30,31 +30,7 @@ helper: ## Compile the van-ble BLE helper into extension/assets and run its --se
 	swiftc -O -o $(LLM_BIN) $(LLM_SRC)
 	@printf 'apple-llm selftest: ' && $(LLM_BIN) --selftest
 
-# The scan CLI is the detached process a scan command spawns (a Tinycast no-view run is ended when
-# another command starts, an ADF batch takes minutes): one bun bundle shipped in assets/ like the helpers.
-SCAN_SRC := $(EXT_DIR)/scripts/scan.ts
-SCAN_BIN := $(EXT_DIR)/assets/scan-cli.js
-
-scan-cli: ## Bundle the scan CLI into extension/assets/scan-cli.js (bun)
-	@mkdir -p $(EXT_DIR)/assets
-	bun build $(SCAN_SRC) --target=bun --outfile $(SCAN_BIN)
-
-scan: ## Scan from a terminal: ARGS="--mode feeder --out-dir <dir>" (--check for the pre-flight only)
-	bun $(SCAN_SRC) $(ARGS)
-
-# The print CLI is what the printer commands and the agents run (`bun extension/assets/print-cli.js`):
-# one bun bundle in assets/, like the scan CLI. It talks to CUPS only through its own exec port.
-PRINT_SRC := $(EXT_DIR)/scripts/print.ts
-PRINT_BIN := $(EXT_DIR)/assets/print-cli.js
-
-print-cli: ## Bundle the print CLI into extension/assets/print-cli.js (bun)
-	@mkdir -p $(EXT_DIR)/assets
-	bun build $(PRINT_SRC) --target=bun --outfile $(PRINT_BIN)
-
-print: ## Print from a terminal: ARGS="<file> [--pages 1-3] [--dry-run]" (also --check, --status, --cancel <id>, --cancel-all)
-	bun $(PRINT_SRC) $(ARGS)
-
-build: helper scan-cli print-cli ## Build the extension for Tinycast/Raycast "Add from folder"
+build: helper ## Build the extension for Tinycast/Raycast "Add from folder"
 	cd $(EXT_DIR) && $(RAY) build -e dist -o build
 	@echo ""
 	@echo "Built to $(EXT_DIR)/build/ — run 'make deploy' to update Tinycast (first install: Add from folder → $(CURDIR)/$(EXT_DIR)/build)"
@@ -169,7 +145,7 @@ watchdog-status: ## Is the watchdog loaded and what does jobrun's record say
 	@launchctl print gui/$$(id -u)/$(WATCHDOG_LABEL) 2>/dev/null | grep -E 'state =|last exit code|runs =' || echo "  ✗ not loaded"
 	@jobs-grade --table 2>/dev/null | grep netgear-watchdog || echo "  no jobrun record yet"
 
-check: helper scan-cli print-cli typecheck lint test e2e ## helper selftest + scan and print bundles + typecheck + lint + test + e2e
+check: helper typecheck lint test e2e ## helper selftest + typecheck + lint + test + e2e
 
 clean: ## Remove build artifacts
 	rm -rf $(EXT_DIR)/dist $(EXT_DIR)/build

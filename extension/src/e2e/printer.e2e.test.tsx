@@ -16,7 +16,6 @@ vi.mock("../print/view-run", () => ({
   printSelection: vi.fn(),
   cancelJob: vi.fn(),
   cancelAll: vi.fn(),
-  printFile: vi.fn(),
 }));
 
 import Printer from "../printer";

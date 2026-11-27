@@ -1,3 +1,3 @@
-import { scanDirectCommand } from "./scan/command";
+import { scanDiscardCommand } from "./paper/command";
 
-export default scanDirectCommand("discard");
+export default scanDiscardCommand;

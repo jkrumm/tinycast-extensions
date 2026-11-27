@@ -15,6 +15,14 @@ export function argoBaseUrl(): string {
   return prefs().baseUrl.replace(/\/$/, "");
 }
 
+// The dashboard lives at the API's origin: the base URL without its /api prefix.
+export function dashboardUrl(baseUrl: string): string {
+  return baseUrl.replace(/\/$/, "").replace(/\/api$/, "");
+}
+
+export const documentsUrl = (): string =>
+  `${dashboardUrl(prefs().baseUrl)}/documents`;
+
 // The bearer token is resolved through lib/secrets.ts (override → Keychain →
 // 1Password) rather than read straight off the preference, so async.
 async function authHeader(): Promise<Record<string, string>> {

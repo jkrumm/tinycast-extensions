@@ -1,3 +1,3 @@
-import { printSelectionCommand } from "./print/command";
+import { printSelectionCommand } from "./paper/command";
 
 export default printSelectionCommand("one-sided");
