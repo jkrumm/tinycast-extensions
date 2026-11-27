@@ -128,7 +128,7 @@ extension/
     hyper-sheet.ts        `make hyper-sheet` entry — printable Hyper key sheet from the live Tinycast + WalkingPad settings → build/hyper-sheet.{html,pdf,png} (PDF/PNG need Google Chrome)
     coresvg-render.swift   renders an SVG through macOS' own decoder (previews `--coresvg`)
     print.ts              print CLI (`make print ARGS=…`; bundled by `make print-cli` to assets/print-cli.js, gitignored): one file per call, `--check`, `--status`, `--cancel`, `--cancel-all`; the agents' only way to print (`.claude/skills/print/SKILL.md`)
-    scan.ts               scan CLI (`make scan`; bundled by `make scan-cli` to assets/scan-cli.js, gitignored): `--check` or one scan, run detached by the scan commands; also the read-only inbox queries `--documents`, `--doc-thumbs`, `--release <name> --as single` (no scanner)
+    scan.ts               scan CLI (`make scan`; bundled by `make scan-cli` to assets/scan-cli.js, gitignored): `--check` or one scan, run detached by the scan commands; also the read-only inbox queries `--documents`, `--doc-thumbs`, `--release <name> --as single|split-<n>-<n>…` (no scanner)
   assets/
     *.png                 command icons — generated, don't hand-edit
     src/*.svg              command icon sources — edit these, then `make icons`
@@ -699,7 +699,9 @@ The
   action for the state, Open Page / Open PDF alongside). Below, the inbox as the consumer sees it, from
   `scan-cli --documents --out-dir <inbox> --brain-dir <dir> --dokumente-dir <dir>` (read-only, no
   scanner): **Needs review** (`<inbox>/review/*`, the reason from `<name>.why.txt`, the proposed kind
-  shown when the text has `proposal: kind <x>`), **Waiting in the inbox** (documents lying in the
+  from `proposal: kind <x>`, or a proposed split from `proposal: <n> documents, pages <ranges>` (well-formed
+  only; shown as its page ranges); `<stem>-vorne.pdf` / `-hinten.pdf` (or `-front` / `-back`) are hidden while
+  `<stem>.pdf` is held there, `.txt` files never listed), **Waiting in the inbox** (documents lying in the
   inbox, not yet consumed) and **Recently filed** (the 20 newest index notes in the brain vault,
   `Areas/Documents/<year>/*.md`, frontmatter `kind`, `issuer`, `date`, `tags`, `share_path` + a
   summary body; the section title says `as of HH:MM` of the newest note because the vault is a local
@@ -708,7 +710,10 @@ The
   actions: Open, Show in Finder, Copy Path, Show Details (a pushed `Detail`); a review tile adds **File
   as One Document** (`--release <name> --as single`: moves `review/<name>.pdf` to `<stem>.single.pdf`
   in the inbox, the consumer's documented way to accept it as one document, and drops the `.why.txt`;
-  PDFs only, plain file names only). Document thumbnails (`--doc-thumbs`: `sips` first page of PDFs and
+  PDFs only, plain file names only). A review tile with a proposed split adds **File as Proposed (<n>
+  Documents)** first, then File as One Document (`--release <name> --as split-<n>-<n>…`, the first page
+  of each new document after the first: moves to `<stem>.split-<n>-<n>….pdf`; at most 50 numbers, from 2,
+  strictly ascending; an earlier `.single` / `.split-` part of the stem is replaced, never stacked). Document thumbnails (`--doc-thumbs`: `sips` first page of PDFs and
   images, cached in `<state>/doc-thumbs/<sha1(path+mtime+size)>.jpg`, 4 at a time, pruned after 30
   days) load in a second `useCachedPromise` keyed on the document list, so the grid paints first and
   the covers arrive. The flow actions are the pure `scannerActions(status)` (nothing pending: the three

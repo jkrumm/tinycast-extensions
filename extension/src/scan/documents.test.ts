@@ -10,8 +10,20 @@ import { tmpdir } from "os";
 import { join } from "path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { nodeDocsFs } from "./docs-fs";
-import { listDocuments, NO_INDEX, releaseReview } from "./documents";
+import {
+  listDocuments,
+  NO_INDEX,
+  parseProposedSplit,
+  releaseReview,
+} from "./documents";
 import { documentsResult, releaseResult } from "./inbox-cli";
+
+// The consumer's reason for a stack it could not split with certainty.
+const REAL_SPLIT_WHY = [
+  "unsure where the stack splits (page 12: 0.65, page 14: 0.75); proposed documents: pages 1-8, 9, 10-11, 12-13, 14-15",
+  "proposal: 5 documents, pages 1-8, 9, 10-11, 12-13, 14-15",
+  "To decide it without a terminal: move the file out of review/ into the inbox under the name <name>.single.pdf (it is one document) or <name>.split-2-5.pdf (pages 2 and 5 each begin a new document). Values go into the name too: …",
+].join("\n");
 
 let root: string;
 let inbox: string;
@@ -99,6 +111,39 @@ describe("listDocuments: the inbox", () => {
         why: null,
       },
     ]);
+  });
+
+  it("lists no .txt next to a review PDF, and hides the collated sides behind their file", () => {
+    touch(join(inbox, "review", "scan-2026-01-02-101010.pdf"), "x", 3000);
+    touch(join(inbox, "review", "scan-2026-01-02-101010.txt"), "text");
+    touch(join(inbox, "review", "scan-2026-01-02-101010-vorne.pdf"), "x", 2000);
+    touch(
+      join(inbox, "review", "scan-2026-01-02-101010-hinten.pdf"),
+      "x",
+      1000,
+    );
+    touch(join(inbox, "review", "other-vorne.pdf"), "x", 500);
+    const result = listDocuments(nodeDocsFs, { inbox });
+    if (!result.ok) throw new Error("expected ok");
+    expect(result.review.map((r) => r.name)).toEqual([
+      "scan-2026-01-02-101010.pdf",
+      "other-vorne.pdf",
+    ]);
+  });
+
+  it("reads the consumer's split proposal into the review item", () => {
+    touch(join(inbox, "review", "scan-2026-01-02-101010.pdf"), "x");
+    touch(
+      join(inbox, "review", "scan-2026-01-02-101010.why.txt"),
+      REAL_SPLIT_WHY,
+    );
+    const result = listDocuments(nodeDocsFs, { inbox });
+    if (!result.ok) throw new Error("expected ok");
+    expect(result.review[0].proposedSplit).toEqual({
+      documents: 5,
+      ranges: ["1-8", "9", "10-11", "12-13", "14-15"],
+      starts: [9, 10, 12, 14],
+    });
   });
 
   it("lists the 10 newest files in done/", () => {
@@ -249,6 +294,43 @@ describe("listDocuments: the filed documents (index notes)", () => {
   });
 });
 
+describe("parseProposedSplit", () => {
+  it("reads the real proposal line verbatim", () => {
+    expect(parseProposedSplit(REAL_SPLIT_WHY)).toEqual({
+      documents: 5,
+      ranges: ["1-8", "9", "10-11", "12-13", "14-15"],
+      starts: [9, 10, 12, 14],
+    });
+  });
+
+  it("reads a two-document proposal and ignores the kind form", () => {
+    expect(parseProposedSplit("proposal: 2 documents, pages 1-3, 4")).toEqual({
+      documents: 2,
+      ranges: ["1-3", "4"],
+      starts: [4],
+    });
+    expect(parseProposedSplit("proposal: kind letter")).toBeNull();
+    expect(parseProposedSplit("unclear scan")).toBeNull();
+    expect(parseProposedSplit(null)).toBeNull();
+  });
+
+  it("accepts no malformed list", () => {
+    for (const line of [
+      "proposal: 3 documents, pages 1-8, 9",
+      "proposal: 2 documents, pages 1-8, 10-11",
+      "proposal: 2 documents, pages 1-8, 8-11",
+      "proposal: 2 documents, pages 2-8, 9",
+      "proposal: 2 documents, pages 9, 1-8",
+      "proposal: 1 documents, pages 1-8",
+      "proposal: 2 documents, pages 1-8, nine",
+      "proposal: 2 documents, pages 1-8, ",
+      "proposal: 2 documents, pages 1-8, 9-5",
+    ]) {
+      expect(parseProposedSplit(line), line).toBeNull();
+    }
+  });
+});
+
 describe("releaseReview", () => {
   const release = (name: string, as = "single") =>
     releaseResult({ inbox, name, as });
@@ -309,6 +391,65 @@ describe("releaseReview", () => {
       message: "held.single.pdf already exists in the inbox",
     });
     expect(readdirSync(join(inbox, "review"))).toContain("held.pdf");
+  });
+
+  it("files a proposed split as <stem>.split-<n>-<n>.pdf and drops its .why.txt", () => {
+    touch(join(inbox, "review", "scan-2026-01-02-101010.pdf"), "pdf");
+    touch(join(inbox, "review", "scan-2026-01-02-101010.why.txt"), "why");
+    expect(release("scan-2026-01-02-101010.pdf", "split-9-10-12-14")).toEqual({
+      ok: true,
+      message:
+        "Filed as 5 documents: scan-2026-01-02-101010.split-9-10-12-14.pdf",
+    });
+    expect(readdirSync(inbox).sort()).toEqual([
+      "done",
+      "review",
+      "scan-2026-01-02-101010.split-9-10-12-14.pdf",
+    ]);
+    expect(readdirSync(join(inbox, "review"))).toEqual([]);
+  });
+
+  it("replaces an earlier .single or .split part instead of stacking it", () => {
+    touch(join(inbox, "review", "held.split-5.pdf"), "pdf");
+    expect(release("held.split-5.pdf").message).toBe(
+      "Filed as one document: held.single.pdf",
+    );
+    touch(join(inbox, "review", "held.single.pdf"), "pdf");
+    expect(release("held.single.pdf", "split-2-5").message).toBe(
+      "Filed as 3 documents: held.split-2-5.pdf",
+    );
+  });
+
+  it("refuses a malformed split in one line, and an existing split target", () => {
+    touch(join(inbox, "review", "held.pdf"), "x");
+    const tooMany = (n: number) =>
+      `split-${Array.from({ length: n }, (_, i) => i + 2).join("-")}`;
+    for (const as of [
+      "split-",
+      "split-1",
+      "split-5-3",
+      "split-5-5",
+      "split-2-x",
+      "split-0-4",
+      "split-2-1-3",
+      tooMany(51),
+    ]) {
+      const result = release("held.pdf", as);
+      expect(result.ok, as).toBe(false);
+      expect(result.message, as).toMatch(
+        /^Split needs up to 50 page numbers from 2, strictly ascending/,
+      );
+    }
+    expect(release("held.pdf", "separate").message).toBe(
+      "Only --as single or --as split-<n>-<n>… is supported",
+    );
+    touch(join(inbox, "held.split-9.pdf"), "taken");
+    expect(release("held.pdf", "split-9")).toEqual({
+      ok: false,
+      message: "held.split-9.pdf already exists in the inbox",
+    });
+    expect(release("held.pdf", tooMany(50)).ok).toBe(true);
+    expect(readdirSync(join(inbox, "review"))).toEqual([]);
   });
 
   it("works on the pure function with a fake fs too", () => {

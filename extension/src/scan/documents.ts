@@ -31,11 +31,19 @@ export interface WaitingDoc {
   size: number;
   mtime: number;
 }
+// The consumer's split proposal, from the `proposal: <n> documents, pages …`
+// line of its reason.
+export interface ProposedSplit {
+  documents: number;
+  ranges: string[]; // "1-8", "9": the pages of each proposed document
+  starts: number[]; // the first page of every document after the first
+}
 export interface ReviewDoc {
   name: string;
   path: string;
   mtime: number;
   why: string | null;
+  proposedSplit?: ProposedSplit;
 }
 export interface DoneDoc {
   name: string;
@@ -81,6 +89,40 @@ const stemOf = (name: string): string =>
 const newestFirst = <T extends { mtime: number }>(a: T, b: T): number =>
   b.mtime - a.mtime;
 
+const SPLIT_PROPOSAL =
+  /^\s*proposal:\s*(\d+)\s+documents?,\s*pages?\s+(.+?)\s*$/im;
+const PAGE_RANGE = /^(\d+)(?:-(\d+))?$/;
+
+// Null unless the reason carries a well-formed list: one range per document,
+// contiguous and ascending from page 1, at least two documents.
+export function parseProposedSplit(why: string | null): ProposedSplit | null {
+  const match = SPLIT_PROPOSAL.exec(why ?? "");
+  if (!match) return null;
+  const documents = Number(match[1]);
+  const ranges = match[2].split(",").map((range) => range.trim());
+  if (documents < 2 || ranges.length !== documents) return null;
+  const starts: number[] = [];
+  let next = 1;
+  for (let index = 0; index < ranges.length; index++) {
+    const parts = PAGE_RANGE.exec(ranges[index]);
+    if (!parts) return null;
+    const first = Number(parts[1]);
+    const last = parts[2] === undefined ? first : Number(parts[2]);
+    if (first !== next || last < first) return null;
+    if (index > 0) starts.push(first);
+    next = last + 1;
+  }
+  return { documents, ranges, starts };
+}
+
+// `<stem>-vorne.pdf` / `-hinten.pdf` (or -front / -back): the two sides the
+// consumer collated into `<stem>.pdf`, which is listed instead.
+const COLLATED_SIDE = /^(.+)-(vorne|hinten|front|back)$/i;
+const isCollatedSide = (name: string, held: Set<string>): boolean => {
+  const side = COLLATED_SIDE.exec(stemOf(name));
+  return side !== null && held.has(`${side[1]}.pdf`);
+};
+
 export function listDocuments(
   fs: DocsFs,
   opts: { inbox: string; brainDir?: string; dokumenteDir?: string },
@@ -104,16 +146,30 @@ export function listDocuments(
     .sort(newestFirst);
 
   const reviewDir = join(opts.inbox, "review");
-  const review: ReviewDoc[] = (fs.list(reviewDir) ?? [])
-    .filter((e) => e.isFile && isDocumentName(e.name))
-    .map((e) => ({
-      name: e.name,
-      path: join(reviewDir, e.name),
-      mtime: e.mtimeMs,
-      why:
+  const reviewEntries = fs.list(reviewDir) ?? [];
+  const heldNames = new Set(
+    reviewEntries.filter((e) => e.isFile).map((e) => e.name),
+  );
+  const review: ReviewDoc[] = reviewEntries
+    .filter(
+      (e) =>
+        e.isFile &&
+        isDocumentName(e.name) &&
+        !isCollatedSide(e.name, heldNames),
+    )
+    .map((e) => {
+      const why =
         fs.readText(join(reviewDir, `${stemOf(e.name)}.why.txt`))?.trim() ||
-        null,
-    }))
+        null;
+      const split = parseProposedSplit(why);
+      return {
+        name: e.name,
+        path: join(reviewDir, e.name),
+        mtime: e.mtimeMs,
+        why,
+        ...(split ? { proposedSplit: split } : {}),
+      };
+    })
     .sort(newestFirst);
 
   const doneDir = join(opts.inbox, "done");
@@ -190,16 +246,51 @@ function listFiled(
 
 export type ReleaseResult = { ok: boolean; message: string };
 
-// Moves `<inbox>/review/<name>` to `<inbox>/<stem>.single.pdf` — the
-// consumer's way to accept a held file as one document — and drops its
-// `.why.txt`. Only a plain PDF file name inside review/ is accepted.
+export const SPLIT_LIMIT = 50;
+const SPLIT_HELP =
+  "Split needs up to 50 page numbers from 2, strictly ascending (e.g. split-9-10-12-14)";
+
+// `split-<n>-<n>…`: the first page of each document after the first, so the
+// consumer's decision reads the same as its own naming. Null when malformed.
+const splitPages = (as: string): number[] | null => {
+  const match = /^split-(\d+(?:-\d+)*)$/.exec(as);
+  if (!match) return null;
+  const pages = match[1].split("-").map(Number);
+  const ascending = pages.every(
+    (page, i) => page >= 2 && (i === 0 || page > pages[i - 1]),
+  );
+  return ascending && pages.length <= SPLIT_LIMIT ? pages : null;
+};
+
+// The target's name part and how many documents it makes, or null.
+const releaseForm = (
+  as: string,
+): { part: string; documents: number } | null => {
+  if (as === "single") return { part: "single", documents: 1 };
+  const pages = splitPages(as);
+  return pages
+    ? { part: `split-${pages.join("-")}`, documents: pages.length + 1 }
+    : null;
+};
+
+// Moves `<inbox>/review/<name>` to `<inbox>/<stem>.single.pdf` (or
+// `<stem>.split-<n>-<n>….pdf` for a proposed split) — the consumer's way to
+// accept a held file — and drops its `.why.txt`. Only a plain PDF file name
+// inside review/ is accepted. An earlier `.single` / `.split-…` part of the
+// stem is replaced, not stacked.
 export function releaseReview(
   fs: DocsFs,
   opts: { inbox: string; name: string; as: string },
 ): ReleaseResult {
   const { name } = opts;
-  if (opts.as !== "single") {
-    return { ok: false, message: "Only --as single is supported" };
+  const form = releaseForm(opts.as);
+  if (!form) {
+    return {
+      ok: false,
+      message: opts.as.startsWith("split-")
+        ? SPLIT_HELP
+        : "Only --as single or --as split-<n>-<n>… is supported",
+    };
   }
   if (
     !name ||
@@ -223,12 +314,19 @@ export function releaseReview(
     return { ok: false, message: `${name} is not in review/` };
   }
   const stem = stemOf(name);
-  const targetName = `${stem}.single.pdf`;
+  const base = stem.replace(/\.(single|split-\d+(?:-\d+)*)$/, "");
+  const targetName = `${base}.${form.part}.pdf`;
   const target = join(opts.inbox, targetName);
   if (fs.exists(target)) {
     return { ok: false, message: `${targetName} already exists in the inbox` };
   }
   fs.rename(source, target);
   fs.remove(join(reviewDir, `${stem}.why.txt`));
-  return { ok: true, message: `Filed as one document: ${targetName}` };
+  return {
+    ok: true,
+    message:
+      form.documents === 1
+        ? `Filed as one document: ${targetName}`
+        : `Filed as ${form.documents} documents: ${targetName}`,
+  };
 }

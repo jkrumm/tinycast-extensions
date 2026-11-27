@@ -7,6 +7,7 @@ import type { DocThumb } from "./doc-thumbs";
 import type {
   DocumentsResult,
   FiledDoc,
+  ProposedSplit,
   ReviewDoc,
   WaitingDoc,
 } from "./documents";
@@ -18,6 +19,7 @@ export type { DocThumb } from "./doc-thumbs";
 export type {
   DocumentsResult,
   FiledDoc,
+  ProposedSplit,
   ReviewDoc,
   WaitingDoc,
 } from "./documents";
@@ -125,6 +127,21 @@ export function parseStatus(stdout: string): ScanStatus | null {
   };
 }
 
+function readProposedSplit(raw: unknown): ProposedSplit | null {
+  if (!raw || typeof raw !== "object") return null;
+  const { documents, ranges, starts } = raw as Record<string, unknown>;
+  return Number.isInteger(documents) &&
+    isStringArray(ranges) &&
+    Array.isArray(starts) &&
+    starts.every((s) => Number.isInteger(s))
+    ? {
+        documents: documents as number,
+        ranges,
+        starts: starts as number[],
+      }
+    : null;
+}
+
 export const DOCUMENTS_UNREADABLE = "The document list could not be read";
 
 // `scan-cli --documents`; a plain failure for anything else.
@@ -150,11 +167,13 @@ export function parseDocuments(stdout: string): DocumentsResult {
     }),
     review: arr(v.review).map((x) => {
       const d = x as Record<string, unknown>;
+      const split = readProposedSplit(d.proposedSplit);
       return {
         name: str(d.name),
         path: str(d.path),
         mtime: num(d.mtime),
         why: typeof d.why === "string" ? d.why : null,
+        ...(split ? { proposedSplit: split } : {}),
       };
     }),
     done: [],
@@ -397,10 +416,24 @@ export function proposalKind(why: string | null): string | null {
   return /^\s*proposal:\s*kind\s+(\S+)/im.exec(why ?? "")?.[1] ?? null;
 }
 
+// `Proposed: 5 documents (pages 1-8, 9, 10-11, 12-13, 14-15)`.
+export const splitProposalText = (split: ProposedSplit): string =>
+  `Proposed: ${split.documents} documents (pages ${split.ranges.join(", ")})`;
+
+// The action that files the proposed split: `File as Proposed (5 Documents)`.
+export const splitActionTitle = (split: ProposedSplit): string =>
+  `File as Proposed (${split.documents} Documents)`;
+
+// The `--as` value of that split: the first page of each document after the first.
+export const splitAs = (split: ProposedSplit): string =>
+  `split-${split.starts.join("-")}`;
+
 export function reviewTile(doc: ReviewDoc): DocTile {
   return {
     title: doc.name,
-    subtitle: proposalKind(doc.why) ?? "needs review",
+    subtitle: doc.proposedSplit
+      ? splitProposalText(doc.proposedSplit)
+      : (proposalKind(doc.why) ?? "needs review"),
     keywords: words(doc.name),
     openable: true,
   };
@@ -470,14 +503,17 @@ export function reviewDetailMarkdown(doc: ReviewDoc): string {
     .split("\n")
     .map((line) => `> ${line}`)
     .join("\n");
+  const split = doc.proposedSplit;
   return [
     `# ${doc.name}`,
     "",
     why,
     "",
-    kind
-      ? `The consumer proposes **${kind}**; "File as One Document" accepts the file as a single document.`
-      : `"File as One Document" accepts the file as a single document.`,
+    split
+      ? `The consumer proposes **${split.documents} documents** (pages ${split.ranges.join(", ")}). "${splitActionTitle(split)}" files them that way; "File as One Document" accepts the file as a single document.`
+      : kind
+        ? `The consumer proposes **${kind}**; "File as One Document" accepts the file as a single document.`
+        : `"File as One Document" accepts the file as a single document.`,
   ].join("\n");
 }
 

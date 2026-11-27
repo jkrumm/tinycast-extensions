@@ -19,6 +19,7 @@ import {
   DocTile,
   FlowAction,
   FlowActionId,
+  ProposedSplit,
   SCAN_MODE_OF,
   attentionTile,
   documentSignature,
@@ -33,6 +34,9 @@ import {
   reviewTile,
   scannerActions,
   scanningTitle,
+  splitActionTitle,
+  splitAs,
+  splitProposalText,
   submitConfirmation,
   thumbMap,
   waitingDetailMarkdown,
@@ -309,6 +313,25 @@ export default function Scanner() {
     refresh();
   };
 
+  const releaseProposed = async (
+    name: string,
+    split: ProposedSplit,
+  ): Promise<void> => {
+    const sure = await confirmAlert({
+      title: `File as ${split.documents} documents?`,
+      message: `${name} is filed as proposed: ${splitProposalText(split)}.`,
+      primaryAction: { title: splitActionTitle(split) },
+    });
+    if (!sure) return;
+    const result = await releaseDocument(name, splitAs(split));
+    await toast(
+      result.ok
+        ? { ok: true, message: `Filing as ${split.documents} documents` }
+        : result,
+    );
+    refresh();
+  };
+
   const review = docs?.ok ? docs.review : [];
   const waiting = docs?.ok ? docs.waiting : [];
   const filed = docs?.ok ? docs.filed : [];
@@ -374,11 +397,27 @@ export default function Scanner() {
         <Grid.Section title="Needs review">
           {review.map((doc) => {
             const tile = reviewTile(doc);
+            const split = doc.proposedSplit;
+            const oneDocument = (
+              <Action
+                title="File as One Document"
+                icon={Icon.Check}
+                onAction={() => release(doc.name)}
+              />
+            );
             return documentTile(
               `review-${doc.path}`,
               tile,
               doc.path,
               <ActionPanel.Section title="Document">
+                {split ? (
+                  <Action
+                    title={splitActionTitle(split)}
+                    icon={Icon.Check}
+                    onAction={() => releaseProposed(doc.name, split)}
+                  />
+                ) : null}
+                {split ? oneDocument : null}
                 <Action.Push
                   title="Show Details"
                   icon={Icon.Sidebar}
@@ -391,11 +430,7 @@ export default function Scanner() {
                   }
                 />
                 <Action.Open title="Open" target={doc.path} />
-                <Action
-                  title="File as One Document"
-                  icon={Icon.Check}
-                  onAction={() => release(doc.name)}
-                />
+                {split ? null : oneDocument}
                 {finderAndPath(doc.path, true)}
               </ActionPanel.Section>,
             );

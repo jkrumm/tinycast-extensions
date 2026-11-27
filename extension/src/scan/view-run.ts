@@ -90,13 +90,17 @@ export const submitScan = (force = false): Promise<ActionResult> =>
   direct("submit", force);
 export const discardScan = (): Promise<ActionResult> => direct("discard");
 
-// File a document the consumer held in review/ as one document.
-export async function releaseDocument(name: string): Promise<ActionResult> {
+// File a document the consumer held in review/: `as` is `single` or
+// `split-<n>-<n>…` (the pages that begin a new document).
+export async function releaseDocument(
+  name: string,
+  as = "single",
+): Promise<ActionResult> {
   const inbox = prefs().scanInbox?.trim();
   if (!inbox) return { ok: false, message: NO_INBOX };
   return parseResultLine(
     await runCli(
-      ["--release", name, "--as", "single", "--out-dir", inbox],
+      ["--release", name, "--as", as, "--out-dir", inbox],
       ACTION_TIMEOUT_MS,
     ),
   );

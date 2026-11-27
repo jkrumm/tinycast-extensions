@@ -28,6 +28,8 @@ import {
   resultToToast,
   reviewDetailMarkdown,
   reviewTile,
+  splitActionTitle,
+  splitAs,
   scannerActions,
   scanningTitle,
   submitConfirmation,
@@ -392,6 +394,37 @@ describe("parseDocuments / parseDocThumbs", () => {
     });
   });
 
+  it("reads a review item's proposed split and drops a malformed one", () => {
+    const split = { documents: 2, ranges: ["1-3", "4"], starts: [4] };
+    const result = parseDocuments(
+      JSON.stringify({
+        ok: true,
+        waiting: [],
+        review: [
+          {
+            name: "a.pdf",
+            path: "/in/review/a.pdf",
+            mtime: 1,
+            why: null,
+            proposedSplit: split,
+          },
+          {
+            name: "b.pdf",
+            path: "/in/review/b.pdf",
+            mtime: 2,
+            why: null,
+            proposedSplit: { documents: 2 },
+          },
+        ],
+        done: [],
+        filed: [],
+      }),
+    );
+    if (!result.ok) throw new Error("expected ok");
+    expect(result.review[0].proposedSplit).toEqual(split);
+    expect(result.review[1].proposedSplit).toBeUndefined();
+  });
+
   it("passes a failure message on and turns garbage into a plain failure", () => {
     expect(
       parseDocuments(
@@ -484,6 +517,26 @@ describe("document tiles", () => {
     expect(reviewTile(review(null)).subtitle).toBe("needs review");
     expect(proposalKind("  Proposal: kind invoice  ")).toBe("invoice");
     expect(proposalKind("no proposal here")).toBeNull();
+  });
+
+  it("review with a proposed split: the proposal in words, the action with its count", () => {
+    const split = {
+      documents: 5,
+      ranges: ["1-8", "9", "10-11", "12-13", "14-15"],
+      starts: [9, 10, 12, 14],
+    };
+    const proposed = {
+      ...review("proposal: kind letter"),
+      proposedSplit: split,
+    };
+    expect(reviewTile(proposed).subtitle).toBe(
+      "Proposed: 5 documents (pages 1-8, 9, 10-11, 12-13, 14-15)",
+    );
+    expect(splitActionTitle(split)).toBe("File as Proposed (5 Documents)");
+    expect(splitAs(split)).toBe("split-9-10-12-14");
+    expect(reviewDetailMarkdown(proposed)).toContain(
+      'proposes **5 documents** (pages 1-8, 9, 10-11, 12-13, 14-15). "File as Proposed (5 Documents)" files them that way',
+    );
   });
 
   it("waiting: the file name and waiting", () => {

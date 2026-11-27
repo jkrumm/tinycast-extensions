@@ -69,6 +69,17 @@ const allDocs: DocumentsResult = {
       mtime: 4,
       why: "two documents in one file\nproposal: kind letter",
     },
+    {
+      name: "scan-2026-01-02-101010.pdf",
+      path: "/in/review/scan-2026-01-02-101010.pdf",
+      mtime: 3,
+      why: "unsure where the stack splits\nproposal: 5 documents, pages 1-8, 9, 10-11, 12-13, 14-15",
+      proposedSplit: {
+        documents: 5,
+        ranges: ["1-8", "9", "10-11", "12-13", "14-15"],
+        starts: [9, 10, 12, 14],
+      },
+    },
   ],
   done: [],
   filed: [
@@ -272,6 +283,17 @@ describe("scanner view", () => {
       "File as One Document",
       "Show in Finder",
       "Copy Path",
+    ]);
+    // a proposed split: its action first, the one-document action second
+    const [, splitTile] = secs[1].items;
+    expect(splitTile.props.title).toBe("scan-2026-01-02-101010.pdf");
+    expect(splitTile.props.subtitle).toBe(
+      "Proposed: 5 documents (pages 1-8, 9, 10-11, 12-13, 14-15)",
+    );
+    expect(itemActions(splitTile).slice(0, 3)).toEqual([
+      "File as Proposed (5 Documents)",
+      "File as One Document",
+      "Show Details",
     ]);
     const [waitingTile] = secs[2].items;
     expect(waitingTile.props.title).toBe("scan-2026-11-26-181500.pdf");

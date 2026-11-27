@@ -13,7 +13,7 @@
 //   --status                             the pending scan (and the running scan's progress) for a UI
 //   --documents                          the inbox: waiting, review, filed (read-only, no scanner)
 //   --doc-thumbs                         cache-file thumbnails of those documents
-//   --release <name> --as single         file a document held in review/ as one document
+//   --release <name> --as single|split-<n>-<n>…   file a document held in review/ as one document, or as the split the consumer proposed (the first page of each document after the first)
 //   --brain-dir <dir> --dokumente-dir <dir>   where the filed documents' index notes and files are
 //   --no-notify                          no macOS notification
 //   --measure <file.jpg> [more...]       print each file's ink share (blank guard calibration), no scanner
