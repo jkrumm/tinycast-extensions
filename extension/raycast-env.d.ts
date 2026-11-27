@@ -25,17 +25,7 @@ type ExtensionPreferences = {
   /** Victron Instant Readout Key (override) - 32-hex-char Instant Readout encryption key of the SmartSolar MPPT — leave blank to resolve it from Keychain / 1Password instead (see Victron Key 1Password Ref) */
   "victronKey"?: string,
   /** Victron Key 1Password Ref - op:// reference used to resolve the Victron key when no override and no cached Keychain entry exist */
-  "victronKeyRef": string,
-  /** Scan Inbox - Folder the scanned PDFs are saved into (picked up by another automation) */
-  "scanInbox": string,
-  /** Scanner Host - Leave empty to find the scanner on the network */
-  "scannerHost"?: string,
-  /** Document Index (Brain Vault) - Folder of the brain vault whose Areas/Documents notes describe the filed documents (read-only; a local clone may lag) */
-  "scanBrainDir": string,
-  /** Documents Folder - Folder the filed documents' share paths are relative to */
-  "scanDokumenteDir": string,
-  /** Print Queue - CUPS queue the print commands use; empty means the Mac's default printer */
-  "printQueue"?: string
+  "victronKeyRef": string
 }
 
 /** Preferences accessible in all the extension's commands */
@@ -140,8 +130,8 @@ declare namespace Preferences {
   export type ScanSubmit = ExtensionPreferences & {}
   /** Preferences accessible in the `scan-discard` command */
   export type ScanDiscard = ExtensionPreferences & {}
-  /** Preferences accessible in the `scanner` command */
-  export type Scanner = ExtensionPreferences & {}
+  /** Preferences accessible in the `documents` command */
+  export type Documents = ExtensionPreferences & {}
   /** Preferences accessible in the `printer` command */
   export type Printer = ExtensionPreferences & {}
   /** Preferences accessible in the `print-selection` command */
@@ -251,8 +241,8 @@ declare namespace Arguments {
   export type ScanSubmit = {}
   /** Arguments passed to the `scan-discard` command */
   export type ScanDiscard = {}
-  /** Arguments passed to the `scanner` command */
-  export type Scanner = {}
+  /** Arguments passed to the `documents` command */
+  export type Documents = {}
   /** Arguments passed to the `printer` command */
   export type Printer = {}
   /** Arguments passed to the `print-selection` command */
