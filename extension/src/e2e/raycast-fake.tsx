@@ -124,9 +124,16 @@ const FormTextField = makePassthrough("Form.TextField");
 const FormTextArea = makePassthrough("Form.TextArea");
 const FormDescription = makePassthrough("Form.Description");
 const FormSeparator = makeLeaf("Form.Separator");
+const FormDropdownItem = makeLeaf("Form.Dropdown.Item");
+const FormDropdown = Object.assign(makePassthrough("Form.Dropdown"), {
+  Item: FormDropdownItem,
+});
+const FormCheckbox = makeLeaf("Form.Checkbox");
 export const Form = Object.assign(makePassthrough("Form"), {
   TextField: FormTextField,
   TextArea: FormTextArea,
+  Dropdown: FormDropdown,
+  Checkbox: FormCheckbox,
   Description: FormDescription,
   Separator: FormSeparator,
 });
@@ -379,6 +386,11 @@ export function open(target: string): Promise<void> {
   return Promise.resolve();
 }
 export const __openedTargets: string[] = [];
+
+// Finder is never frontmost in a test: the selection is empty.
+export async function getSelectedFinderItems(): Promise<{ path: string }[]> {
+  return [];
+}
 
 export async function showHUD(title: string): Promise<void> {
   __hudMessages.push(title);

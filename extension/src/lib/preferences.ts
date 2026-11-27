@@ -17,6 +17,7 @@ export interface Preferences {
   scannerHost?: string;
   scanBrainDir?: string;
   scanDokumenteDir?: string;
+  printQueue?: string;
   victronKey?: string;
   victronKeyRef: string;
 }

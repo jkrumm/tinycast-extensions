@@ -21,7 +21,7 @@ docs and, for render-size/layout facts, directly against Tinycast's
 
 ```
 extension/
-  package.json          ← manifest: name "jkrumm", 50 commands, 13 preferences
+  package.json          ← manifest: name "jkrumm", 54 commands, 14 preferences
   src/
     my-tasks.tsx         command — TickTick task list
     quick-add.tsx        command — TickTick quick add
@@ -44,6 +44,8 @@ extension/
     walkingpad-<name>.tsx   8 no-view commands (toggle, faster, slower, speed-3-0 … speed-5-0) — one-liners over `walkingpad/command.ts`, HUD shows the result. **No global hotkeys**: the WalkingPad Mac app owns Hyper+W and the speed hotkeys, a second binding would fire twice
     scan.tsx, scan-fronts.tsx, scan-backs.tsx, scan-flatbed.tsx, scan-more.tsx, scan-submit.tsx, scan-discard.tsx  7 no-view commands (Scan Document / Fronts / Backs / Flatbed / More / Submit Scan / Discard Scan) — one-liners over `scan/command.ts`: a scan command pre-checks, then spawns a detached scan process (HUD, the result is a notification); Submit Scan and Discard Scan run the CLI and show its one-line result as the HUD
     scanner.tsx             command — Scanner Grid, ONE window for the whole flow: the pending scan's page thumbnails (Scan / Fronts / Backs sections) and, below, the inbox documents with their classification (Needs review, Waiting in the inbox, Recently filed from the brain index notes); the flow actions (Scan Document / Fronts / Flatbed / Backs / More, Submit Scan, Submit Fronts Only, Discard Scan, Open Scan Log, Refresh) come from the pure `scannerActions(status)` and sit on every tile; polls the scan state every 2 s while scanning (10 s idle), the documents every 30 s
+    printer.tsx             command — Printer List: the state and toner (a warning tag when low), the jobs (Cancel Job, ⌘⌫ Cancel All Jobs with confirmAlert), Print Selected Finder File (two-sided, one-sided) and Print File… (a Form); polls every 3 s while a job is active, else 15 s
+    print-selection.tsx, print-selection-simplex.tsx, print-cancel.tsx  3 no-view commands (Print Selected File two-sided / one-sided, Cancel Print Jobs) — one-liners over `print/command.ts`; HUD = the CLI's message
     hub.tsx                 command — Grid dashboard, one tile per command
     ticktick/             feature code: client, types, format, parse, search, create-task
     usage/                feature code: quota (argo + local picker + fs read), local (spawns `claude-account`,
@@ -112,8 +114,9 @@ extension/
                            Discard Scan, `--status`) + job-types, blank + ink (blank-batch guard: pure BMP ink share, `sips` runner), log (rotating `scan.log`), keep-awake (`caffeinate`), parse (the `--check` JSON line), actions (no-view core: check, spawn,
                            HUD; injected ports), command (binds to Raycast), fixtures (synthetic JPEG), fake-scanner (in-process eSCL fake, tests only);
                            the Scanner view: sips (shared `sips` runner + `mapLimit`) + thumbs (page thumbnails, content-hashed names), frontmatter (pure YAML-frontmatter reader) + filed-notes (pure: index note -> filed document) + documents (inbox listing, `review/` reasons, filed list, Release; injected `DocsFs`) + docs-fs (real fs) + doc-thumbs (cached first-page thumbnails of documents) + inbox-cli (the `--documents` / `--doc-thumbs` / `--release` queries), state-dir, cli-run (the impure bun call, shared by command and view-run), view (pure: CLI line parsers, `scannerActions`, tiles, detail texts, poll rhythm), view-run (the impure bit the component calls; e2e mocks it)
+    print/                feature code: options (pure: PrintRequest, page-list and copies checks, the `lp` argv), parse (pure: ipptool text, lpstat's default destination, lp's request id, the printer view), cups (the CUPS adapter behind an injected exec port: check, submit, jobs, cancel, waitFor), cli (argument parsing, modes, the one-line JSON contract), system (the real exec, temp files, stat), fake-cups (tests only), fixtures (captured CUPS output, names anonymised), actions (no-view core: print the Finder selection, cancel all), view (pure: the printer view's words, poll rhythm, tile, Form → args), view-run (the impure CLI calls), cli-run (the ports), finder (getSelectedFinderItems as paths), print-form (the Print File… Form), command (binds the no-view commands to showHUD)
     apple-llm/            feature code: run (spawns the helper, the only impure bit), parse (pure)
-    lib/                  shared: argo.ts (fetch client), secrets.ts (Keychain/1Password chain), notify.ts (osascript notification, van + scan),
+    lib/                  shared: argo.ts (fetch client), secrets.ts (Keychain/1Password chain), notify.ts (osascript notification, van + scan), bun-cli.ts (one bundled bun script call, shared by scan and print),
                            action-log.ts (persistent log file), svg.ts + chart/ (hero/chart library, see svg-charts skill), preferences.ts (Preferences type),
                            action-log.ts (persistent log file, pure fs)
   helpers/
@@ -124,6 +127,7 @@ extension/
     chart-previews.ts     `make previews` entry — renders every hero + chart gallery to PNGs
     hyper-sheet.ts        `make hyper-sheet` entry — printable Hyper key sheet from the live Tinycast + WalkingPad settings → build/hyper-sheet.{html,pdf,png} (PDF/PNG need Google Chrome)
     coresvg-render.swift   renders an SVG through macOS' own decoder (previews `--coresvg`)
+    print.ts              print CLI (`make print ARGS=…`; bundled by `make print-cli` to assets/print-cli.js, gitignored): one file per call, `--check`, `--status`, `--cancel`, `--cancel-all`; the agents' only way to print (`.claude/skills/print/SKILL.md`)
     scan.ts               scan CLI (`make scan`; bundled by `make scan-cli` to assets/scan-cli.js, gitignored): `--check` or one scan, run detached by the scan commands; also the read-only inbox queries `--documents`, `--doc-thumbs`, `--release <name> --as single` (no scanner)
   assets/
     *.png                 command icons — generated, don't hand-edit
@@ -289,6 +293,7 @@ icon (`ticktick-menu-bar` → `tasks.png`, `claude-usage-menu-bar` →
 | `scannerHost` | textfield | no | — (empty: find the scanner via Bonjour) |
 | `scanBrainDir` | textfield | no | `~/SourceRoot/brain` (the Scanner view reads `Areas/Documents/<year>/*.md` index notes from it, read-only; a local clone may lag) |
 | `scanDokumenteDir` | textfield | no | `/Volumes/SSD/Dokumente` (the filed documents' `share_path`s are relative to it) |
+| `printQueue` | textfield | no | empty: the Mac's system default printer (`lpstat -d`); `--printer` overrides it in the CLI |
 
 ## Secrets
 
@@ -717,6 +722,7 @@ The
   `sips` PDF first-page rendering. The e2e suite (`e2e/scanner.e2e.test.tsx`) uses synthetic documents
   only — the real index notes are private and never enter this repo.
 
+- **Printer** — `print-cli` (`scripts/print.ts`, bundled to `assets/print-cli.js` by `make print-cli`, run with `/opt/homebrew/bin/bun`) talks to CUPS only through `print/cups.ts`'s injected exec port, for the queue `printQueue` names (empty: `lpstat -d`). State, toner and jobs come from `ipptool -tv` (IPP keywords, stable across languages). macOS CUPS ignores `LC_ALL` for its messages (this Mac answers `lpstat` in German even with `LC_ALL=C`), so the code sets `LC_ALL=C` but never parses lpstat prose: the default destination is the text after the last colon, the request id the `<queue>-<n>` token. Before any submit the queue must exist, accept jobs and not be stopped; low toner is a `warnings` entry only. The submit is `lp -d <queue> -n <copies> -o sides=… -o media=… -o fit-to-page [-o number-up=] [-o print-quality=3|4|5] [-o InputSlot=manual] [-P <pages>] [-H hold] -t <name> -- <file>`, every option explicit. **Two-sided long edge is the default**; `--simplex` opts out, `--short-edge` picks the short edge. Copies 1–99, n-up 1/2/4/6/9/16, media A4 (default) A5 A6 Letter Legal, page lists `1-3,5,8-`. Files: pdf, png, jpg, jpeg, tif, tiff, txt. Cancel touches only the current user's active jobs on the queue (`cancel <queue>-<n>`). Finder selection comes from `getSelectedFinderItems` (rejects while Finder is not frontmost, read as "Select a file in Finder first"); the printer view reads it once on open. Contract and flags: the print skill; `make print ARGS="--help"`.
 - **Apple on-device model** — `extension/helpers/apple-llm/main.swift` (built
   by `make helper` into the gitignored `assets/apple-llm`, `--selftest` in
   `make check`): an agnostic CLI over `SystemLanguageModel` (macOS 26+, Apple
@@ -1148,6 +1154,8 @@ charger), not by device source. Still blocked and selftested: `0xEC5C` (trends
 clear — wipes the store), `0xEC63`/`0xEC64` (lists), `0xEC5F` set (the app
 sets the time tuple once per device boot; we never do), `0x1030`, every other
 setValues, other opcodes and instances, and a trend request in any other mode.
+
+**Tests and proofs never print.** No `lp`, `cancel` or other CUPS write outside an injected fake (`print/fake-cups.ts`); the print unit tests, the printer e2e and the hub e2e (which mocks the printer loader) never reach a queue. A live proof is `--dry-run`, `--check`, `--status`, or `--hold` followed by `--cancel`. The CLI itself refuses to submit without a passing check.
 
 ## SVG hero images and icon previews
 

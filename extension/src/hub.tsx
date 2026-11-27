@@ -34,6 +34,8 @@ import { tileStatus as walkingPadTileStatus } from "./walkingpad/parse";
 import { readCached as readWalkingPad } from "./walkingpad/run";
 import { loadStatus as loadScanStatus } from "./scan/view-run";
 import { tileStatus as scannerTileStatus } from "./scan/view";
+import { loadPrinter } from "./print/view-run";
+import { tileStatus as printerTileStatus } from "./print/view";
 import { RAYCAST_COLOR, RaycastColor, tile, toDataUri } from "./lib/svg";
 
 interface TileConfig {
@@ -128,6 +130,13 @@ const TILES: TileConfig[] = [
     glyph: "D",
     name: "Scanner",
     color: RAYCAST_COLOR.purple,
+  },
+  {
+    command: "printer",
+    icon: "print",
+    glyph: "P",
+    name: "Printer",
+    color: RAYCAST_COLOR.blue,
   },
 ];
 
@@ -240,6 +249,11 @@ async function scannerStatus(): Promise<TileData> {
   return { status: scannerTileStatus(await loadScanStatus()) };
 }
 
+// The printer state from the CLI (a quick local read, no print job).
+async function printerStatus(): Promise<TileData> {
+  return { status: printerTileStatus(await loadPrinter()) };
+}
+
 const STATUS_LOADERS: Record<string, () => Promise<TileData>> = {
   "my-tasks": tasksStatus,
   "quick-add": async () => ({ status: "" }),
@@ -253,6 +267,7 @@ const STATUS_LOADERS: Record<string, () => Promise<TileData>> = {
   spotify: spotifyStatus,
   walkingpad: walkingPadStatus,
   scanner: scannerStatus,
+  printer: printerStatus,
 };
 
 // The icon SVGs ship in the build's assets/src; drop the outer <svg> so the

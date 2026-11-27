@@ -637,6 +637,69 @@
         "inbox"
       ],
       "icon": "scan.png"
+    },
+    {
+      "name": "printer",
+      "title": "Printer",
+      "subtitle": "Printer state, toner and jobs",
+      "description": "The printer's state and toner, its jobs (cancel one or all), and print a Finder file or a path",
+      "mode": "view",
+      "keywords": [
+        "print",
+        "drucken",
+        "printer",
+        "drucker",
+        "toner",
+        "jobs",
+        "queue"
+      ],
+      "icon": "print.png"
+    },
+    {
+      "name": "print-selection",
+      "title": "Print Selected File",
+      "subtitle": "Printer, two-sided",
+      "description": "Print the file(s) selected in Finder, two-sided (long edge)",
+      "mode": "no-view",
+      "keywords": [
+        "print",
+        "drucken",
+        "finder",
+        "duplex",
+        "two-sided"
+      ],
+      "icon": "print.png"
+    },
+    {
+      "name": "print-selection-simplex",
+      "title": "Print Selected File One-Sided",
+      "subtitle": "Printer, one-sided",
+      "description": "Print the file(s) selected in Finder on one side only",
+      "mode": "no-view",
+      "keywords": [
+        "print",
+        "drucken",
+        "finder",
+        "one-sided",
+        "simplex",
+        "einseitig"
+      ],
+      "icon": "print.png"
+    },
+    {
+      "name": "print-cancel",
+      "title": "Cancel Print Jobs",
+      "subtitle": "Printer",
+      "description": "Cancel all of my waiting and printing jobs on the printer",
+      "mode": "no-view",
+      "keywords": [
+        "print",
+        "cancel",
+        "abbrechen",
+        "jobs",
+        "queue"
+      ],
+      "icon": "print.png"
     }
   ],
   "dependencies": {
@@ -775,6 +838,13 @@
       "type": "textfield",
       "required": false,
       "default": "/Volumes/SSD/Dokumente"
+    },
+    {
+      "name": "printQueue",
+      "title": "Print Queue",
+      "description": "CUPS queue the print commands use; empty means the Mac's default printer",
+      "type": "textfield",
+      "required": false
     }
   ]
 }

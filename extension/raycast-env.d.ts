@@ -33,7 +33,9 @@ type ExtensionPreferences = {
   /** Document Index (Brain Vault) - Folder of the brain vault whose Areas/Documents notes describe the filed documents (read-only; a local clone may lag) */
   "scanBrainDir": string,
   /** Documents Folder - Folder the filed documents' share paths are relative to */
-  "scanDokumenteDir": string
+  "scanDokumenteDir": string,
+  /** Print Queue - CUPS queue the print commands use; empty means the Mac's default printer */
+  "printQueue"?: string
 }
 
 /** Preferences accessible in all the extension's commands */
@@ -140,6 +142,14 @@ declare namespace Preferences {
   export type ScanDiscard = ExtensionPreferences & {}
   /** Preferences accessible in the `scanner` command */
   export type Scanner = ExtensionPreferences & {}
+  /** Preferences accessible in the `printer` command */
+  export type Printer = ExtensionPreferences & {}
+  /** Preferences accessible in the `print-selection` command */
+  export type PrintSelection = ExtensionPreferences & {}
+  /** Preferences accessible in the `print-selection-simplex` command */
+  export type PrintSelectionSimplex = ExtensionPreferences & {}
+  /** Preferences accessible in the `print-cancel` command */
+  export type PrintCancel = ExtensionPreferences & {}
 }
 
 declare namespace Arguments {
@@ -243,5 +253,13 @@ declare namespace Arguments {
   export type ScanDiscard = {}
   /** Arguments passed to the `scanner` command */
   export type Scanner = {}
+  /** Arguments passed to the `printer` command */
+  export type Printer = {}
+  /** Arguments passed to the `print-selection` command */
+  export type PrintSelection = {}
+  /** Arguments passed to the `print-selection-simplex` command */
+  export type PrintSelectionSimplex = {}
+  /** Arguments passed to the `print-cancel` command */
+  export type PrintCancel = {}
 }
 

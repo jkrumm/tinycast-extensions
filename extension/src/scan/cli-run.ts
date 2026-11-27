@@ -2,15 +2,12 @@
 // run it for one JSON line, or start it detached. Shared by `command.ts` (the
 // no-view commands) and `view-run.ts` (the Scanner view).
 
-import { environment, getPreferenceValues } from "@raycast/api";
-import { execFile, spawn } from "child_process";
+import { getPreferenceValues } from "@raycast/api";
 import { Preferences } from "../lib/preferences";
+import { runBunScript, spawnBunScript } from "../lib/bun-cli";
 import { ScanCommandPorts } from "./actions";
 
-export const BUN_BIN = "/opt/homebrew/bin/bun";
-export const PATH = "/opt/homebrew/bin:/usr/bin:/bin";
-
-const cliPath = (): string => `${environment.assetsPath}/scan-cli.js`;
+const SCAN_CLI = "scan-cli.js";
 
 // stdout of `bun scan-cli.js <args>`; never rejects (a crash is "").
 export function runCli(
@@ -18,23 +15,11 @@ export function runCli(
   timeoutMs: number,
   maxBuffer = 1024 * 1024,
 ): Promise<string> {
-  return new Promise((resolve) => {
-    execFile(
-      BUN_BIN,
-      [cliPath(), ...args],
-      { timeout: timeoutMs, maxBuffer, env: { ...process.env, PATH } },
-      (_error, stdout) => resolve(String(stdout ?? "")),
-    );
-  });
+  return runBunScript(SCAN_CLI, args, timeoutMs, maxBuffer);
 }
 
 export function spawnCli(args: string[]): void {
-  const child = spawn(BUN_BIN, [cliPath(), ...args], {
-    detached: true,
-    stdio: "ignore",
-    env: { ...process.env, PATH },
-  });
-  child.unref?.();
+  spawnBunScript(SCAN_CLI, args);
 }
 
 export const cliPorts: Omit<ScanCommandPorts, "hud"> = {
